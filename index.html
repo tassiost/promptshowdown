@@ -75,11 +75,17 @@ h2{font-size:.95rem;}
 <div class="pill" id="netPill" style="display:none">🌐 <span id="netText">OFF</span></div>
 </div>
 <div id="arenaBadge" style="margin:8px 0;font-size:.9rem;"></div>
-<button class="btn primary" onclick="G.start()">⚔️ FIGHT</button>
-<button class="btn" onclick="G.lobby()">🌐 P2P</button>
+<button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
+</div>
+
+<div class="screen" id="matchmaking">
+<h2>🔍 FINDING OPPONENT...</h2>
+<div id="matchmakingSpinner" style="font-size:2rem;margin:20px;">⏳</div>
+<div class="detail" id="matchmakingStatus">Searching for a human opponent...</div>
+<button class="btn" onclick="G.cancelMatchmaking()">CANCEL</button>
 </div>
 
 <div class="screen" id="lobby">
@@ -484,7 +490,7 @@ function setupNetwork(id){
     return true;
   }
   catch(e){
-    showError("P2P error: "+(e&&e.message||e));
+    if(!suppressP2PErrors)showError("P2P error: "+(e&&e.message||e));
     return false;
   }
 }
@@ -495,6 +501,7 @@ function transmit(type,data){
   }
 }
 
+let suppressP2PErrors=false;
 // Phase 5: host-authoritative protocol.
 //   request_deck : host -> guest  "send me your drafted units"
 //   deck         : guest -> host  {selected:[unit,...]}
@@ -503,7 +510,17 @@ function transmit(type,data){
 //   forge        : either -> other  share a forged unit (kept from v4)
 function networkReceive(data){
   try{
-    if(data.t==="role"){if(role==="none")role=data.d;}
+    if(data.t==="role"){
+      if(role==="none")role=data.d;
+      // Phase 18: if we're hosting and a guest connects during matchmaking,
+      // cancel the bot fallback timer and start a P2P match.
+      if(role==="host"&&G.matchmakingTimer){
+        clearTimeout(G.matchmakingTimer);
+        G.matchmakingTimer=null;
+        setText("matchmakingStatus","Opponent found! Starting match...");
+        setTimeout(()=>G.start(),300);
+      }
+    }
     if(data.t==="request_deck"){
       // Host asked for our deck; send our currently selected units.
       if(role==="guest")transmit("deck",{selected:G.selected});
@@ -1280,8 +1297,50 @@ const G={
     }
   },
   lobby(){this.screen("lobby");},
-  // Phase 8/9/15: G.start now starts a Match (not a single battle).
-  // Match drives rounds; each round calls G.startRoundDraft().
+  // Phase 18: matchmaking flow — try P2P first, fall back to bot after 5s.
+  matchmakingTimer:null,
+  startMatchmaking(){
+    this.screen("matchmaking");
+    setText("matchmakingStatus","Searching for a human opponent...");
+    // Try to join the arena queue room via trystero.
+    const arenaIdx=this.save.arena||0;
+    const queueRoom=`psd-arena-${arenaIdx}-queue`;
+    // Suppress P2P errors during matchmaking (silent fallback to bot).
+    suppressP2PErrors=true;
+    try{
+      this.host(queueRoom,true);
+    }catch(e){
+      suppressP2PErrors=false;
+      this.startBotMatch();
+      return;
+    }
+    suppressP2PErrors=false;
+    // If connection failed (connected still false), fall back immediately.
+    if(!connected){
+      this.startBotMatch();
+      return;
+    }
+    // Set a 5s timeout — if no opponent joins, start bot match.
+    this.matchmakingTimer=setTimeout(()=>{
+      this.startBotMatch();
+    },5000);
+  },
+  cancelMatchmaking(){
+    if(this.matchmakingTimer){clearTimeout(this.matchmakingTimer);this.matchmakingTimer=null;}
+    // Disconnect from the queue room.
+    if(connected){try{disconnect();}catch(e){}}
+    this.menu();
+  },
+  // Phase 18: start a bot match (fake multiplayer — no network).
+  startBotMatch(){
+    if(this.matchmakingTimer){clearTimeout(this.matchmakingTimer);this.matchmakingTimer=null;}
+    // Disconnect from any queue room.
+    if(connected){try{disconnect();}catch(e){}}
+    this.start();
+  },
+  // Phase 8/9/15/18: G.start starts a Match (bot or P2P).
+  // For bot matches, this is called directly. For P2P, the host/guest
+  // flow calls this after the connection is established.
   start(){
     // Phase 15: generate bot loadout from the current arena's bot pool.
     const arena=this.arenas[this.save.arena||0];
@@ -1987,12 +2046,17 @@ const G={
   reset(){if(confirm("Reset progress?")){localStorage.removeItem(SAVE_KEY);location.reload();}}
 };
 
-// Phase 1: host/join assigned after G exists; setupNetwork now null-safe.
-G.host=function(){
+// Phase 1/18: host/join assigned after G exists; setupNetwork now null-safe.
+G.host=function(roomName,silent){
   role="host";
   const rid=$("roomId");
-  if(setupNetwork(rid?rid.value:"room1")){
+  const room=roomName||(rid?rid.value:"room1");
+  if(setupNetwork(room)){
     setTimeout(()=>{transmit("role","host");},500);
+    if(!silent){
+      const c=$("connection");
+      if(c)c.innerText="Status: hosting room "+room;
+    }
   }
 };
 G.join=function(){
