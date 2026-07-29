@@ -1384,7 +1384,7 @@ A visual recipe is ~1-3KB JSON (6-10 shapes + 4 animation states + FX). With 3 p
 
 ---
 
-## Phase 19a — Tier 1 Polish (after Draft Showdown clone is complete)
+## Phase 19a — Tier 1 Polish (after Draft Showdown clone is complete) ✅ DONE
 
 - **Match pacing:** target 90-120s per match (3-5 rounds). Tune unit HP/DMG if rounds drag.
 - **4th-draw feel:** gold glow, "COMEBACK" banner.
