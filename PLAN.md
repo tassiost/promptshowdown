@@ -1330,7 +1330,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 18 — Multiplayer Protocol Extension + Matchmaking + Bot Fallback
+## Phase 18 — Multiplayer Protocol Extension + Matchmaking + Bot Fallback ✅ DONE
 
 ### Matchmaking flow (replaces solo play)
 **There is no "solo" button.** The player taps "Play" and matchmaking begins immediately:
