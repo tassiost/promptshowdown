@@ -76,6 +76,7 @@ h2{font-size:.95rem;}
 </div>
 <div id="arenaBadge" style="margin:8px 0;font-size:.9rem;"></div>
 <button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
+<button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;">🔮 FORGE</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
@@ -149,13 +150,17 @@ h2{font-size:.95rem;}
 </div>
 
 <div class="screen" id="forge">
-<h2>🔮 FORGE</h2>
-<div id="forgeArea"></div>
-<div class="aiBox">
-<div id="aiText">AI: idle</div>
-<div class="aiBar"><div id="aiFill"></div></div>
+<h2>🔮 FORGE CUSTOM UNIT</h2>
+<div class="detail" id="aiStatus">AI: idle</div>
+<input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja..."
+  style="width:90%;padding:8px;margin:8px 0;font-size:1rem;border-radius:6px;border:1px solid #444;background:#111;color:#fff;">
+<button class="btn primary" id="forgeGenBtn" onclick="G.forgeWithAd()">📺 Watch Ad to Generate</button>
+<div id="forgePreview" style="margin:10px 0;"></div>
+<div id="forgeActions" style="display:none;">
+<button class="btn primary" onclick="G.keepForge()">✓ KEEP</button>
+<button class="btn" onclick="G.forgeWithAd()">🎲 REROLL (Watch Ad)</button>
 </div>
-<button class="btn primary" onclick="G.next()">CONTINUE</button>
+<button class="btn" onclick="G.menu()">BACK</button>
 </div>
 
 <div class="screen" id="deck">
@@ -373,7 +378,7 @@ function setStyle(id,prop,val){const el=$(id);if(el)el.style[prop]=val;}
 let llm=null;
 let llmReady=false;
 let llmLoading=false;
-const MODEL="Llama-3.2-1B-Instruct-q4f32_1-MLC";
+const MODEL="Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
 const AI_TIMEOUT_MS=60000; // Phase 4: give slow phones 60s, then give up.
 // Phase 4: cache of validated AI-generated units so re-forge is instant
 // and we don't re-query the LLM every round.
@@ -429,12 +434,13 @@ async function initLLM(){
   llmLoading=false;
 }
 
-// Phase 4: preload AI in the background right after startup, if WebGPU exists.
-// Does not block the menu; the forge screen reuses the ready engine.
+// Phase 12: silently preload the LLM in the background after startup.
+// No UX prompt — just a silent background download if WebGPU is present.
+// By the time the user first taps "Forge," the model may already be cached.
 async function preloadAI(){
   if(!navigator.gpu)return;       // no point trying without WebGPU
-  if(!W)return;                   // web-llm module not loaded yet
-  try{await initLLM();}catch(e){showError("AI preload error: "+(e&&e.message||e));}
+  if(!W||!W.CreateMLCEngine)return;// web-llm module not loaded
+  try{await initLLM();}catch(e){console.warn("AI preload skipped:",e.message);}
 }
 
 // Phase 10: unified unit validation. Replaces v4's validateAIUnit.
@@ -459,6 +465,409 @@ function validateUnit(raw,arenaIndex){
     // (These are soft constraints — we just fix the trigger, not reject.)
     return u;
   }catch(e){return null;}
+}
+
+// Phase 12: LLM Integration — JSON schema, color maps, derived fields,
+// consistency rules, recipe assembler, template fallback, generateUnit.
+const COLOR_MAP={
+  green:"#4a7",blue:"#48f",red:"#f44",purple:"#a4f",
+  yellow:"#fd4",orange:"#f84",black:"#222",white:"#eee",
+  brown:"#a72",gray:"#888",pink:"#f6c",cyan:"#0ff"
+};
+const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",none:"#888"};
+const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",none:"none"};
+const SIZE_SCALE={small:0.7,medium:1.0,large:1.3};
+
+// Phase 12: JSON schema for grammar-constrained generation (17 fields).
+const UNIT_SCHEMA={
+  type:"object",
+  properties:{
+    name:{type:"string",maxLength:20},
+    role:{type:"string",enum:["frontline","carry","support","counter","utility"]},
+    targeting:{type:"string",enum:["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","random"]},
+    movement:{type:"string",enum:["chase","flee","hold","hold_midpoint","kite","patrol"]},
+    attackCondition:{type:"string",enum:["always","only_if_healthy","only_if_target_low","never"]},
+    abilityTrigger:{type:"string",enum:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"]},
+    moveSpeedMod:{type:"integer",minimum:50,maximum:150},
+    hp:{type:"integer",minimum:10,maximum:200},
+    dmg:{type:"integer",minimum:5,maximum:50},
+    range:{type:"integer",minimum:30,maximum:250},
+    speed:{type:"integer",minimum:30,maximum:120},
+    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"]},
+    bodyPlan:{type:"string",enum:["humanoid","quadruped","blob","flying","mechanical","structure"]},
+    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws"]},
+    primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
+    accentColor:{type:"string",enum:Object.keys(COLOR_MAP)},
+    sizeMod:{type:"string",enum:["small","medium","large"]}
+  },
+  required:["name","role","targeting","movement","attackCondition","abilityTrigger","moveSpeedMod","hp","dmg","range","speed","ability","bodyPlan","weaponType","primaryColor","accentColor","sizeMod"]
+};
+
+// Phase 12: derived fields (not from LLM — deterministic functions).
+function lighten(hex,amt){
+  const n=parseInt(hex.slice(1),16);
+  const r=Math.min(255,((n>>16)&255)+amt*255);
+  const g=Math.min(255,((n>>8)&255)+amt*255);
+  const b=Math.min(255,(n&255)+amt*255);
+  return"#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
+function deriveAtkSpd(a){
+  const base=a.role==="carry"?1.2:a.role==="frontline"?0.8:1.0;
+  return clamp(base+(a.speed-60)*0.005,0.5,2.5);
+}
+function deriveCrit(a){
+  const base=a.role==="carry"?0.15:a.role==="counter"?0.20:0.05;
+  return clamp(base+(a.movement==="chase"&&a.moveSpeedMod>=150?0.05:0),0,0.4);
+}
+
+// Phase 12: cross-field semantic validation rules.
+const CONSISTENCY_RULES=[
+  {if:a=>a.role==="carry"&&a.hp>80,flag:"hp"},
+  {if:a=>a.role==="frontline"&&a.hp<80,flag:"hp"},
+  {if:a=>a.role==="support"&&a.hp>100,flag:"hp"},
+  {if:a=>a.movement==="chase"&&a.moveSpeedMod>=150&&a.speed<80,flag:"speed"},
+  {if:a=>a.movement==="hold"&&a.speed>60,flag:"speed"},
+  {if:a=>a.targeting==="lowest_ally"&&a.attackCondition!=="never",flag:"attackCondition"},
+  {if:a=>a.ability==="none"&&a.abilityTrigger!=="never",flag:"abilityTrigger"},
+  {if:a=>a.ability==="heal"&&!["when_ally_hurt","on_cooldown"].includes(a.abilityTrigger),flag:"abilityTrigger"},
+  {if:a=>a.ability==="spawn"&&a.abilityTrigger!=="on_cooldown",flag:"abilityTrigger"},
+  {if:a=>["lifesteal","rage","slow","splash","dodge","poison"].includes(a.ability)&&a.abilityTrigger!=="never",flag:"abilityTrigger"},
+  {if:a=>["heal","spawn","explode","heal_burst","shield"].includes(a.ability)&&a.abilityTrigger==="never",flag:"abilityTrigger"},
+  {if:a=>a.ability==="explode"&&!["on_death","on_cooldown"].includes(a.abilityTrigger),flag:"abilityTrigger"},
+  {if:a=>a.ability==="heal_burst"&&!["on_death","on_cooldown","when_ally_hurt"].includes(a.abilityTrigger),flag:"abilityTrigger"},
+  {if:a=>a.ability==="shield"&&!["on_low_hp","on_first_hit"].includes(a.abilityTrigger),flag:"abilityTrigger"},
+  {if:a=>a.movement==="kite"&&a.range<100,flag:"range"},
+  {if:a=>a.movement==="chase"&&a.range>80,flag:"range"},
+];
+function semanticValidate(a){
+  return CONSISTENCY_RULES.filter(r=>r.if(a)).map(r=>r.flag);
+}
+// Auto-fix flagged fields (cheaper than re-asking the LLM).
+function autoFixFields(a,flagged){
+  for(const f of flagged){
+    if(f==="hp"){
+      if(a.role==="carry")a.hp=55;
+      else if(a.role==="frontline")a.hp=110;
+      else a.hp=70;
+    }
+    if(f==="speed"){
+      if(a.movement==="chase")a.speed=90;
+      else if(a.movement==="hold")a.speed=45;
+    }
+    if(f==="attackCondition"&&a.targeting==="lowest_ally")a.attackCondition="never";
+    if(f==="abilityTrigger"){
+      if(a.ability==="none")a.abilityTrigger="never";
+      else if(["lifesteal","rage","slow","splash","dodge","poison"].includes(a.ability))a.abilityTrigger="never";
+      else if(a.ability==="heal"||a.ability==="spawn")a.abilityTrigger="on_cooldown";
+      else if(a.ability==="explode")a.abilityTrigger="on_death";
+      else if(a.ability==="heal_burst")a.abilityTrigger="when_ally_hurt";
+      else if(a.ability==="shield")a.abilityTrigger="on_low_hp";
+      else if(a.abilityTrigger==="never")a.abilityTrigger="on_cooldown";
+    }
+    if(f==="range"){
+      if(a.movement==="kite")a.range=150;
+      else if(a.movement==="chase")a.range=50;
+    }
+  }
+  return a;
+}
+
+// Phase 12: RecipeAssembler — builds visual recipe from LLM attributes.
+const BODY_PLANS={
+  humanoid:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:c.head},
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:c.primary},
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:c.primary,joint:"arm_raise"},
+      {t:"rect",x:5,y:-10,w:4,h:10,c:c.primary,joint:"arm_raise"},
+      {t:"rect",x:-5,y:2,w:4,h:10,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:c.primary,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  quadruped:c=>({
+    shapes:[
+      {t:"rect",x:-10,y:-8,w:20,h:10,c:c.primary},
+      {t:"circle",cx:10,cy:-10,r:5,c:c.head},
+      {t:"rect",x:-8,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:-2,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:4,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:8,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"line",x1:-10,y1:-6,x2:-16,y2:-2,c:c.accent,w:2,joint:"tail_wag"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:1,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  blob:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:0,r:12,c:c.primary},
+      {t:"circle",cx:-4,cy:-2,r:2,c:"#000"},
+      {t:"circle",cx:4,cy:-2,r:2,c:"#000"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  flying:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-8,r:6,c:c.primary},
+      {t:"circle",cx:0,cy:-14,r:4,c:c.head},
+      {t:"arc",cx:-10,cy:-8,r:8,start:0,end:2,c:c.accent,w:2,joint:"arm_raise"},
+      {t:"arc",cx:10,cy:-8,r:8,start:Math.PI,end:3,c:c.accent,w:2,joint:"arm_raise"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,arm_raise:0},{t:0.5,bob:1,arm_raise:0.3},{t:1,bob:0,arm_raise:0}],
+      move:[{t:0,arm_raise:0,bob:0},{t:0.5,arm_raise:1,bob:1},{t:1,arm_raise:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  mechanical:c=>({
+    shapes:[
+      {t:"rect",x:-8,y:-12,w:16,h:14,c:c.primary},
+      {t:"rect",x:-4,y:-18,w:8,h:6,c:c.head},
+      {t:"circle",cx:-8,cy:4,r:4,c:"#333"},
+      {t:"circle",cx:8,cy:4,r:4,c:"#333"},
+      {t:"rect",x:8,y:-10,w:4,h:10,c:c.accent,joint:"arm_raise"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  structure:c=>({
+    shapes:[
+      {t:"rect",x:-10,y:-10,w:20,h:20,c:c.primary},
+      {t:"circle",cx:0,cy:-12,r:4,c:c.accent}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.3},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:1,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  })
+};
+const WEAPONS={
+  sword:{shape:{t:"line",x1:9,y1:-8,x2:16,y2:-16,c:"#ccc",w:2,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  bow:{shape:{t:"arc",cx:12,cy:-10,r:8,start:-1,end:1,c:"#a72",w:2,joint:"bow_draw"},
+    attack:[{t:0,bow_draw:0,arm_raise:0},{t:0.5,bow_draw:1,arm_raise:0.5},{t:1,bow_draw:0,arm_raise:0}]},
+  staff:{shape:{t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#a72",w:2,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
+  dagger:{shape:{t:"line",x1:9,y1:-8,x2:13,y2:-12,c:"#ccc",w:1,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  shield:{shape:{t:"rect",x:-13,y:-10,w:6,h:10,c:"#ccc"},
+    attack:[{t:0,arm_raise:0},{t:1,arm_raise:0}]},
+  hammer:{shape:{t:"rect",x:12,y:-18,w:6,h:6,c:"#888",joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  claws:{shape:{t:"line",x1:9,y1:-6,x2:12,y2:-2,c:"#ccc",w:1,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  none:{shape:null,attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]}
+};
+function scaleShape(s,scale){
+  if(!scale||scale===1)return s;
+  const out={...s};
+  if(out.cx!==undefined)out.cx*=scale;
+  if(out.cy!==undefined)out.cy*=scale;
+  if(out.r!==undefined)out.r*=scale;
+  if(out.x!==undefined)out.x*=scale;
+  if(out.y!==undefined)out.y*=scale;
+  if(out.w!==undefined)out.w*=scale;
+  if(out.h!==undefined)out.h*=scale;
+  if(out.x1!==undefined)out.x1*=scale;
+  if(out.y1!==undefined)out.y1*=scale;
+  if(out.x2!==undefined)out.x2*=scale;
+  if(out.y2!==undefined)out.y2*=scale;
+  if(out.pts)out.pts=out.pts.map(p=>[p[0]*scale,p[1]*scale]);
+  return out;
+}
+const RecipeAssembler={
+  build(attrs){
+    const primary=COLOR_MAP[attrs.primaryColor]||"#888";
+    const accent=COLOR_MAP[attrs.accentColor]||"#aaa";
+    const head=lighten(primary,0.2);
+    const weapon=WEAPON_COLOR[attrs.weaponType]||primary;
+    const colors={primary,accent,head,weapon};
+    const scale=SIZE_SCALE[attrs.sizeMod]||1.0;
+    const bodyFn=BODY_PLANS[attrs.bodyPlan]||BODY_PLANS.humanoid;
+    const body=bodyFn(colors);
+    const weaponTpl=WEAPONS[attrs.weaponType]||WEAPONS.none;
+    const shapes=body.shapes.map(s=>scaleShape(s,scale));
+    if(weaponTpl.shape)shapes.push(scaleShape(weaponTpl.shape,scale));
+    return{
+      shapes,
+      animations:{
+        ...body.animations,
+        attack:weaponTpl.attack
+      }
+    };
+  }
+};
+
+// Phase 12: template fallback — keyword-matched attribute templates.
+const TEMPLATES=[
+  {kw:["archer","bow","hunter","ranger"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:55,dmg:18,range:170,speed:65,ability:"none",bodyPlan:"humanoid",weaponType:"bow",primaryColor:"green",accentColor:"green",sizeMod:"medium"}},
+  {kw:["tank","knight","warrior","guard","defender"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:80,hp:110,dmg:12,range:40,speed:50,ability:"shield",bodyPlan:"humanoid",weaponType:"shield",primaryColor:"blue",accentColor:"white",sizeMod:"large"}},
+  {kw:["mage","wizard","sorcerer","warlock"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:50,hp:80,dmg:20,range:140,speed:40,ability:"splash",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"purple",accentColor:"cyan",sizeMod:"medium"}},
+  {kw:["assassin","rogue","ninja","shadow"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,hp:45,dmg:22,range:30,speed:110,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
+  {kw:["healer","priest","cleric","monk"],a:{role:"support",targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,hp:65,dmg:10,range:100,speed:50,ability:"heal",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"yellow",accentColor:"white",sizeMod:"medium"}},
+  {kw:["engineer","builder","mech","tinker"],a:{role:"utility",targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:60,dmg:8,range:90,speed:45,ability:"spawn",bodyPlan:"mechanical",weaponType:"hammer",primaryColor:"orange",accentColor:"gray",sizeMod:"medium"}},
+  {kw:["vampire","dracula","leech","blood"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:120,hp:70,dmg:16,range:35,speed:80,ability:"lifesteal",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"red",accentColor:"black",sizeMod:"medium"}},
+  {kw:["berserker","barbarian","raging"],a:{role:"frontline",targeting:"highest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:140,hp:90,dmg:18,range:35,speed:90,ability:"rage",bodyPlan:"humanoid",weaponType:"hammer",primaryColor:"orange",accentColor:"red",sizeMod:"large"}},
+  {kw:["bomber","grenadier","suicide","explosive"],a:{role:"counter",targeting:"enemy_cluster",movement:"chase",attackCondition:"never",abilityTrigger:"on_death",moveSpeedMod:130,hp:50,dmg:30,range:40,speed:100,ability:"explode",bodyPlan:"mechanical",weaponType:"none",primaryColor:"gray",accentColor:"orange",sizeMod:"small"}},
+  {kw:["turtle","shell","crab","tortoise"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:50,hp:150,dmg:8,range:30,speed:30,ability:"shield",bodyPlan:"quadruped",weaponType:"claws",primaryColor:"green",accentColor:"brown",sizeMod:"large"}},
+  {kw:["wall","tower","turret","crystal","fortress"],a:{role:"frontline",targeting:"closest",movement:"hold",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:50,hp:200,dmg:15,range:120,speed:30,ability:"slow",bodyPlan:"structure",weaponType:"none",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
+];
+function templateFallback(prompt){
+  const p=(prompt||"").toLowerCase();
+  let match=TEMPLATES.find(t=>t.kw.some(k=>p.includes(k)));
+  let attrs;
+  if(match){
+    attrs={...match.a};
+    attrs.name=prompt.slice(0,20);
+  }else{
+    // Random template with the prompt as name.
+    attrs={...TEMPLATES[F(R()*TEMPLATES.length)].a};
+    attrs.name=(prompt||"Unknown").slice(0,20);
+  }
+  // ±20% param variation.
+  const v=()=>0.8+R()*0.4;
+  attrs.hp=Math.round(attrs.hp*v());
+  attrs.dmg=Math.round(attrs.dmg*v());
+  attrs.range=Math.round(attrs.range*v());
+  attrs.speed=Math.round(attrs.speed*v());
+  return attrs;
+}
+
+// Phase 12: build a unit object from LLM/template attributes.
+function attrsToUnit(attrs,arenaIndex){
+  const primaryHex=COLOR_MAP[attrs.primaryColor]||"#4a7";
+  const accentHex=COLOR_MAP[attrs.accentColor]||"#0ff";
+  const headHex=lighten(primaryHex,0.2);
+  const weaponHex=WEAPON_COLOR[attrs.weaponType]||"#888";
+  const recipe=RecipeAssembler.build({
+    ...attrs,
+    primaryHex,accentHex,headHex,weaponHex
+  });
+  const atkSpd=deriveAtkSpd(attrs);
+  const crit=deriveCrit(attrs);
+  return validateUnit({
+    n:attrs.name,
+    role:attrs.role,
+    targeting:attrs.targeting,movement:attrs.movement,
+    attackCondition:attrs.attackCondition,abilityTrigger:attrs.abilityTrigger,
+    moveSpeedMod:attrs.moveSpeedMod,
+    hp:attrs.hp,dmg:attrs.dmg,range:attrs.range,speed:attrs.speed,
+    a:atkSpd,crit:crit,
+    ability:attrs.ability,
+    c:primaryHex,
+    recipe
+  },arenaIndex);
+}
+
+// Phase 12: IndexedDB cache for generated units.
+const DB_NAME="promptshowdown_llm_cache";
+const STORE="unit_specs";
+const SCHEMA_VERSION=1;
+function cacheKey(prompt,modelId){return modelId+":"+prompt;}
+function openDB(){
+  return new Promise((res,rej)=>{
+    if(!indexedDB){rej(new Error("no IndexedDB"));return;}
+    const r=indexedDB.open(DB_NAME,SCHEMA_VERSION);
+    r.onupgradeneeded=()=>{r.result.createObjectStore(STORE,{keyPath:"key"});};
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+async function cacheGet(key){
+  try{
+    const db=await openDB();
+    return new Promise((res)=>{
+      const tx=db.transaction(STORE,"readonly").objectStore(STORE).get(key);
+      tx.onsuccess=()=>res(tx.result?tx.result.unit:null);
+      tx.onerror=()=>res(null);
+    });
+  }catch(e){return null;}
+}
+async function cachePut(key,prompt,modelId,unit){
+  try{
+    const db=await openDB();
+    const tx=db.transaction(STORE,"readwrite").objectStore(STORE);
+    tx.put({key,prompt,modelId,unit,generatedAt:Date.now()});
+  }catch(e){/* best-effort */}
+}
+
+// Phase 12: main generation orchestrator (hybrid JSON-mode + auto-fix).
+async function generateUnit(rawPrompt,arenaIndex){
+  const prompt=(rawPrompt||"").trim().slice(0,100)||"warrior";
+  const key=cacheKey(prompt,MODEL);
+  // 1. Cache hit?
+  const cached=await cacheGet(key);
+  if(cached)return cached;
+  // 2. Try LLM (JSON mode).
+  let attrs=null;
+  if(llmReady){
+    try{
+      const reply=await llm.chat.completions.create({
+        stream:false,
+        messages:[
+          {role:"system",content:"You are a game unit designer for a top-down auto-battler. Output a JSON object with the unit's name, combat behaviour, stats, and appearance. Pick values that fit the concept."},
+          {role:"user",content:`Design a unit based on: "${prompt}". Choose name, role, behaviour (targeting, movement, attackCondition, abilityTrigger, moveSpeedMod), stats (hp, dmg, range, speed), ability, body plan, weapon, colors, and size. All fields required.`}
+        ],
+        max_tokens:300,
+        temperature:0.7,
+        response_format:{type:"json_object",schema:JSON.stringify(UNIT_SCHEMA)}
+      });
+      attrs=JSON.parse(reply.choices[0].message.content);
+    }catch(e){
+      console.warn("LLM JSON mode failed, using template:",e.message);
+    }
+  }
+  // 3. Template fallback if no LLM or LLM failed.
+  if(!attrs)attrs=templateFallback(prompt);
+  // 4. Semantic validation + auto-fix.
+  const flagged=semanticValidate(attrs);
+  if(flagged.length>0)attrs=autoFixFields(attrs,flagged);
+  // 5. Build unit from attributes.
+  const u=attrsToUnit(attrs,arenaIndex);
+  if(!u){
+    // Validation failed — use template fallback.
+    attrs=templateFallback(prompt);
+    const u2=attrsToUnit(attrs,arenaIndex);
+    if(u2){await cachePut(key,prompt,MODEL,u2);return u2;}
+    return null;
+  }
+  // 6. Cache.
+  await cachePut(key,prompt,MODEL,u);
+  return u;
+}
+
+// Phase 12: ad stub — simulates a rewarded ad with a countdown overlay.
+function showAdStub(duration,onComplete){
+  const overlay=document.createElement("div");
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
+  let remaining=Math.ceil(duration/1000);
+  overlay.innerHTML=`<div style="font-size:1.5rem;margin-bottom:10px;">📺 Ad Playback</div><div id="adCountdown" style="font-size:2rem;">${remaining}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Ad ends in ${remaining}s</div>`;
+  document.body.appendChild(overlay);
+  const interval=setInterval(()=>{
+    remaining--;
+    const cd=overlay.querySelector("#adCountdown");
+    if(cd)cd.innerText=remaining+"s";
+    if(remaining<=0){
+      clearInterval(interval);
+      overlay.remove();
+      onComplete();
+    }
+  },1000);
 }
 
 // Phase 1: network state + functions hoisted ABOVE G so role/transmit
@@ -1581,6 +1990,17 @@ const G={
       const h1=document.querySelector("#menu h1");
       if(h1)h1.style.color=arena.c;
     }
+    // Phase 12: show forge button after Training Yard (arena >= 1 or 3+ wins).
+    const forgeBtn=$("forgeMenuBtn");
+    if(forgeBtn){
+      const showForge=(this.save.arena||0)>=1||(this.save.matchWins||0)>=3;
+      forgeBtn.style.display=showForge?"inline-block":"none";
+    }
+    // Phase 12: update AI status badge.
+    const aiStatus=$("aiStatus");
+    if(aiStatus){
+      aiStatus.innerText=llmReady?"AI: Ready":llmLoading?"AI: Loading...":"AI: "+(navigator.gpu?"Idle":"Unavailable (templates)");
+    }
   },
   lobby(){this.screen("lobby");},
   // Phase 18: matchmaking flow — try P2P first, fall back to bot after 5s.
@@ -2099,88 +2519,75 @@ const G={
     }
   },
 
+  // Phase 12: forge screen — show prompt input + ad-gated generation.
   forge(){
     this.screen("forge");
-    // Phase 4: prefer a cached validated unit if available (instant forge).
-    if(aiCache.length>0){
-      this.addForge(aiCache.pop());
-      return;
-    }
-    if(llmReady){this.generateAI();}
-    else{this.randomForge();}
+    const aiStatus=$("aiStatus");
+    if(aiStatus)aiStatus.innerText=llmReady?"AI: Ready":llmLoading?"AI: Loading...":"AI: "+(navigator.gpu?"Idle":"Unavailable (templates)");
+    const preview=$("forgePreview");
+    if(preview)preview.innerHTML="";
+    const actions=$("forgeActions");
+    if(actions)actions.style.display="none";
+    const btn=$("forgeGenBtn");
+    if(btn)btn.style.display="inline-block";
   },
 
-  // Phase 4: AI generation with validation + cache. Retries up to 3 times
-  // for a valid unit before falling back to procedural.
-  async generateAI(){
-    try{
-      await initLLM();
-      if(!llmReady)throw Error("No AI");
-      const prompt="Create a balanced fantasy battle unit. Return JSON only with keys: n (name string), h (10..300 hp), d (3..60 dmg), r (20..200 range), s (30..150 speed), a (0.5..2 attack cooldown), c (hex color), ability (one of: none, splash, heal, dodge, poison), rar (common, rare, legendary).";
-      let forged=null;
-      for(let attempt=0;attempt<3&&!forged;attempt++){
-        const result=await llm.chat.completions.create({
-          messages:[
-            {role:"system",content:"You are a game unit generator. Return ONLY a single JSON object, no prose."},
-            {role:"user",content:prompt}
-          ],
-          max_tokens:120
-        });
-        const match=result.choices[0].message.content.match(/\{[\s\S]*\}/);
-        if(!match)continue;
-        let raw;
-        try{raw=JSON.parse(match[0]);}catch(e){continue;}
-        forged=validateUnit(raw);
-      }
-      if(!forged){throw Error("AI produced no valid unit after retries");}
-      // Phase 4: warm the cache with one extra validated unit for next time.
-      this.addForge(forged);
-      this.warmAICache();
-    }
+  // Phase 12: ad-gated forge — parallel ad + LLM generation.
+  pendingForgeUnit:null,
+  async forgeWithAd(){
+    const promptEl=$("forgePrompt");
+    const prompt=promptEl?promptEl.value.trim():"";
+    if(!prompt){toast("Enter a unit concept first");return;}
+    const btn=$("forgeGenBtn");
+    if(btn)btn.style.display="none";
+    const preview=$("forgePreview");
+    if(preview)preview.innerHTML='<div class="detail">Generating...</div>';
+    // Start ad + generation in parallel.
+    const arenaIdx=this.save.arena||0;
+    const adPromise=new Promise(res=>showAdStub(5000,res));
+    const genPromise=generateUnit(prompt,arenaIdx);
+    await adPromise;
+    let unit;
+    try{unit=await genPromise;}
     catch(e){
-      showError("AI generate failed, using procedural: "+(e&&e.message||e));
-      this.randomForge();
+      console.warn("Generation failed, using template:",e.message);
+      const attrs=templateFallback(prompt);
+      unit=attrsToUnit(attrs,arenaIdx);
     }
+    if(!unit){
+      const attrs=templateFallback(prompt);
+      unit=attrsToUnit(attrs,arenaIdx);
+    }
+    this.pendingForgeUnit=unit;
+    this.showForgePreview(unit);
   },
 
-  // Phase 4: generate an extra unit in the background to refill the cache.
-  async warmAICache(){
-    if(!llmReady||aiCache.length>=3)return;
-    try{
-      const result=await llm.chat.completions.create({
-        messages:[
-          {role:"system",content:"Return ONLY a single JSON object, no prose."},
-          {role:"user",content:"Create a balanced fantasy battle unit. JSON keys: n,h(10..300),d(3..60),r(20..200),s(30..150),a(0.5..2),c(hex),ability(none|splash|heal|dodge|poison),rar(common|rare|legendary)."}
-        ],
-        max_tokens:120
-      });
-      const match=result.choices[0].message.content.match(/\{[\s\S]*\}/);
-      if(match){
-        const u=validateUnit(JSON.parse(match[0]));
-        if(u)aiCache.push(u);
-      }
-    }catch(e){/* cache warm is best-effort */}
+  // Phase 12: show the generated unit preview with keep/reroll buttons.
+  showForgePreview(u){
+    const preview=$("forgePreview");
+    if(!preview||!u)return;
+    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
+    const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
+    preview.innerHTML=`<div class="card" style="border-color:#fa0;">
+      <div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>
+      <div class="title" style="color:${u.c}">${u.n}</div>
+      <div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · ⚡${u.s}${abLabel}${roleLabel}</div>
+    </div>`;
+    const actions=$("forgeActions");
+    if(actions)actions.style.display="block";
   },
 
-  randomForge(){
-    let names=["Ember","Frost","Nova","Volt","Shadow","Bloom"];
-    let abs=["none","splash","heal","dodge","poison","lifesteal","rage","slow"];
-    let rars=["common","common","rare","legendary"];
-    this.addForge(unit({
-      n:names[F(R()*names.length)],
-      h:60+F(R()*80),
-      d:10+F(R()*30),
-      r:40+F(R()*120),
-      s:50+F(R()*60),
-      a:0.8+R()*0.8,
-      c:"#"+F(R()*16777215).toString(16).padStart(6,"0"),
-      ability:abs[F(R()*abs.length)],
-      rar:rars[F(R()*rars.length)]
-    }));
+  // Phase 12: keep the forged unit — add to collection.
+  keepForge(){
+    if(!this.pendingForgeUnit)return;
+    this.addForge(this.pendingForgeUnit);
+    this.pendingForgeUnit=null;
+    toast("✓ Unit added to collection");
+    this.menu();
   },
 
   addForge(u){
-    // Phase 13: forged units go to collection (not ai).
+    // Phase 13: forged units go to collection.
     if(!this.save.collection)this.save.collection=[];
     this.save.collection.push(u);
     if(this.save.collection.length>50)this.save.collection.shift();
@@ -2189,12 +2596,10 @@ const G={
     if(this.save.ai.length>50)this.save.ai.shift();
     saveData(this.save);
     this.wins();
-    const fa=$("forgeArea");
-    if(fa)fa.innerHTML=`<div class="card"><div class="title" style="color:${u.c}">${u.n}</div><div class="detail">${u.h} HP ${u.d} DMG<br>Range ${u.r}</div></div>`;
     transmit("forge",u);
   },
 
-  next(){this.start();}, // Phase 8: starts a new match (called from forge screen)
+  next(){this.start();}, // Phase 8: starts a new match
 
   // Phase 13/16: deck screen = 4 loadout slots + synergy meter + collection.
   deck(){
