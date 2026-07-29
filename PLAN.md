@@ -527,7 +527,7 @@ Note: `this.units` is now a single array containing both teams (was `this.units`
 
 ---
 
-## Phase 11 — Procedural Sprite System
+## Phase 11 — Procedural Sprite System ✅ DONE
 
 **Today:** `Battle.render()` (line ~708) draws units as solid colored circles. No articulation, no animation states.
 
