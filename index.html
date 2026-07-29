@@ -315,6 +315,10 @@ function loadData(){
 // Phase 7: migrate older save schemas forward.
 function migrateSave(s){
   if(!s)return s;
+  // Future-version save: warn but don't downgrade (may have new fields we don't know).
+  if(s.version>CURRENT_VERSION){
+    console.warn("Save version "+s.version+" > current "+CURRENT_VERSION+" — may have issues.");
+  }
   if(!s.version||s.version<4){
     // v3 and earlier had no progression fields; re-init defaults via G.init.
     s.version=4;
@@ -850,9 +854,10 @@ function expandRecipe(min){
 function serializeUnitsForPeer(units){
   const data=units.map(u=>{
     // Starter unit: send name only, receiver resolves from G.base.
+    // A unit is a starter if its name matches a base unit with the same recipe.
     const starter=G.base.find(b=>b.n===u.n);
-    if(starter&&!u.weaponType)return u.n;
-    // Custom unit: send full data with minified recipe.
+    if(starter&&starter.recipe===u.recipe)return u.n;
+    // Custom unit (LLM-forged or modified): send full data with minified recipe.
     const recipe=minifyRecipe(u.recipe);
     return{...u,recipe};
   });
@@ -1166,6 +1171,7 @@ function networkReceive(data){
       // Phase 18: if we're hosting and a guest connects during matchmaking,
       // cancel the bot fallback timer and start a P2P match.
       if(role==="host"&&G.matchmakingTimer){
+        G.matchmakingCancelled=true; // prevent bot fallback race
         clearTimeout(G.matchmakingTimer);
         G.matchmakingTimer=null;
         setText("matchmakingStatus","Opponent found! Starting match...");
@@ -1239,6 +1245,12 @@ function networkReceive(data){
       if(role==="host"){
         G.guestPicks=deserializeUnitsFromPeer(data.d.picks);
       }
+    }
+    // Unknown message type — log for debugging (future version compat).
+    if(!["role","request_deck","deck","snap","cmd","forge",
+         "match_start","round_start","opponent_picks","round_end",
+         "match_end","round_deck"].includes(data.t)){
+      console.warn("Unknown network message type:",data.t);
     }
   }catch(e){
     showError("Network receive error: "+(e&&e.message||e));
@@ -2060,7 +2072,8 @@ const Battle={
         const minD=a.z+b.z;
         if(d>0&&d<minD){
           const push=(minD-d)/2;
-          const nx=dx/d, ny=dy/d;
+          const dd=Math.max(d,0.001); // guard against floating-point zero
+          const nx=dx/dd, ny=dy/dd;
           a.x-=nx*push;a.y-=ny*push;
           b.x+=nx*push;b.y+=ny*push;
         }
@@ -2497,6 +2510,10 @@ const G={
     document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
     let target=$(id);
     if(target)target.classList.add("active");
+    // Clean up any leftover fixed overlays (forge confirm, disconnect prompt).
+    [...document.querySelectorAll("div")].forEach(d=>{
+      if(d.style.position==="fixed"&&d.style.zIndex==="9999")d.remove();
+    });
   },
   wins(){
     setText("wins",this.save.matchWins||0);
@@ -2510,10 +2527,12 @@ const G={
   // Phase 13: deckUnits returns the loadout (4 cards) resolved to unit objects.
   // This is the draft pool per match.
   loadoutUnits(){
-    return this.save.loadout.map(name=>{
+    const loadout=this.save.loadout||["Knight","Archer","Slash","Priest"];
+    const coll=this.save.collection||[];
+    return loadout.map(name=>{
       // Find in collection first, then base roster.
-      const coll=this.save.collection.find(u=>u.n===name);
-      if(coll)return coll;
+      const c=coll.find(u=>u.n===name);
+      if(c)return c;
       const base=this.base.find(u=>u.n===name);
       if(base)return base;
       // Fallback: first base unit (shouldn't happen with valid loadout).
@@ -2593,21 +2612,25 @@ const G={
       return;
     }
     // Set a 5s timeout — if no opponent joins, start bot match.
+    this.matchmakingCancelled=false;
     this.matchmakingTimer=setTimeout(()=>{
+      if(this.matchmakingCancelled)return;
       this.startBotMatch();
     },5000);
   },
   cancelMatchmaking(){
+    this.matchmakingCancelled=true;
     if(this.matchmakingTimer){clearTimeout(this.matchmakingTimer);this.matchmakingTimer=null;}
     // Disconnect from the queue room.
-    if(connected){try{disconnect();}catch(e){}}
+    if(connected&&typeof disconnect==="function"){try{disconnect();}catch(e){}}
     this.menu();
   },
   // Phase 18: start a bot match (fake multiplayer — no network).
   startBotMatch(){
+    this.matchmakingCancelled=true;
     if(this.matchmakingTimer){clearTimeout(this.matchmakingTimer);this.matchmakingTimer=null;}
     // Disconnect from any queue room.
-    if(connected){try{disconnect();}catch(e){}}
+    if(connected&&typeof disconnect==="function"){try{disconnect();}catch(e){}}
     this.start();
   },
   // Phase 8/9/15/18: G.start starts a Match (bot or P2P).
@@ -2759,31 +2782,30 @@ const G={
     let candidates=pool.filter(u=>u.rar===rar&&!usedNames.has(u.n));
     if(candidates.length===0)candidates=pool.filter(u=>!usedNames.has(u.n));
     if(candidates.length===0)candidates=pool; // edge case: tiny pool
+    if(candidates.length===0)return cloneUnit(this.base[0]); // ultimate fallback
     return cloneUnit(candidates[F(R()*candidates.length)]);
   },
 
   // Phase 10: build an army (3 copies of each picked unit).
   // Team is now a string ("player"/"enemy"); Battle.start() sets it.
   buildArmy(){
-    const out=[];
-    for(const pick of this.selected){
-      if(!pick)continue;
-      for(let i=0;i<3;i++){
-        const u=this.applyUpgrades(cloneUnit(pick));
-        out.push({...u,x:Q(40,360),y:Q(420,600),h:u.h,mh:u.h});
-      }
-    }
-    return out;
+    return this._buildArmyFromPicks(this.selected,true,420,600);
   },
 
   // Phase 9/14: build a bot army from opponent picks (3 copies each).
   buildBotArmy(){
     const botPicks=this.opponentPicks||Bot.draftRound(Match.comebackEligible()?4:3);
+    return this._buildArmyFromPicks(botPicks,false,40,150);
+  },
+
+  // Helper: build an army from picks (3 copies each, positioned in y range).
+  _buildArmyFromPicks(picks,applyUpg,yMin,yMax){
     const out=[];
-    for(const pick of botPicks){
+    for(const pick of picks||[]){
+      if(!pick)continue;
       for(let i=0;i<3;i++){
-        const u=cloneUnit(pick);
-        out.push({...u,x:Q(40,360),y:Q(40,150),h:u.h,mh:u.h});
+        const u=applyUpg?this.applyUpgrades(cloneUnit(pick)):cloneUnit(pick);
+        out.push({...u,x:Q(40,360),y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
     return out;
@@ -3024,7 +3046,7 @@ const G={
   generateMatchHint(win){
     const units=this.loadoutUnits();
     const roles={};
-    for(const u of units)roles[u.role]=(roles[u.role]||0)+1;
+    for(const u of units)if(u.role)roles[u.role]=(roles[u.role]||0)+1;
     const deathLog=Match.deathLog||Battle.deathLog||[];
     const playerDeaths=deathLog.filter(d=>d.team==="player");
     const firstDeath=playerDeaths[0];
@@ -3357,7 +3379,7 @@ const G={
     if(!meter)return;
     const units=this.loadoutUnits();
     const roles={};
-    for(const u of units)roles[u.role]=(roles[u.role]||0)+1;
+    for(const u of units)if(u.role)roles[u.role]=(roles[u.role]||0)+1;
     // Build role summary.
     const roleList=Object.entries(roles).map(([r,c])=>`${r}:${c}`).join(" · ");
     // Warnings for missing/overloaded roles.
