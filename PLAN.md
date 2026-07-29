@@ -1298,7 +1298,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 17 — Procedural FX System
+## Phase 17 — Procedural FX System ✅ DONE
 
 **Today:** `Battle.render()` draws static shapes. No hit flashes, death animation, particles, or screen shake.
 
