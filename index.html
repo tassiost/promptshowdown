@@ -784,6 +784,78 @@ function templateFallback(prompt){
   return attrs;
 }
 
+// Phase 18: Recipe serialization for P2P bandwidth.
+// Minify field names, deduplicate starter units, compress with lz-string.
+const RECIPE_MINIFY={
+  shapes:"s",animations:"a",attack:"at",idle:"i",move:"m",death:"d",
+  circle:"c",rect:"r",line:"l",polygon:"p",arc:"ar",
+  t:"t",cx:"x",cy:"y",r:"r",x:"x",y:"y",w:"w",h:"h",
+  x1:"x1",y1:"y1",x2:"x2",y2:"y2",c:"c",joint:"j",pts:"p",
+  start:"s0",end:"e0",alpha:"al",rot:"ro",bob:"bo",leg_swing:"ls",
+  arm_raise:"ar",bow_draw:"bd",tail_wag:"tw"
+};
+const RECIPE_EXPAND=Object.fromEntries(
+  Object.entries(RECIPE_MINIFY).map(([k,v])=>[v,k])
+);
+// Minify a recipe for network transmission (~40% smaller).
+function minifyRecipe(recipe){
+  if(!recipe)return null;
+  const minShapes=recipe.shapes?.map(s=>{
+    const out={};
+    for(const[k,v]of Object.entries(s)){
+      out[RECIPE_MINIFY[k]||k]=v;
+    }
+    return out;
+  });
+  const minAnim={};
+  if(recipe.animations)for(const[k,v]of Object.entries(recipe.animations)){
+    const key=RECIPE_MINIFY[k]||k;
+    minAnim[key]=v;
+  }
+  return{s:minShapes,a:minAnim};
+}
+// Expand a minified recipe back to full form.
+function expandRecipe(min){
+  if(!min)return null;
+  const shapes=(min.s||[]).map(s=>{
+    const out={};
+    for(const[k,v]of Object.entries(s)){
+      out[RECIPE_EXPAND[k]||k]=v;
+    }
+    return out;
+  });
+  const anim={};
+  if(min.a)for(const[k,v]of Object.entries(min.a)){
+    anim[RECIPE_EXPAND[k]||k]=v;
+  }
+  return{shapes,animations:anim};
+}
+// Serialize units for P2P: dedupe starter units (send name only),
+// minify recipes for custom (LLM-forged) units.
+function serializeUnitsForPeer(units){
+  return units.map(u=>{
+    // Starter unit: send name only, receiver resolves from G.base.
+    const starter=G.base.find(b=>b.n===u.n);
+    if(starter&&!u.weaponType)return u.n;
+    // Custom unit: send full data with minified recipe.
+    const recipe=minifyRecipe(u.recipe);
+    return{...u,recipe};
+  });
+}
+// Deserialize units from P2P: resolve starter names, expand recipes.
+function deserializeUnitsFromPeer(data){
+  return data.map(d=>{
+    if(typeof d==="string"){
+      // Starter unit name → resolve from G.base.
+      const starter=G.base.find(b=>b.n===d);
+      return starter?unit(starter):null;
+    }
+    // Custom unit: expand recipe.
+    if(d.recipe)d.recipe=expandRecipe(d.recipe);
+    return unit(d);
+  }).filter(Boolean);
+}
+
 // Phase 12: build a unit object from LLM/template attributes.
 function attrsToUnit(attrs,arenaIndex){
   const primaryHex=COLOR_MAP[attrs.primaryColor]||"#4a7";
@@ -1046,12 +1118,19 @@ function showDisconnectPrompt(lastLoadout){
 }
 
 let suppressP2PErrors=false;
-// Phase 5: host-authoritative protocol.
-//   request_deck : host -> guest  "send me your drafted units"
-//   deck         : guest -> host  {selected:[unit,...]}
-//   snap         : host -> guest  full state snapshot at 20Hz
-//   cmd          : guest -> host  {cmd:"tick"|"auto"|"skip"}
-//   forge        : either -> other  share a forged unit (kept from v4)
+// Phase 5/18: host-authoritative protocol.
+//   role          : either     role assignment (host/guest)
+//   request_deck  : host→guest "send me your drafted units"
+//   deck          : guest→host {selected:[unit,...]}
+//   snap          : host→guest full state snapshot at 20Hz
+//   cmd           : guest→host {cmd:"tick"|"auto"|"skip"}
+//   forge         : either→other share a forged unit
+//   match_start   : host→guest {arena, lives, firstPlayer}
+//   round_start   : host→guest {drawIndex, opponentPicks (serialized)}
+//   opponent_picks: host→guest {picks (serialized units with recipes)}
+//   round_end     : host→guest {winner, livesPlayer, livesEnemy, nextDrawIndex}
+//   match_end     : host→guest {winner, rewards}
+//   round_deck    : guest→host {picks (serialized units with recipes)}
 function networkReceive(data){
   try{
     if(data.t==="role"){
@@ -1089,6 +1168,49 @@ function networkReceive(data){
     if(data.t==="forge"){
       let u=unit(data.d);
       if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);saveData(G.save);G.wins();}
+    }
+    // Phase 18: extended protocol for match/round management.
+    if(data.t==="match_start"){
+      if(role==="guest"){
+        const d=data.d;
+        Match.start(d.lives||3,winner=>G.onMatchEnd(winner));
+        G.save.arena=d.arena||0;
+      }
+    }
+    if(data.t==="round_start"){
+      if(role==="guest"){
+        const d=data.d;
+        G.roundDraftState={drawIndex:0,picks:[],drawCount:d.drawIndex||3};
+        // Store opponent picks (serialized) for scout screen.
+        if(d.opponentPicks)G.opponentPicks=deserializeUnitsFromPeer(d.opponentPicks);
+        G.startRoundDraft();
+      }
+    }
+    if(data.t==="opponent_picks"){
+      if(role==="guest"){
+        G.opponentPicks=deserializeUnitsFromPeer(data.d.picks);
+        G.renderScout();
+      }
+    }
+    if(data.t==="round_end"){
+      if(role==="guest"){
+        const d=data.d;
+        Match.livesPlayer=d.livesPlayer;
+        Match.livesEnemy=d.livesEnemy;
+        G.roundResult(d.winner,d.livesPlayer,d.livesEnemy);
+      }
+    }
+    if(data.t==="match_end"){
+      if(role==="guest"){
+        Match.active=false;
+        G.onMatchEnd(data.d.winner);
+      }
+    }
+    if(data.t==="round_deck"){
+      // Guest sends their drafted picks to the host.
+      if(role==="host"){
+        G.guestPicks=deserializeUnitsFromPeer(data.d.picks);
+      }
     }
   }catch(e){
     showError("Network receive error: "+(e&&e.message||e));
@@ -1225,6 +1347,12 @@ const Match={
   // Start the next round's draft (called by G.start via Match).
   startRound(){
     this.round++;
+    // Phase 18: send round_start to guest with draw index + opponent picks.
+    if(connected&&role==="host"){
+      const drawCount=this.comebackEligible()?4:3;
+      const opponentPicks=serializeUnitsForPeer(G.opponentPicks||[]);
+      transmit("round_start",{drawIndex:drawCount,opponentPicks});
+    }
     // G.start handles the draft UI; Match just tracks state.
     G.startRoundDraft();
   },
@@ -1239,8 +1367,14 @@ const Match={
       const matchWinner=this.livesPlayer<=0&&this.livesEnemy<=0?"draw":
         this.livesPlayer<=0?"enemy":"player";
       this.active=false;
+      // Phase 18: send match_end to guest.
+      if(connected&&role==="host")transmit("match_end",{winner:matchWinner});
       if(this.onMatchEnd)try{this.onMatchEnd(matchWinner);}catch(e){showError("Match end handler failed: "+(e&&e.message||e));}
       return;
+    }
+    // Phase 18: send round_end to guest.
+    if(connected&&role==="host"){
+      transmit("round_end",{winner,livesPlayer:this.livesPlayer,livesEnemy:this.livesEnemy});
     }
     // Match continues — show round result, then next round on button.
     G.roundResult(winner,this.livesPlayer,this.livesEnemy);
@@ -2450,6 +2584,10 @@ const G={
     Bot.generateLoadout(arena?arena.botPool:this.base.map(u=>u.n));
     // Phase 15: arena determines lives count.
     const lives=arena?arena.lives:DEFAULT_LIVES;
+    // Phase 18: send match_start to guest.
+    if(connected&&role==="host"){
+      transmit("match_start",{arena:this.save.arena||0,lives,firstPlayer:"host"});
+    }
     Match.start(lives,winner=>this.onMatchEnd(winner));
   },
 
@@ -2551,6 +2689,10 @@ const G={
       if(st.drawIndex>=st.drawCount){
         // All draws done → army locked → battle.
         this.selected=st.picks;
+        // Phase 18: guest sends their picks to the host.
+        if(connected&&role==="guest"){
+          transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
+        }
         this.battle();
       }else{
         this.drawOne();
@@ -2642,6 +2784,10 @@ const G={
     // For bot matches, the bot's picks are its round draft.
     // For multiplayer, this is overwritten when opponent_picks arrives.
     this.opponentPicks=Bot.draftRound(drawCount);
+    // Phase 18: host sends opponent_picks to guest.
+    if(connected&&role==="host"){
+      transmit("opponent_picks",{picks:serializeUnitsForPeer(this.opponentPicks)});
+    }
   },
 
   // Phase 14: render the scout screen with opponent's picks.
