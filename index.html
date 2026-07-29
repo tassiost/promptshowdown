@@ -105,6 +105,14 @@ h2{font-size:.95rem;}
 </div>
 </div>
 
+<div class="screen" id="scout">
+<h2>🔍 OPPONENT SCOUT</h2>
+<div id="livesHUDScout" style="font-size:.8rem;margin:4px;"></div>
+<div class="detail">Enemy is fielding these units this round:</div>
+<div id="scoutArea" style="display:flex;gap:5px;justify-content:center;margin:12px 0;flex-wrap:wrap;"></div>
+<button class="btn primary" onclick="G.startBattle()">⚔️ TO BATTLE</button>
+</div>
+
 <div class="screen" id="battle">
 <div style="width:100%;display:flex;justify-content:space-between;padding:4px;font-size:.75rem;">
 <span id="livesBattle" style="font-size:.8rem;"></span>
@@ -1418,10 +1426,9 @@ const G={
     return out;
   },
 
-  // Phase 9: build a bot army from bot's round picks (3 copies each).
+  // Phase 9/14: build a bot army from opponent picks (3 copies each).
   buildBotArmy(){
-    const drawCount=Match.comebackEligible()?4:3; // bot also gets comeback
-    const botPicks=Bot.draftRound(drawCount);
+    const botPicks=this.opponentPicks||Bot.draftRound(Match.comebackEligible()?4:3);
     const out=[];
     for(const pick of botPicks){
       for(let i=0;i<3;i++){
@@ -1432,14 +1439,68 @@ const G={
     return out;
   },
 
+  // Phase 14: show scout screen before battle. Generates opponent picks.
   battle(){
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
     if(connected&&role==="host"){
       this.pendingHostArmy=myArmy;
+      // Generate bot/host picks for scout, then wait for guest deck.
+      this.generateScoutPicks();
+      this.showScout();
+      transmit("request_deck",{});
+      return;
+    }
+    if(connected&&role==="guest"){
+      this.generateScoutPicks();
+      this.showScout();
+      transmit("deck",{selected:this.selected});
+      return;
+    }
+    // Phase 9/14: bot match — generate bot picks for scout, then show scout.
+    if(!Bot.loadout.length)Bot.generateLoadout(this.arenas[this.save.arena||0]?.botPool||this.base.map(u=>u.n));
+    this.generateScoutPicks();
+    this.showScout();
+  },
+
+  // Phase 14: generate opponent picks for the scout screen.
+  generateScoutPicks(){
+    const drawCount=Match.comebackEligible()?4:3;
+    // For bot matches, the bot's picks are its round draft.
+    // For multiplayer, this is overwritten when opponent_picks arrives.
+    this.opponentPicks=Bot.draftRound(drawCount);
+  },
+
+  // Phase 14: render the scout screen with opponent's picks.
+  showScout(){
+    this.screen("scout");
+    // Update lives HUD on scout screen too.
+    const txt=`You ${this.livesHearts(Match.livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(Match.livesEnemy,DEFAULT_LIVES)}`;
+    const hud=$("livesHUDScout");
+    if(hud)hud.innerText=txt;
+    const area=$("scoutArea");
+    if(!area)return;
+    area.innerHTML="";
+    for(const u of this.opponentPicks){
+      const card=document.createElement("div");
+      card.className="card rar-"+u.rar;
+      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
+      const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
+      card.innerHTML=
+        `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
+        `<div class="title" style="color:${u.c}">${u.n}</div>`+
+        `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r}${abLabel}${roleLabel}</div>`;
+      area.appendChild(card);
+    }
+  },
+
+  // Phase 14: proceed from scout to actual battle.
+  startBattle(){
+    const myArmy=this.buildArmy();
+    // Phase 5: host-authoritative multiplayer.
+    if(connected&&role==="host"){
       this.screen("battle");
       this.updateLivesHUD();
-      transmit("request_deck",{});
       setText("turn","WAIT");
       setText("battleHP",myArmy.length);
       setText("battleEnemy","?");
@@ -1448,14 +1509,12 @@ const G={
     if(connected&&role==="guest"){
       this.screen("battle");
       this.updateLivesHUD();
-      transmit("deck",{selected:this.selected});
       setText("turn","WAIT");
       setText("battleHP","?");
       setText("battleEnemy","?");
       return;
     }
-    // Phase 9: bot match — bot drafts from its loadout (fake multiplayer).
-    if(!Bot.loadout.length)Bot.generateLoadout(this.base);
+    // Phase 9: bot match — build enemy army from opponent picks.
     const enemies=this.buildBotArmy();
     this.screen("battle");
     this.updateLivesHUD();
