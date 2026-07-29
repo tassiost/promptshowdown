@@ -570,7 +570,7 @@ function deriveCrit(a){
 
 // Phase 12: cross-field semantic validation rules.
 const CONSISTENCY_RULES=[
-  {if:a=>a.role==="carry"&&a.hp>80,flag:"hp"},
+  {if:a=>a.role==="carry"&&a.hp>150,flag:"hp"},
   {if:a=>a.role==="frontline"&&a.hp<80,flag:"hp"},
   {if:a=>a.role==="support"&&a.hp>100,flag:"hp"},
   {if:a=>a.movement==="chase"&&a.moveSpeedMod>=150&&a.speed<80,flag:"speed"},
@@ -599,7 +599,7 @@ function semanticValidate(a){
 function autoFixFields(a,flagged){
   for(const f of flagged){
     if(f==="hp"){
-      if(a.role==="carry")a.hp=55;
+      if(a.role==="carry")a.hp=80;
       else if(a.role==="frontline")a.hp=110;
       else a.hp=70;
     }
@@ -913,7 +913,7 @@ function attrsToUnit(attrs,arenaIndex){
     targeting:attrs.targeting,movement:attrs.movement,
     attackCondition:attrs.attackCondition,abilityTrigger:attrs.abilityTrigger,
     moveSpeedMod:attrs.moveSpeedMod,
-    hp:attrs.hp,dmg:attrs.dmg,range:attrs.range,speed:attrs.speed,
+    h:attrs.hp,d:attrs.dmg,r:attrs.range,s:attrs.speed,
     a:atkSpd,crit:crit,
     ability:attrs.ability,
     c:primaryHex,
@@ -923,9 +923,9 @@ function attrsToUnit(attrs,arenaIndex){
 }
 
 // Phase 12: IndexedDB cache for generated units.
-const DB_NAME="promptshowdown_llm_cache";
+const DB_NAME="promptshowdown_llm_cache_v6";
 const STORE="unit_specs";
-const SCHEMA_VERSION=2; // bumped to invalidate cache entries missing weaponType
+const SCHEMA_VERSION=1;
 function cacheKey(prompt,modelId){return modelId+":"+prompt;}
 // Phase 12: normalize prompt for cache key + fusion matching.
 function normalizePrompt(s){return(s||"").trim().toLowerCase().slice(0,100)||"warrior";}
@@ -933,7 +933,16 @@ function openDB(){
   return new Promise((res,rej)=>{
     if(!indexedDB){rej(new Error("no IndexedDB"));return;}
     const r=indexedDB.open(DB_NAME,SCHEMA_VERSION);
-    r.onupgradeneeded=()=>{r.result.createObjectStore(STORE,{keyPath:"key"});};
+    r.onupgradeneeded=e=>{
+      const db=r.result;
+      // On schema version bump, delete + recreate store to clear stale entries.
+      if(e.oldVersion>0&&e.oldVersion<SCHEMA_VERSION){
+        try{db.deleteObjectStore(STORE);}catch(_){}
+      }
+      if(!db.objectStoreNames.contains(STORE)){
+        db.createObjectStore(STORE,{keyPath:"key"});
+      }
+    };
     r.onsuccess=()=>res(r.result);
     r.onerror=()=>rej(r.error);
   });
