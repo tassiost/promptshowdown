@@ -142,8 +142,11 @@ h2{font-size:.95rem;}
 </div>
 
 <div class="screen" id="deck">
-<h2>📋 DECK</h2>
-<div class="detail">Tap a unit with a duplicate to fuse (combine 2 → +1 level)</div>
+<h2>📋 LOADOUT</h2>
+<div class="detail">4 cards in your loadout · tap collection to swap</div>
+<div id="loadoutArea" style="display:flex;gap:5px;justify-content:center;margin:8px 0;"></div>
+<h2 style="font-size:.8rem;margin-top:10px;">COLLECTION</h2>
+<div class="detail">Tap a unit with a duplicate to fuse (2 → +1 Lv)</div>
 <div id="deckArea"></div>
 <button class="btn" onclick="G.menu()">BACK</button>
 </div>
@@ -1180,7 +1183,30 @@ const G={
     setText("coins",this.save.coins||0);
     setText("upgradeCoins",this.save.coins||0);
   },
-  deckUnits(){return [...this.save.deck,...this.save.ai];},
+  // Phase 13: deckUnits returns the loadout (4 cards) resolved to unit objects.
+  // This is the draft pool per match.
+  loadoutUnits(){
+    return this.save.loadout.map(name=>{
+      // Find in collection first, then base roster.
+      const coll=this.save.collection.find(u=>u.n===name);
+      if(coll)return coll;
+      const base=this.base.find(u=>u.n===name);
+      if(base)return base;
+      // Fallback: first base unit (shouldn't happen with valid loadout).
+      return this.base[0];
+    });
+  },
+  // Phase 13: collectionUnits returns all owned units (starters + forged).
+  collectionUnits(){
+    // Starters are always in the collection.
+    const starters=this.base.map(u=>u);
+    // Add forged units from save.collection (excluding starters to avoid dupes).
+    const starterNames=new Set(starters.map(u=>u.n));
+    const forged=(this.save.collection||[]).filter(u=>!starterNames.has(u.n));
+    return [...starters,...forged];
+  },
+  // Phase 13: kept for backward compat (achievements HUD).
+  deckUnits(){return this.loadoutUnits();},
   menu(){this.screen("menu");this.wins();},
   lobby(){this.screen("lobby");},
   // Phase 8/9: G.start now starts a Match (not a single battle).
@@ -1301,10 +1327,10 @@ const G={
     if(rb)rb.disabled=this.rerolls<=0;
   },
 
-  // Phase 3: rarity-weighted draw. common ~70%, rare ~25%, legendary ~5%.
-  // Excludes names already used elsewhere in this draft offering (no dupes).
+  // Phase 13: rarity-weighted draw from the loadout (4 cards).
+  // Excludes names already used in this draw (no dupes within a draw).
   rollOne(usedNames){
-    const pool=this.deckUnits();
+    const pool=this.loadoutUnits();
     if(pool.length===0)return null;
     const roll=R();
     const rar=roll<0.7?"common":(roll<0.95?"rare":"legendary");
@@ -1622,6 +1648,11 @@ const G={
   },
 
   addForge(u){
+    // Phase 13: forged units go to collection (not ai).
+    if(!this.save.collection)this.save.collection=[];
+    this.save.collection.push(u);
+    if(this.save.collection.length>50)this.save.collection.shift();
+    // Also keep ai for backward compat with network forge sharing.
     this.save.ai.push(u);
     if(this.save.ai.length>50)this.save.ai.shift();
     saveData(this.save);
@@ -1633,43 +1664,94 @@ const G={
 
   next(){this.start();}, // Phase 8: starts a new match (called from forge screen)
 
+  // Phase 13: deck screen = 4 loadout slots + scrollable collection.
   deck(){
     this.screen("deck");
+    // Render loadout slots (4 cards).
+    const la=$("loadoutArea");
+    if(la){
+      la.innerHTML="";
+      this.save.loadout.forEach((name,i)=>{
+        const u=this.collectionUnits().find(x=>x.n===name)||this.base[0];
+        const lvl=this.unitLevel(u.n);
+        const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
+        const card=document.createElement("div");
+        card.className="card";
+        card.style.borderColor="#0ff";
+        card.innerHTML=`<div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG<br><span style="color:#0ff">SLOT ${i+1}</span></div>`;
+        card.onclick=()=>this.swapLoadoutSlot(i);
+        la.appendChild(card);
+      });
+    }
+    // Render collection (all owned units, with fusion for duplicates).
     let area=$("deckArea");
     if(!area)return;
     area.innerHTML="";
-    // Phase 6: count duplicates by name so fusion is offered.
+    const coll=this.collectionUnits();
+    // Count duplicates in collection for fusion.
     const counts={};
-    for(let u of this.deckUnits()){counts[u.n]=(counts[u.n]||0)+1;}
-    for(let u of this.deckUnits()){
+    for(let u of coll)counts[u.n]=(counts[u.n]||0)+1;
+    for(let u of coll){
       const lvl=this.unitLevel(u.n);
       const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
       const canFuse=counts[u.n]>=2;
-      const fuseHint=canFuse?`<br><span style="color:#fb0">tap to fuse (2→+1 Lv)</span>`:"";
+      const fuseHint=canFuse?`<br><span style="color:#fb0">tap to fuse</span>`:"";
+      const inLoadout=this.save.loadout.includes(u.n);
+      const slotTag=inLoadout?`<br><span style="color:#0ff">in loadout</span>`:"<br><span style=\"color:#888\">tap to slot</span>";
+      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
       const card=document.createElement("div");
       card.className="card";
-      card.innerHTML=`<div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP ${u.d} DMG${fuseHint}</div>`;
+      card.innerHTML=`<div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div>`;
       if(canFuse){
         card.style.borderColor="#fb0";
         card.onclick=()=>this.fuseUnit(u.n);
+      }else{
+        card.onclick=()=>this.addToLoadout(u.n);
       }
       area.appendChild(card);
     }
   },
 
-  // Phase 6: fuse two same-name units into one with +1 level.
-  // Removes one copy from deck/ai and bumps the upgrade level.
-  fuseUnit(name){
-    const all=this.deckUnits();
-    const matches=all.filter(u=>u.n===name);
-    if(matches.length<2){toast("Need 2 of the same unit to fuse");return;}
-    // Remove one copy: prefer ai pool, then deck.
-    const aiIdx=this.save.ai.findIndex(u=>u.n===name);
-    if(aiIdx>=0){this.save.ai.splice(aiIdx,1);}
-    else{
-      const deckIdx=this.save.deck.findIndex(u=>u.n===name);
-      if(deckIdx>=0)this.save.deck.splice(deckIdx,1);
+  // Phase 13: swap a loadout slot — cycle to next collection unit.
+  swapLoadoutSlot(i){
+    const coll=this.collectionUnits();
+    const current=this.save.loadout[i];
+    const idx=coll.findIndex(u=>u.n===current);
+    const next=coll[(idx+1)%coll.length];
+    this.save.loadout[i]=next.n;
+    saveData(this.save);
+    this.deck();
+  },
+
+  // Phase 13: add a collection unit to the first available loadout slot.
+  addToLoadout(name){
+    // If already in loadout, find it and cycle to next slot.
+    const existingSlot=this.save.loadout.indexOf(name);
+    if(existingSlot>=0){
+      this.swapLoadoutSlot(existingSlot);
+      return;
     }
+    // Find first slot that's a duplicate or just replace slot 0.
+    const dupSlot=this.save.loadout.findIndex(n=>n===name);
+    if(dupSlot>=0){
+      this.save.loadout[dupSlot]=name;
+    }else{
+      // Replace the first slot (simplest UX — user can rearrange after).
+      this.save.loadout[0]=name;
+    }
+    saveData(this.save);
+    this.deck();
+  },
+
+  // Phase 6/13: fuse two same-name units into one with +1 level.
+  // Removes one copy from collection and bumps the upgrade level.
+  fuseUnit(name){
+    const coll=this.save.collection||[];
+    const matches=coll.filter(u=>u.n===name);
+    if(matches.length<2){toast("Need 2 of the same unit to fuse");return;}
+    // Remove one copy from collection.
+    const idx=coll.findIndex(u=>u.n===name);
+    if(idx>=0)this.save.collection.splice(idx,1);
     this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;
     saveData(this.save);
     this.wins();
@@ -1685,7 +1767,7 @@ const G={
     if(!area)return;
     area.innerHTML="";
     const seen={};
-    for(const u of this.deckUnits()){
+    for(const u of this.collectionUnits()){
       if(seen[u.n])continue;
       seen[u.n]=true;
       const lvl=this.unitLevel(u.n);
