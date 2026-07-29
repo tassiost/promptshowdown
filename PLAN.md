@@ -1188,7 +1188,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 13 — 4-Card Loadout + Collection
+## Phase 13 — 4-Card Loadout + Collection ✅ DONE
 
 **Today:** `deckUnits()` returns all owned units (base + forged). Draft Showdown uses a fixed 4-card loadout.
 
