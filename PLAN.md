@@ -1,6 +1,6 @@
 # Prompt Showdown v5 — Draft Showdown Clone + LLM Reward Layer
 
-**Status: ALL PHASES COMPLETE ✅**
+**Status: ALL PHASES COMPLETE ✅ (all sub-features implemented)**
 
 **Product strategy: two tiers.**
 
