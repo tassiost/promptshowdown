@@ -407,7 +407,7 @@ function withTimeout(promise,ms,msg){
 async function initLLM(){
   if(llmReady||llmLoading)return;
   // Phase 1: if web-llm never loaded, fail fast and visibly.
-  if(!W||!W.CreateMLCEngine){
+  if(!W||!(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine)){
     await updateAI("AI unavailable",0);
     return;
   }
@@ -419,21 +419,35 @@ async function initLLM(){
   llmLoading=true;
   await updateAI("AI loading...",0);
   try{
-    llm=await withTimeout(
-      W.CreateMLCEngine(MODEL,{initProgressCallback:p=>{
-        let percent=Math.floor(p.progress*100);
-        updateAI("Downloading AI "+percent+"%",percent);
-      }}),
-      AI_TIMEOUT_MS,
-      "AI load timed out"
-    );
+    // Phase 12: prefer Web Worker to keep LLM inference off the main thread.
+    if(W.CreateWebWorkerMLCEngine){
+      const workerCode='import{WebWorkerMLCEngineHandler}from"https://esm.run/@mlc-ai/web-llm";const h=new WebWorkerMLCEngineHandler();self.onmessage=m=>h.onmessage(m);';
+      const blob=new Blob([workerCode],{type:"application/javascript"});
+      const worker=new Worker(URL.createObjectURL(blob),{type:"module"});
+      llm=await withTimeout(
+        W.CreateWebWorkerMLCEngine(worker,MODEL,{initProgressCallback:p=>{
+          let percent=Math.floor(p.progress*100);
+          updateAI("Downloading AI "+percent+"%",percent);
+        }}),
+        AI_TIMEOUT_MS,
+        "AI load timed out"
+      );
+    }else{
+      // Fallback: main-thread engine (older web-llm versions).
+      llm=await withTimeout(
+        W.CreateMLCEngine(MODEL,{initProgressCallback:p=>{
+          let percent=Math.floor(p.progress*100);
+          updateAI("Downloading AI "+percent+"%",percent);
+        }}),
+        AI_TIMEOUT_MS,
+        "AI load timed out"
+      );
+    }
     llmReady=true;
     await updateAI("AI READY",100);
   }
   catch(e){
     // Expected on slow connections (model download > 60s) or no WebGPU.
-    // The forge screen already shows "AI fallback" via updateAI — no need
-    // for a scary error panel. Log quietly and use procedural generation.
     console.warn("AI init failed, using procedural forge: "+(e&&e.message||e));
     await updateAI("AI fallback",0);
     llm=null;
@@ -545,6 +559,11 @@ const CONSISTENCY_RULES=[
   {if:a=>a.ability==="shield"&&!["on_low_hp","on_first_hit"].includes(a.abilityTrigger),flag:"abilityTrigger"},
   {if:a=>a.movement==="kite"&&a.range<100,flag:"range"},
   {if:a=>a.movement==="chase"&&a.range>80,flag:"range"},
+  // Role ↔ Targeting: supports target allies, carries target enemies.
+  {if:a=>a.role==="support"&&!["lowest_ally","closest"].includes(a.targeting),flag:"targeting"},
+  {if:a=>a.role==="carry"&&a.targeting==="lowest_ally",flag:"targeting"},
+  // Structure body plan should be immobile.
+  {if:a=>a.bodyPlan==="structure"&&a.movement!=="hold",flag:"movement"},
 ];
 function semanticValidate(a){
   return CONSISTENCY_RULES.filter(r=>r.if(a)).map(r=>r.flag);
@@ -575,6 +594,11 @@ function autoFixFields(a,flagged){
       if(a.movement==="kite")a.range=150;
       else if(a.movement==="chase")a.range=50;
     }
+    if(f==="targeting"){
+      if(a.role==="support")a.targeting="lowest_ally";
+      else if(a.role==="carry")a.targeting="closest";
+    }
+    if(f==="movement"&&a.bodyPlan==="structure")a.movement="hold";
   }
   return a;
 }
@@ -813,7 +837,69 @@ async function cachePut(key,prompt,modelId,unit){
   }catch(e){/* best-effort */}
 }
 
-// Phase 12: main generation orchestrator (hybrid JSON-mode + auto-fix).
+// Phase 12: per-field fallback — targeted micro-prompts for semantically
+// inconsistent fields. Used after JSON mode + semanticValidate flags fields.
+const ENUM_FIELDS={
+  role:["frontline","carry","support","counter","utility"],
+  targeting:["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","random"],
+  movement:["chase","flee","hold","hold_midpoint","kite","patrol"],
+  attackCondition:["always","only_if_healthy","only_if_target_low","never"],
+  abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
+  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"],
+  bodyPlan:["humanoid","quadruped","blob","flying","mechanical","structure"],
+  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws"],
+  primaryColor:Object.keys(COLOR_MAP),
+  accentColor:Object.keys(COLOR_MAP),
+  sizeMod:["small","medium","large"]
+};
+const INT_FIELDS={hp:[10,200],dmg:[5,50],range:[30,250],speed:[30,120],moveSpeedMod:[50,150]};
+const FIELD_PARSERS={
+  name:s=>s.trim().slice(0,20),
+  ...Object.fromEntries(Object.entries(ENUM_FIELDS).map(([f,vals])=>
+    [f,s=>{const v=s.trim().toLowerCase();return vals.includes(v)?v:vals[0];}])),
+  ...Object.fromEntries(Object.entries(INT_FIELDS).map(([f,[min,max]])=>
+    [f,s=>{const n=parseInt(s);return isNaN(n)?min:Math.max(min,Math.min(max,n));}]))
+};
+const FIELD_PROMPTS={
+  name:p=>`Give a short name (max 20 chars) for a unit based on: "${p}". Answer with the name only.`,
+  role:(n,a)=>`A ${n} — is it a frontline, carry, support, counter, or utility? Answer with one word.`,
+  targeting:(n,a)=>`A ${n} is a ${a.role}. Who should it target: closest, lowest_hp, highest_hp, enemy_carry, enemy_support, enemy_backline, enemy_frontline, enemy_cluster, lowest_ally, random? Answer with one word.`,
+  movement:(n,a)=>`A ${n} is a ${a.role}. How should it move: chase, flee, hold, hold_midpoint, kite, patrol? Answer with one word.`,
+  attackCondition:(n,a)=>`A ${n} targets ${a.targeting}. When should it attack: always, only_if_healthy, only_if_target_low, never? Answer with one word.`,
+  abilityTrigger:(n,a)=>`A ${n} has ability ${a.ability}. When should it trigger: on_cooldown, when_ally_hurt, when_surrounded, on_low_hp, on_death, on_first_hit, never? Answer with one word.`,
+  moveSpeedMod:(n,a)=>`A ${n} moves by ${a.movement}. What speed modifier fits, 50 (cautious) to 150 (aggressive)? Answer with a number only.`,
+  hp:(n,a)=>`A ${n} is a ${a.role}. How tough is a typical ${a.role}, on a scale of 10-200? Answer with a number only.`,
+  dmg:(n,a)=>`A ${n} is a ${a.role}. How much damage should it deal per hit, 5 (weak) to 50 (strong)? Answer with a number only.`,
+  range:(n,a)=>`A ${n} moves by ${a.movement}. What attack range fits, 30 (melee) to 250 (sniper)? Answer with a number only.`,
+  speed:(n,a)=>`A ${n} moves by ${a.movement}. How fast should a ${a.movement} unit be, 30 (slow) to 120 (fast)? Answer with a number only.`,
+  ability:(n,a)=>`A ${n} triggers abilities ${a.abilityTrigger}. What ability fits: none, splash, heal, dodge, poison, spawn, lifesteal, explode, heal_burst, shield, rage, slow? Answer with one word.`,
+  bodyPlan:(n,a)=>`A ${n} — what body plan fits: humanoid, quadruped, blob, flying, mechanical, structure? Answer with one word.`,
+  weaponType:(n,a)=>`A ${n} — what weapon fits: none, sword, bow, staff, dagger, shield, hammer, claws? Answer with one word.`,
+  primaryColor:(n,a)=>`A ${n} — what color fits: green, blue, red, purple, yellow, orange, black, white, brown, gray, pink, cyan? Answer with one word.`,
+  accentColor:(n,a)=>`A ${n} — what accent color fits: green, blue, red, purple, yellow, orange, black, white, brown, gray, pink, cyan? Answer with one word.`,
+  sizeMod:(n,a)=>`A ${n} — what size fits: small, medium, large? Answer with one word.`,
+};
+// Re-ask flagged fields via targeted micro-prompts. Falls back to autoFix
+// values if the LLM is unavailable or the call fails.
+async function reaskFields(name,attrs,flagged){
+  if(!llmReady)return autoFixFields(attrs,flagged);
+  for(const field of flagged){
+    try{
+      const prompt=FIELD_PROMPTS[field](name,attrs);
+      const reply=await llm.chat.completions.create({
+        messages:[{role:"user",content:prompt}],
+        max_tokens:32,temperature:0.7,stream:false
+      });
+      const answer=reply.choices[0].message.content.trim();
+      attrs[field]=FIELD_PARSERS[field](answer);
+    }catch(e){
+      // keep the auto-fixed value
+    }
+  }
+  return attrs;
+}
+
+// Phase 12: main generation orchestrator (hybrid JSON-mode + per-field fallback).
 async function generateUnit(rawPrompt,arenaIndex){
   const prompt=(rawPrompt||"").trim().slice(0,100)||"warrior";
   const key=cacheKey(prompt,MODEL);
@@ -841,9 +927,14 @@ async function generateUnit(rawPrompt,arenaIndex){
   }
   // 3. Template fallback if no LLM or LLM failed.
   if(!attrs)attrs=templateFallback(prompt);
-  // 4. Semantic validation + auto-fix.
+  // 4. Semantic validation + per-field fallback (re-ask LLM for bad fields).
   const flagged=semanticValidate(attrs);
-  if(flagged.length>0)attrs=autoFixFields(attrs,flagged);
+  if(flagged.length>0){
+    // Auto-fix first (provides baseline values + instant fix if no LLM).
+    attrs=autoFixFields(attrs,flagged);
+    // Then re-ask the LLM for better values if available.
+    if(llmReady)attrs=await reaskFields(attrs.name,attrs,flagged);
+  }
   // 5. Build unit from attributes.
   const u=attrsToUnit(attrs,arenaIndex);
   if(!u){
