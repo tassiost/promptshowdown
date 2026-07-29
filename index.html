@@ -155,6 +155,13 @@ h2{font-size:.95rem;}
 <input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja..."
   style="width:90%;padding:8px;margin:8px 0;font-size:1rem;border-radius:6px;border:1px solid #444;background:#111;color:#fff;">
 <button class="btn primary" id="forgeGenBtn" onclick="G.forgeWithAd()">📺 Watch Ad to Generate</button>
+<button class="btn" id="forgeSkipBtn" onclick="G.forgeSkipAd()" style="display:none;">⏭ Skip Ad (template)</button>
+<div id="forgeModelProgress" style="display:none;margin:8px 0;">
+  <div class="detail" id="forgeModelText">Loading AI model... (one-time only)</div>
+  <div style="background:#222;border-radius:4px;height:8px;margin:4px 0;">
+    <div id="forgeModelFill" style="background:#4a7;height:8px;border-radius:4px;width:0%;transition:width .3s;"></div>
+  </div>
+</div>
 <div id="forgePreview" style="margin:10px 0;"></div>
 <div id="forgeActions" style="display:none;">
 <button class="btn primary" onclick="G.keepForge()">✓ KEEP</button>
@@ -287,7 +294,7 @@ const Q=(a,b)=>a+R()*(b-a);
 const SAVE_KEY="promptShowdownV4";
 
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
-const CURRENT_VERSION=6; // Phase 8: bumped for match/lives/loadout/collection schema.
+const CURRENT_VERSION=7; // Phase 19b: bumped for daily forge cap + roleWins tracking.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
 function saveData(data){
   try{
@@ -1360,6 +1367,7 @@ const Match={
     this.history=[];
     this.onMatchEnd=onMatchEnd||null;
     this.active=true;
+    this.deathLog=[];  // Phase 16: accumulate deaths across rounds for hint.
     this.startRound();
   },
 
@@ -1766,6 +1774,7 @@ const Battle={
     this.roundFlash=null;  // Phase 17: reset round flash
     this.recentCrits=[];   // Phase 17: clear crit tracking
     this._prevSnapshot=null; // Phase 17: clear snapshot diff state
+    this.deathLog=[];      // Phase 16: clear death order log
     this.time=0;
     this.running=true;
     this.winner=null;
@@ -2002,6 +2011,9 @@ const Battle={
     }
     u.deathT=0;
     BattleFX.onDeath(u); // Phase 17: death burst FX
+    // Phase 16: track death order for post-match hint.
+    if(!this.deathLog)this.deathLog=[];
+    this.deathLog.push({n:u.n,role:u.role,team:u.team,t:this.time});
   },
 
   updateProjectiles(dt){
@@ -2900,6 +2912,11 @@ const G={
   // Phase 8: Battle ended — delegate to Match for round/match logic.
   onBattleEnd(winner){
     this.stopSnapshots();
+    // Phase 16: accumulate death log across rounds for post-match hint.
+    if(Battle.deathLog&&Battle.deathLog.length){
+      if(!Match.deathLog)Match.deathLog=[];
+      Match.deathLog.push(...Battle.deathLog);
+    }
     // Phase 19a: track last surviving player unit's role for Role Master.
     if(winner==="player"){
       const survivors=Battle.units.filter(u=>u.team==="player"&&u.h>0);
@@ -2998,17 +3015,33 @@ const G={
     if(mm)mm.style.display="inline-block";
   },
 
-  // Phase 16: generate a one-line strategy hint based on loadout roles.
+  // Phase 16: generate a one-line strategy hint based on loadout roles
+  // and unit death order (templated from who died first + role gaps).
   generateMatchHint(win){
     const units=this.loadoutUnits();
     const roles={};
     for(const u of units)roles[u.role]=(roles[u.role]||0)+1;
+    const deathLog=Match.deathLog||Battle.deathLog||[];
+    const playerDeaths=deathLog.filter(d=>d.team==="player");
+    const firstDeath=playerDeaths[0];
     if(win){
       if(roles["frontline"]&&roles["carry"])return"💡 Solid frontline + carry combo won the day";
       if(roles["counter"])return"💡 Your counter units dove effectively";
       return"💡 Balanced play took the match";
     }
-    // Loss hints based on role gaps.
+    // Loss hints: prioritize death-order insights over role gaps.
+    if(firstDeath){
+      // Frontline died first → frontline too weak.
+      if(firstDeath.role==="frontline")
+        return`💡 ${firstDeath.n} fell first — your frontline needs more HP or a support to sustain it`;
+      // Carry died first → no protection.
+      if(firstDeath.role==="carry")
+        return`💡 ${firstDeath.n} died first — protect your carry with a frontline or counter`;
+      // Support died first → frontline exposed.
+      if(firstDeath.role==="support")
+        return`💡 ${firstDeath.n} was picked off early — keep your support behind the frontline`;
+    }
+    // Fall back to role-gap analysis.
     if(!roles["frontline"])return"💡 Lost — no frontline to protect your carries. Add a tanky unit";
     if(!roles["carry"]&&!roles["ranged"])return"💡 Lost — no ranged DPS. Add an Archer or ranged unit";
     if(!roles["support"])return"💡 Lost — no healing. A Priest could sustain your frontline";
@@ -3108,6 +3141,11 @@ const G={
     if(actions)actions.style.display="none";
     const btn=$("forgeGenBtn");
     if(btn)btn.style.display="inline-block";
+    // Phase 12: show Skip button (template fallback without ad).
+    const skipBtn=$("forgeSkipBtn");
+    if(skipBtn)skipBtn.style.display="inline-block";
+    // Phase 12: hide model progress on screen entry.
+    this._hideModelProgress();
     // Phase 19b: daily forge cap (5/day).
     const today=new Date().toDateString();
     if((this.save.forgeDate||"")!==today){
@@ -3125,36 +3163,96 @@ const G={
   },
 
   // Phase 12: ad-gated forge — parallel ad + LLM generation.
+  // Phase 12 (audit): confirmation prompt, model cache check, model download progress.
   pendingForgeUnit:null,
-  async forgeWithAd(){
+  _forgeConfirmOverlay:null,
+  // Show "Watch Ad / Skip" confirmation prompt before starting the forge.
+  forgeWithAd(){
     const promptEl=$("forgePrompt");
     const prompt=promptEl?promptEl.value.trim():"";
     if(!prompt){toast("Enter a unit concept first");return;}
+    // Phase 12: confirmation prompt with Watch Ad + Skip options.
+    const overlay=document.createElement("div");
+    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
+    overlay.innerHTML=`<div style="text-align:center;padding:20px;max-width:320px;">
+      <div style="font-size:1.1rem;margin-bottom:15px;">Watch a short ad to forge a custom unit?</div>
+      <button id="forgeAdYes" style="margin:5px;padding:10px 20px;font-size:1rem;cursor:pointer;background:#4a7;border:none;color:#fff;border-radius:6px;">📺 Watch Ad</button>
+      <button id="forgeAdNo" style="margin:5px;padding:10px 20px;font-size:1rem;cursor:pointer;background:#444;border:none;color:#fff;border-radius:6px;">⏭ Skip</button>
+    </div>`;
+    document.body.appendChild(overlay);
+    this._forgeConfirmOverlay=overlay;
+    overlay.querySelector("#forgeAdYes").onclick=()=>{overlay.remove();this._doForge(prompt,true);};
+    overlay.querySelector("#forgeAdNo").onclick=()=>{overlay.remove();this._doForge(prompt,false);};
+  },
+  // Skip ad entirely — use template fallback only (no LLM wait).
+  forgeSkipAd(){
+    const promptEl=$("forgePrompt");
+    const prompt=promptEl?promptEl.value.trim():"";
+    if(!prompt){toast("Enter a unit concept first");return;}
+    this._doForge(prompt,false);
+  },
+  // Core forge logic — runs ad (if watchAd) + generation in parallel.
+  async _doForge(prompt,watchAd){
     const btn=$("forgeGenBtn");
+    const skipBtn=$("forgeSkipBtn");
     if(btn)btn.style.display="none";
+    if(skipBtn)skipBtn.style.display="none";
     const preview=$("forgePreview");
     if(preview)preview.innerHTML='<div class="detail">Generating...</div>';
-    // Start ad + generation in parallel.
     const arenaIdx=this.save.arena||0;
-    const adPromise=new Promise(res=>showAdStub(5000,res));
-    const genPromise=generateUnit(prompt,arenaIdx);
+    // Phase 12: model cache check — if LLM not ready and no WebGPU, skip LLM.
+    const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
+    // Start ad + generation in parallel (if watching ad).
+    const adPromise=watchAd?new Promise(res=>showAdStub(5000,res)):Promise.resolve();
+    let genPromise;
+    if(canUseLLM){
+      // Phase 12: if LLM is still loading, show model download progress.
+      if(llmLoading&&!llmReady){
+        this._showModelProgress();
+      }
+      genPromise=generateUnit(prompt,arenaIdx);
+    }else{
+      // No LLM available — use template fallback directly.
+      genPromise=Promise.resolve(attrsToUnit(templateFallback(prompt),arenaIdx));
+    }
     await adPromise;
     // Phase 19b: if LLM still running, show "Finishing up..." spinner.
     let unit;
     const finishingMsg='<div class="detail">Finishing up...</div>';
+    this._hideModelProgress();
     if(preview&&preview.innerHTML!==finishingMsg)preview.innerHTML=finishingMsg;
     try{unit=await genPromise;}
     catch(e){
       console.warn("Generation failed, using template:",e.message);
-      const attrs=templateFallback(prompt);
-      unit=attrsToUnit(attrs,arenaIdx);
+      unit=attrsToUnit(templateFallback(prompt),arenaIdx);
     }
     if(!unit){
-      const attrs=templateFallback(prompt);
-      unit=attrsToUnit(attrs,arenaIdx);
+      unit=attrsToUnit(templateFallback(prompt),arenaIdx);
     }
     this.pendingForgeUnit=unit;
     this.showForgePreview(unit);
+  },
+  // Phase 12: show model download progress bar while LLM loads.
+  _showModelProgress(){
+    const prog=$("forgeModelProgress");
+    if(prog)prog.style.display="block";
+    // Poll llmLoading state and update progress from aiFill.
+    if(this._modelPoll)clearInterval(this._modelPoll);
+    this._modelPoll=setInterval(()=>{
+      const fill=$("forgeModelFill");
+      const text=$("forgeModelText");
+      // Read progress from the global AI progress bar.
+      const aiFill=document.getElementById("aiFill");
+      const pct=aiFill?aiFill.style.width:"0%";
+      if(fill)fill.style.width=pct;
+      if(text&&llmReady)text.innerText="AI model ready!";
+      if(!llmLoading){clearInterval(this._modelPoll);this._modelPoll=null;}
+    },200);
+  },
+  _hideModelProgress(){
+    if(this._modelPoll){clearInterval(this._modelPoll);this._modelPoll=null;}
+    const prog=$("forgeModelProgress");
+    if(prog)prog.style.display="none";
   },
 
   // Phase 12: show the generated unit preview with keep/reroll buttons.
@@ -3300,14 +3398,27 @@ const G={
   },
 
   // Phase 6/13: fuse two same-name units into one with +1 level.
-  // Removes one copy from collection and bumps the upgrade level.
+  // Phase 13 (Open Q8): takes the higher of each stat (hp, dmg, range, speed),
+  // keeps the first unit's behaviour fields + recipe (no averaging).
   fuseUnit(name){
     const coll=this.save.collection||[];
     const matches=coll.filter(u=>u.n===name);
     if(matches.length<2){toast("Need 2 of the same unit to fuse");return;}
-    // Remove one copy from collection.
-    const idx=coll.findIndex(u=>u.n===name);
-    if(idx>=0)this.save.collection.splice(idx,1);
+    // Take the higher of each combat stat from the two copies.
+    const a=matches[0],b=matches[1];
+    a.h=Math.max(a.h,b.h);
+    a.d=Math.max(a.d,b.d);
+    a.r=Math.max(a.r,b.r);
+    a.s=Math.max(a.s,b.s);
+    // Remove the second copy from collection (keep the merged first).
+    const idx=coll.findIndex(u=>u===b);
+    if(idx<0){
+      // b not found by identity — find by index among matches.
+      const bIdx=coll.findIndex(u=>u.n===name&&u!==a);
+      if(bIdx>=0)coll.splice(bIdx,1);
+    }else{
+      coll.splice(idx,1);
+    }
     this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;
     saveData(this.save);
     this.wins();
