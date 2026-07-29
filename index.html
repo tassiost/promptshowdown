@@ -331,6 +331,13 @@ function migrateSave(s){
     if(s.achievements)delete s.achievements.forge5;
     s.version=6;
   }
+  if(s.version<7){
+    // v6 -> v7 (Phase 19b): daily forge cap tracking.
+    s.forgeDate=s.forgeDate||"";
+    s.forgeCount=s.forgeCount||0;
+    s.roleWins=s.roleWins||{};
+    s.version=7;
+  }
   return s;
 }
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
@@ -2632,12 +2639,22 @@ const G={
     rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100},
     comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck()},
     arenaMaster:{name:"Arena Master",desc:"Unlock all arenas",check:G=>(G.save.arena||0)>=G.arenas.length-1},
-    roleMaster:{name:"Role Master",desc:"Win with each role as last standing",check:G=>G._roleMasterCheck()}
+    roleMaster:{name:"Role Master",desc:"Win with each role as last standing",check:G=>G._roleMasterCheck()},
+    firstForge:{name:"First Forge",desc:"Create your first custom unit",check:G=>(G.save.collection||[]).some(u=>u.recipe&&!G.base.find(b=>b.n===u.n))},
+    fullCustom:{name:"Full Custom",desc:"Win with a 4-card custom-only loadout",check:G=>G._fullCustomCheck()}
   },
   _roleMasterCheck(){
     // Check if the player has won matches with each role as the last unit standing.
     const wins=(G.save.roleWins||{});
     return ["frontline","carry","counter","support","utility"].every(r=>wins[r]>0);
+  },
+  _fullCustomCheck(){
+    // Win a match where all 4 loadout units are custom (not starter roster).
+    if(!(G.save.matchWins>0))return false;
+    const loadout=G.save.loadout||[];
+    if(loadout.length<4)return false;
+    // All 4 must be non-starter (not in G.base).
+    return loadout.every(name=>!G.base.find(b=>b.n===name));
   },
   _comebackCheck(){
     // Check if the player won the match after losing round 1.
@@ -2706,6 +2723,20 @@ const G={
     if(actions)actions.style.display="none";
     const btn=$("forgeGenBtn");
     if(btn)btn.style.display="inline-block";
+    // Phase 19b: daily forge cap (5/day).
+    const today=new Date().toDateString();
+    if((this.save.forgeDate||"")!==today){
+      this.save.forgeDate=today;
+      this.save.forgeCount=0;
+      saveData(this.save);
+    }
+    const forgeCount=this.save.forgeCount||0;
+    if(forgeCount>=5){
+      if(preview)preview.innerHTML='<div class="detail" style="color:#f84;">Daily forge limit reached (5/day). Come back tomorrow!</div>';
+      if(btn)btn.style.display="none";
+      return;
+    }
+    if(btn)btn.innerText=`📺 Watch Ad to Generate (${5-forgeCount} left today)`;
   },
 
   // Phase 12: ad-gated forge — parallel ad + LLM generation.
@@ -2723,7 +2754,10 @@ const G={
     const adPromise=new Promise(res=>showAdStub(5000,res));
     const genPromise=generateUnit(prompt,arenaIdx);
     await adPromise;
+    // Phase 19b: if LLM still running, show "Finishing up..." spinner.
     let unit;
+    const finishingMsg='<div class="detail">Finishing up...</div>';
+    if(preview&&preview.innerHTML!==finishingMsg)preview.innerHTML=finishingMsg;
     try{unit=await genPromise;}
     catch(e){
       console.warn("Generation failed, using template:",e.message);
@@ -2758,6 +2792,9 @@ const G={
     if(!this.pendingForgeUnit)return;
     this.addForge(this.pendingForgeUnit);
     this.pendingForgeUnit=null;
+    // Phase 19b: increment daily forge count.
+    this.save.forgeCount=(this.save.forgeCount||0)+1;
+    saveData(this.save);
     toast("✓ Unit added to collection");
     this.menu();
   },
