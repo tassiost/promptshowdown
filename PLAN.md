@@ -1395,7 +1395,7 @@ A visual recipe is ~1-3KB JSON (6-10 shapes + 4 animation states + FX). With 3 p
 - **Mobile:** verify lives HUD, 4th-draw banner, scout screen fit on small viewports.
 - **Ship Tier 1 as a complete game.** Playable, fun, no LLM dependency.
 
-## Phase 19b — Tier 2 Polish (after LLM layer is packed on)
+## Phase 19b — Tier 2 Polish (after LLM layer is packed on) ✅ DONE
 
 - **Sprite rendering:** verify LLM-generated sprites render correctly on mobile (6-10 shapes × 12 units).
 - **Ad integration:** replace ad stub with real SDK (Google AdMob / Unity Ads). Test ad completion → generation flow end-to-end.
