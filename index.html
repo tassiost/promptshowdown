@@ -359,7 +359,8 @@ function unit(x={}){
     attackCondition:ATTACK_CONDITION_OPTS.includes(x.attackCondition)?x.attackCondition:"always",
     abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
-    role:ROLE_OPTS.includes(x.role)?x.role:"frontline"
+    role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
+    recipe:x.recipe||null // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
 function cloneUnit(u){return unit(JSON.parse(JSON.stringify(u)));}
@@ -712,6 +713,146 @@ const Match={
   }
 };
 
+// Phase 11: SpriteRenderer — interprets visual recipes (shapes + animations)
+// and draws them on the canvas with skeletal joint transforms.
+const JOINT_ANGLES={ // channel name → max rotation in degrees
+  arm_raise:90, arm_swing:60, leg_swing:30, bow_draw:15,
+  head_tilt:20, bob:8, staff_raise:70, rot:90, tail_wag:25,
+};
+const ANIM_DURATIONS={idle:2.0,move:0.6,attack:0.4,death:0.5};
+
+const SpriteRenderer={
+  // Linear interpolation between keyframes for numeric channels.
+  interpolate(keyframes,t){
+    if(!keyframes||!keyframes.length)return{};
+    if(keyframes.length===1)return{...keyframes[0]};
+    // Clamp t to [0,1] and find the surrounding keyframes.
+    t=Math.max(0,Math.min(1,t));
+    let prev=keyframes[0],next=keyframes[keyframes.length-1];
+    for(let i=0;i<keyframes.length-1;i++){
+      if(t>=keyframes[i].t&&t<=keyframes[i+1].t){
+        prev=keyframes[i];next=keyframes[i+1];break;
+      }
+    }
+    const span=next.t-prev.t||1;
+    const f=(t-prev.t)/span;
+    const out={};
+    for(let ch in next){
+      if(ch==="t")continue;
+      const pv=prev[ch]||0,nv=next[ch]||0;
+      out[ch]=typeof nv==="number"?pv+(nv-pv)*f:nv;
+    }
+    return out;
+  },
+
+  // Draw a single shape with optional joint transform.
+  drawShape(c,shape,channels,u){
+    const joint=shape.joint;
+    if(joint){
+      // Find the channel that drives this joint (first numeric channel).
+      const chVal=Object.keys(channels).find(k=>k!=="t"&&typeof channels[k]==="number")?
+        channels[Object.keys(channels).find(k=>k!=="t"&&typeof channels[k]==="number")]:0;
+      const maxAngle=(JOINT_ANGLES[joint]||30)*Math.PI/180;
+      // Pivot point: top-center of the shape.
+      let px,py;
+      if(shape.t==="rect"){px=shape.x+shape.w/2;py=shape.y;}
+      else{px=shape.cx||shape.x||0;py=shape.cy||shape.y||0;}
+      c.save();
+      c.translate(u.x+px,u.y+py);
+      c.rotate(chVal*maxAngle);
+      c.translate(-px,-py);
+      this._drawShapeRaw(c,shape,u);
+      c.restore();
+    }else{
+      this._drawShapeRaw(c,shape,u);
+    }
+  },
+
+  // Draw a shape without joint transform (absolute coords relative to unit center).
+  _drawShapeRaw(c,shape,u){
+    const ox=u.x,oy=u.y;
+    c.fillStyle=shape.c||"#888";
+    c.strokeStyle=shape.c||"#888";
+    c.lineWidth=shape.w||1;
+    switch(shape.t){
+      case "circle":
+        c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.fill();break;
+      case "rect":
+        c.fillRect(ox+shape.x,oy+shape.y,shape.w,shape.h);break;
+      case "line":
+        c.beginPath();c.moveTo(ox+shape.x1,oy+shape.y1);c.lineTo(ox+shape.x2,oy+shape.y2);c.stroke();break;
+      case "polygon":
+        c.beginPath();
+        for(let i=0;i<shape.pts.length;i++){
+          const px=ox+shape.pts[i][0],py=oy+shape.pts[i][1];
+          if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+        }
+        c.closePath();c.fill();break;
+      case "arc":
+        c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,shape.start,shape.end);c.stroke();break;
+    }
+  },
+
+  // Main entry: draw a unit using its recipe, or fallback to role-coded shape.
+  draw(c,u){
+    if(!u.recipe){
+      // Fallback: role-coded shape (Phase 19a).
+      c.fillStyle=u.c;
+      this._drawRoleShape(c,u);
+      c.fill();
+      return;
+    }
+    const recipe=u.recipe;
+    const state=u.animState||"idle";
+    const dur=ANIM_DURATIONS[state]||2;
+    // Compute normalized time t (0-1) for the current animation state.
+    let t;
+    if(state==="death")t=Math.min(1,(u.deathT||0)/dur);
+    else if(state==="attack")t=u.attackT>=0?u.attackT:0;
+    else if(state==="move")t=(Battle.time/dur)%1;
+    else t=(Battle.time/dur)%1;
+    // Interpolate keyframes for the current state.
+    const anims=recipe.animations||{};
+    const keyframes=anims[state]||anims.idle||[{t:0}];
+    const channels=this.interpolate(keyframes,t);
+    // Apply bob offset (vertical bob for idle/move).
+    const bobY=channels.bob?Math.sin(t*Math.PI*2)*2:0;
+    // Apply death alpha + rotation.
+    const alpha=channels.alpha!==undefined?channels.alpha:1;
+    const rot=channels.rot||0;
+    c.save();
+    c.globalAlpha=alpha;
+    if(rot){c.translate(u.x,u.y);c.rotate(rot*Math.PI/180);c.translate(-u.x,-u.y);}
+    // Draw shapes (with bob offset applied via temporary y adjustment).
+    const saveY=u.y;
+    u.y=saveY+bobY;
+    for(const shape of(recipe.shapes||[])){
+      this.drawShape(c,shape,channels,u);
+    }
+    u.y=saveY;
+    c.restore();
+  },
+
+  // Role-coded fallback shape (same as Phase 19a drawShape).
+  _drawRoleShape(c,u){
+    const r=u.z;
+    c.beginPath();
+    switch(u.role){
+      case "frontline":c.rect(u.x-r,u.y-r,r*2,r*2);break;
+      case "carry":c.moveTo(u.x,u.y-r);c.lineTo(u.x+r,u.y+r);c.lineTo(u.x-r,u.y+r);c.closePath();break;
+      case "counter":c.moveTo(u.x,u.y-r);c.lineTo(u.x+r,u.y);c.lineTo(u.x,u.y+r);c.lineTo(u.x-r,u.y);c.closePath();break;
+      case "support":
+        for(let i=0;i<6;i++){
+          const a=i*Math.PI/3-Math.PI/2;
+          const px=u.x+r*Math.cos(a),py=u.y+r*Math.sin(a);
+          if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+        }
+        c.closePath();break;
+      default:c.arc(u.x,u.y,r,0,Math.PI*2);
+    }
+  },
+};
+
 // Phase 2 + Phase 3: dedicated Battle object — owns combat state + simulation.
 // G orchestrates menus/save/AI/network and delegates battle to this.
 // Phase 3 adds: projectiles (ranged), collision separation, crits,
@@ -744,6 +885,14 @@ const Battle={
     u.shieldActive=0;  // Phase 10: shield immunity timer
     u.deathT=undefined;// Phase 10: death animation timer
     u.ttl=u.ttl||0;    // Phase 10: minion time-to-live
+    // Phase 11: animation runtime fields.
+    u.animState="idle";   // idle|move|attack|death
+    u.animT=0;            // normalized 0-1 time within current animation
+    u.attackT=-1;         // attack animation trigger (set to 0 on attack, counts to 1)
+    u.movedThisFrame=false;
+    u.attackedThisFrame=false;
+    u.prevX=u.x;          // for move detection
+    u.prevY=u.y;
     return u;
   },
 
@@ -793,6 +942,7 @@ const Battle={
     for(let u of this.units){
       if(u.h<=0){
         if(u.deathT!==undefined)u.deathT+=dt;
+        u.animState="death"; // Phase 11: death animation state
         continue;
       }
       if(u.poison>0){
@@ -806,6 +956,13 @@ const Battle={
       if(u.abCool>0)u.abCool-=dt;
       if(u.shieldActive>0)u.shieldActive-=dt;
       if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0)u.h=0;} // minion expires
+      // Phase 11: advance attack animation timer (0.4s one-shot).
+      if(u.attackT>=0){u.attackT+=dt/0.4;if(u.attackT>=1)u.attackT=-1;}
+      // Phase 11: update animation state for rendering.
+      if(u.h<=0)u.animState="death";
+      else if(u.attackT>=0)u.animState="attack";
+      else if(u.movedThisFrame)u.animState="move";
+      else u.animState="idle";
     }
     // 2. detect newly dead units → onUnitDeath
     for(let u of this.units){
@@ -814,11 +971,20 @@ const Battle={
     // 3. movement + attacks + abilities (split by team)
     const players=this.units.filter(u=>u.team==="player"&&u.h>0);
     const enemies=this.units.filter(u=>u.team==="enemy"&&u.h>0);
+    // Phase 11: reset per-frame animation flags.
+    for(let u of this.units){
+      if(u.h<=0)continue;
+      u.movedThisFrame=false;
+      u.attackedThisFrame=false;
+    }
     for(let u of this.units){
       if(u.h<=0)continue;
       const allies=u.team==="player"?players:enemies;
       const targets=u.team==="player"?enemies:players;
       this.act(u,targets,allies,dt);
+      // Phase 11: detect movement for animation state.
+      if(Math.abs(u.x-u.prevX)>0.5||Math.abs(u.y-u.prevY)>0.5)u.movedThisFrame=true;
+      u.prevX=u.x;u.prevY=u.y;
     }
     // 4. projectiles
     this.updateProjectiles(dt);
@@ -847,6 +1013,8 @@ const Battle={
     if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
       this.attack(u,target,enemies);
       u.cool=u.a;
+      u.attackedThisFrame=true; // Phase 11: trigger attack animation
+      u.attackT=0;              // Phase 11: start attack anim timer
     }
     if(ABILITY_TRIGGERS[u.abilityTrigger](u,allies,enemies)){
       this.triggerAbility(u,allies,enemies);
@@ -1004,41 +1172,6 @@ const Battle={
     }
   },
 
-  // Phase 19a: role-coded shape for a unit.
-  // frontline=square, carry=triangle, counter=diamond, support=hexagon, utility=circle.
-  drawShape(c,u){
-    const r=u.z;
-    c.beginPath();
-    switch(u.role){
-      case "frontline": // square
-        c.rect(u.x-r,u.y-r,r*2,r*2);
-        break;
-      case "carry": // triangle (pointing up)
-        c.moveTo(u.x,u.y-r);
-        c.lineTo(u.x+r,u.y+r);
-        c.lineTo(u.x-r,u.y+r);
-        c.closePath();
-        break;
-      case "counter": // diamond
-        c.moveTo(u.x,u.y-r);
-        c.lineTo(u.x+r,u.y);
-        c.lineTo(u.x,u.y+r);
-        c.lineTo(u.x-r,u.y);
-        c.closePath();
-        break;
-      case "support": // hexagon
-        for(let i=0;i<6;i++){
-          const a=i*Math.PI/3-Math.PI/2;
-          const px=u.x+r*Math.cos(a),py=u.y+r*Math.sin(a);
-          if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
-        }
-        c.closePath();
-        break;
-      default: // utility or unknown = circle
-        c.arc(u.x,u.y,r,0,Math.PI*2);
-    }
-  },
-
   render(){
     let c=this.ctx;
     if(!c)return;
@@ -1047,25 +1180,32 @@ const Battle={
     // units
     for(let u of this.units){
       if(u.h<=0&&u.deathT===undefined)continue;
-      const alpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5):1;
-      c.globalAlpha=alpha;
-      c.fillStyle=u.c;
-      this.drawShape(c,u);
-      c.fill();
-      c.strokeStyle=u.team==="enemy"?"#f44":"#0ff";
-      c.stroke();
-      // status rings
+      // Phase 11: use SpriteRenderer for units with recipes, fallback otherwise.
+      const hasRecipe=!!u.recipe;
+      if(hasRecipe){
+        SpriteRenderer.draw(c,u);
+      }else{
+        const alpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5):1;
+        c.globalAlpha=alpha;
+        c.fillStyle=u.c;
+        SpriteRenderer._drawRoleShape(c,u);
+        c.fill();
+        c.strokeStyle=u.team==="enemy"?"#f44":"#0ff";
+        c.stroke();
+        c.globalAlpha=1;
+      }
+      // status rings (always drawn, on top of sprite)
       if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
       if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
       if(u.poison>0){c.strokeStyle="#3f3";c.beginPath();c.arc(u.x,u.y,u.z+6,0,Math.PI*2);c.stroke();}
       if(u.slow>0){c.strokeStyle="#39f";c.beginPath();c.arc(u.x,u.y,u.z+9,0,Math.PI*2);c.stroke();}
+      // name + HP bar
       c.fillStyle="#fff";c.font="9px sans-serif";c.textAlign="center";
       c.fillText(u.n,u.x,u.y-16);
       c.fillStyle="#222";
       c.fillRect(u.x-18,u.y-12,36,5);
       c.fillStyle="#0f0";
       c.fillRect(u.x-18,u.y-12,36*Math.max(0,u.h/u.mh),5);
-      c.globalAlpha=1;
     }
     // projectiles
     for(let p of this.projectiles){
@@ -1181,6 +1321,108 @@ const Bot={
   },
 };
 
+// Phase 11: hand-authored visual recipes for the 6 starter units.
+// Each recipe: {shapes:[...], animations:{idle,move,attack,death}}.
+// Coordinates are relative to unit center (u.x, u.y). Y is down.
+const SPRITE_RECIPES={
+  Knight:{
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#888"},          // helmet
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#44aaff"},     // armor body
+      {t:"rect",x:-13,y:-10,w:6,h:10,c:"#ccc",joint:"arm_raise"}, // shield (left)
+      {t:"line",x1:9,y1:-8,x2:16,y2:-16,c:"#ccc",w:2,joint:"arm_raise"}, // sword (right)
+      {t:"rect",x:-5,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},  // left leg
+      {t:"rect",x:1,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},   // right leg
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
+  Archer:{
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#4a7"},       // tunic
+      {t:"arc",cx:12,cy:-10,r:8,start:-1,end:1,c:"#a72",w:2,joint:"bow_draw"}, // bow
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:"#4a7",joint:"arm_raise"},  // left arm
+      {t:"rect",x:5,y:-10,w:4,h:10,c:"#4a7",joint:"arm_raise"},   // right arm
+      {t:"rect",x:-5,y:2,w:4,h:10,c:"#372",joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:"#372",joint:"leg_swing"},
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      attack:[{t:0,bow_draw:0,arm_raise:0},{t:0.5,bow_draw:1,arm_raise:0.5},{t:1,bow_draw:0,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
+  Slash:{
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdd"},          // head
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#f44"},       // body
+      {t:"line",x1:9,y1:-8,x2:18,y2:-18,c:"#ccc",w:3,joint:"arm_raise"}, // big sword
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:"#f44",joint:"arm_raise"},
+      {t:"rect",x:-5,y:2,w:4,h:10,c:"#a33",joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:"#a33",joint:"leg_swing"},
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:0.6,arm_raise:0.2},{t:1,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
+  Priest:{
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
+      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#fd4"}, // robe (trapezoid)
+      {t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#fb0",w:2,joint:"arm_raise"}, // staff
+      {t:"circle",cx:8,cy:-25,r:3,c:"#fff"},          // staff orb
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:"#fd4",joint:"arm_raise"},
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
+  Assassin:{
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#222"},          // hooded head
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#a4f"},       // dark body
+      {t:"line",x1:9,y1:-6,x2:13,y2:-12,c:"#ccc",w:1,joint:"arm_raise"},  // right dagger
+      {t:"line",x1:-9,y1:-6,x2:-13,y2:-12,c:"#ccc",w:1,joint:"arm_raise"}, // left dagger
+      {t:"rect",x:-5,y:2,w:4,h:10,c:"#82c",joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:"#82c",joint:"leg_swing"},
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:1},{t:0.4,arm_raise:0},{t:0.6,arm_raise:1},{t:1,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
+  Engineer:{
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#f84"},       // body
+      {t:"line",x1:9,y1:-8,x2:14,y2:-14,c:"#888",w:2,joint:"arm_raise"}, // wrench
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:"#f84",joint:"arm_raise"},
+      {t:"rect",x:-5,y:2,w:4,h:10,c:"#a64",joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:"#a64",joint:"leg_swing"},
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
+};
+
 const G={
   save:loadData(),
   // Phase 15: arena ladder. Each arena: name, color, lives, unlock threshold.
@@ -1195,21 +1437,27 @@ const G={
     {n:"Void Rift",c:"#a4f",lives:4,unlock:15,
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserk","Shielder","Healer","Tank"]},
   ],
-  // Phase 10: starter roster with Behaviour Composition API fields.
-  // 6 hand-authored units; each sets the 5 behaviour fields directly.
+  // Phase 10/11: starter roster with Behaviour Composition API fields + recipes.
+  // 6 hand-authored units; each sets the 5 behaviour fields directly + visual recipe.
   base:[
     {n:"Knight",h:110,d:12,r:40,s:50,a:1,c:"#44aaff",ability:"none",rar:"common",cost:1,crit:0.05,
-     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"frontline"},
+     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"frontline",
+     recipe:SPRITE_RECIPES.Knight},
     {n:"Archer",h:55,d:18,r:170,s:65,a:1.2,c:"#44ff44",ability:"none",rar:"common",cost:2,crit:0.15,
-     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry"},
+     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry",
+     recipe:SPRITE_RECIPES.Archer},
     {n:"Slash",h:70,d:24,r:35,s:85,a:1,c:"#ff4444",ability:"splash",rar:"rare",cost:3,crit:0.10,
-     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"counter"},
+     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"counter",
+     recipe:SPRITE_RECIPES.Slash},
     {n:"Priest",h:65,d:10,r:100,s:50,a:1.5,c:"#ffdd44",ability:"heal",rar:"rare",cost:3,crit:0.05,
-     targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,role:"support"},
+     targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,role:"support",
+     recipe:SPRITE_RECIPES.Priest},
     {n:"Assassin",h:45,d:20,r:30,s:110,a:0.8,c:"#ff44ff",ability:"dodge",rar:"rare",cost:3,crit:0.30,
-     targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,role:"counter"},
+     targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,role:"counter",
+     recipe:SPRITE_RECIPES.Assassin},
     {n:"Engineer",h:60,d:8,r:90,s:45,a:1.3,c:"#ff8844",ability:"spawn",rar:"rare",cost:3,crit:0.05,
-     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility"},
+     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility",
+     recipe:SPRITE_RECIPES.Engineer},
     // Phase 15: arena-themed units (used by bots in higher arenas).
     {n:"Plague",h:60,d:12,r:90,s:55,a:1.3,c:"#88ff44",ability:"poison",rar:"rare",cost:3,crit:0.1,
      targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry"},
