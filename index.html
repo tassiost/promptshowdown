@@ -789,6 +789,7 @@ const TEMPLATES=[
   {kw:["bomber","grenadier","suicide","explosive"],a:{role:"counter",targeting:"enemy_cluster",movement:"chase",attackCondition:"never",abilityTrigger:"on_death",moveSpeedMod:130,hp:50,dmg:30,range:40,speed:100,ability:"explode",bodyPlan:"mechanical",weaponType:"none",primaryColor:"gray",accentColor:"orange",sizeMod:"small"}},
   {kw:["turtle","shell","crab","tortoise"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:50,hp:150,dmg:8,range:30,speed:30,ability:"shield",bodyPlan:"quadruped",weaponType:"claws",primaryColor:"green",accentColor:"brown",sizeMod:"large"}},
   {kw:["wall","tower","turret","crystal","fortress"],a:{role:"frontline",targeting:"closest",movement:"hold",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:50,hp:200,dmg:15,range:120,speed:30,ability:"slow",bodyPlan:"structure",weaponType:"none",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
+  {kw:["pumpkin","jack","lantern","scarecrow","gourd"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_death",moveSpeedMod:70,hp:90,dmg:12,range:60,speed:40,ability:"heal_burst",bodyPlan:"humanoid",weaponType:"none",primaryColor:"orange",accentColor:"yellow",sizeMod:"medium"}},
 ];
 function templateFallback(prompt){
   const p=(prompt||"").toLowerCase();
@@ -923,7 +924,7 @@ function attrsToUnit(attrs,arenaIndex){
 }
 
 // Phase 12: IndexedDB cache for generated units.
-const DB_NAME="promptshowdown_llm_cache_v6";
+const DB_NAME="promptshowdown_llm_cache_v7";
 const STORE="unit_specs";
 const SCHEMA_VERSION=1;
 function cacheKey(prompt,modelId){return modelId+":"+prompt;}
