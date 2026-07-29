@@ -372,6 +372,7 @@ function unit(x={}){
     abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
     role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
+    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws"].includes(x.weaponType)?x.weaponType:"none",
     recipe:x.recipe||null // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
@@ -801,6 +802,7 @@ function attrsToUnit(attrs,arenaIndex){
     a:atkSpd,crit:crit,
     ability:attrs.ability,
     c:primaryHex,
+    weaponType:attrs.weaponType,
     recipe
   },arenaIndex);
 }
@@ -1415,6 +1417,33 @@ const BattleFX={
   roundEnd(color){
     Battle.roundFlash={t:0,dur:0.4,c:color||"#fff"};
   },
+  // Phase 17: fire recipe-based FX when a unit attacks.
+  // Interprets the unit's weaponType to produce visual FX:
+  // bow → projectile trail, staff → flash burst, hammer → impact burst.
+  fireRecipeFx(u,target){
+    if(!u||!target)return;
+    const fxType=WEAPON_FX[u.weaponType]||WEAPON_FX.none;
+    if(fxType==="projectile"){
+      // Arrow projectile: small particle streak from unit to target.
+      const dx=target.x-u.x,dy=target.y-u.y;
+      const d=Math.hypot(dx,dy)||1;
+      const steps=Math.min(5,Math.floor(d/20));
+      for(let i=0;i<steps;i++){
+        const t=i/steps;
+        Battle.particles.push({
+          x:u.x+dx*t,y:u.y+dy*t,
+          vx:0,vy:0,life:0.15+t*0.05,maxLife:0.2,
+          c:u.c,r:2
+        });
+      }
+    }else if(fxType==="flash"){
+      // Staff flash: bright particle burst at unit position.
+      this.burst(u.x,u.y-10,"#ff0",4,40);
+    }else if(fxType==="burst"){
+      // Hammer impact: particle burst at target position.
+      this.burst(target.x,target.y,"#fa0",6,60);
+    }
+  },
   // Update particles + timers.
   update(dt){
     // Update particles.
@@ -1543,6 +1572,8 @@ const Battle={
     this.particles=[];     // Phase 17: clear particles
     this.shakeAmount=0;    // Phase 17: reset shake
     this.roundFlash=null;  // Phase 17: reset round flash
+    this.recentCrits=[];   // Phase 17: clear crit tracking
+    this._prevSnapshot=null; // Phase 17: clear snapshot diff state
     this.time=0;
     this.running=true;
     this.winner=null;
@@ -1669,6 +1700,7 @@ const Battle={
   // Ranged units fire projectiles; melee deal damage instantly.
   attack(attacker,target,enemies){
     BattleFX.onAttack(attacker,target); // Phase 17: attack lunge FX
+    BattleFX.fireRecipeFx(attacker,target); // Phase 17: weapon-based recipe FX
     if(attacker.r>RANGED_THRESHOLD){
       this.projectiles.push({
         x:attacker.x,y:attacker.y,
@@ -1699,7 +1731,14 @@ const Battle={
     if(crit){dmg*=2;vibrate(25);}
     target.h-=dmg;
     // Phase 17: FX on hit.
-    if(crit)BattleFX.onCrit(target);
+    if(crit){
+      BattleFX.onCrit(target);
+      // Phase 17: track crits for P2P snapshot sync.
+      if(!this.recentCrits)this.recentCrits=[];
+      this.recentCrits.push({id:target.id,t:this.time});
+      // Keep only recent crits (last 2 seconds).
+      this.recentCrits=this.recentCrits.filter(rc=>this.time-rc.t<2);
+    }
     else BattleFX.onHit(target);
     this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
     transmit("hit",{target:target.id,damage:dmg});
@@ -1943,13 +1982,58 @@ const Battle={
   },
 
   // Phase 10: snapshot uses single units array.
+  // Phase 17: includes recentCrits for P2P crit FX sync.
   snapshot(){
-    return{time:this.time,units:this.units,projectiles:this.projectiles,winner:this.winner};
+    return{
+      time:this.time,
+      units:this.units,
+      projectiles:this.projectiles,
+      winner:this.winner,
+      recentCrits:this.recentCrits||[]
+    };
   },
 
+  // Phase 17: applySnapshot diffs against previous snapshot to fire FX
+  // on the guest side (state-derived, no extra network traffic for FX).
+  _prevSnapshot:null,
   applySnapshot(s){
     if(!s)return;
+    const prev=this._prevSnapshot;
     if(s.units)this.units=s.units.map(u=>this.initRuntime({...u}));
+    // Phase 17: state-derived FX from snapshot deltas.
+    if(prev&&prev.units){
+      const prevMap=new Map(prev.units.map(u=>[u.id,u]));
+      for(const u of this.units){
+        const pu=prevMap.get(u.id);
+        if(!pu){
+          // New unit → spawn FX.
+          BattleFX.onSpawn(u);
+        }else if(u.h<pu.h){
+          // HP decreased → hit flash.
+          BattleFX.onHit(u);
+        }
+      }
+      // Units that disappeared → death FX.
+      const curIds=new Set(this.units.map(u=>u.id));
+      for(const pu of prev.units){
+        if(!curIds.has(pu.id)&&pu.h>0){
+          BattleFX.onDeath(pu);
+        }
+      }
+    }
+    // Phase 17: crit FX from recentCrits in snapshot.
+    if(s.recentCrits){
+      for(const rc of s.recentCrits){
+        const u=this.units.find(x=>x.id===rc.id);
+        if(u)BattleFX.onCrit(u);
+      }
+    }
+    // Phase 17: round-end flash from winner transition.
+    if(s.winner&&!prev?.winner){
+      BattleFX.roundEnd(s.winner==="player"?"#0f0":s.winner==="enemy"?"#f00":"#888");
+      BattleFX.shake(4);
+    }
+    this._prevSnapshot=s;
   },
 
   renderOnly(){
@@ -2124,22 +2208,22 @@ const G={
   // 6 hand-authored units; each sets the 5 behaviour fields directly + visual recipe.
   base:[
     {n:"Knight",h:110,d:12,r:40,s:50,a:1,c:"#44aaff",ability:"none",rar:"common",cost:1,crit:0.05,
-     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"frontline",
+     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"frontline",weaponType:"shield",
      recipe:SPRITE_RECIPES.Knight},
     {n:"Archer",h:55,d:18,r:170,s:65,a:1.2,c:"#44ff44",ability:"none",rar:"common",cost:2,crit:0.15,
-     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry",
+     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry",weaponType:"bow",
      recipe:SPRITE_RECIPES.Archer},
     {n:"Slash",h:70,d:24,r:35,s:85,a:1,c:"#ff4444",ability:"splash",rar:"rare",cost:3,crit:0.10,
-     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"counter",
+     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"counter",weaponType:"sword",
      recipe:SPRITE_RECIPES.Slash},
     {n:"Priest",h:65,d:10,r:100,s:50,a:1.5,c:"#ffdd44",ability:"heal",rar:"rare",cost:3,crit:0.05,
-     targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,role:"support",
+     targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,role:"support",weaponType:"staff",
      recipe:SPRITE_RECIPES.Priest},
     {n:"Assassin",h:45,d:20,r:30,s:110,a:0.8,c:"#ff44ff",ability:"dodge",rar:"rare",cost:3,crit:0.30,
-     targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,role:"counter",
+     targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,role:"counter",weaponType:"dagger",
      recipe:SPRITE_RECIPES.Assassin},
     {n:"Engineer",h:60,d:8,r:90,s:45,a:1.3,c:"#ff8844",ability:"spawn",rar:"rare",cost:3,crit:0.05,
-     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility",
+     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility",weaponType:"hammer",
      recipe:SPRITE_RECIPES.Engineer},
     // Phase 15: arena-themed units (used by bots in higher arenas).
     {n:"Plague",h:60,d:12,r:90,s:55,a:1.3,c:"#88ff44",ability:"poison",rar:"rare",cost:3,crit:0.1,
