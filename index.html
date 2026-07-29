@@ -66,7 +66,7 @@ h2{font-size:.95rem;}
 <div id="splash"><div class="spin"></div><div>Loading Prompt Showdown…</div></div>
 <button id="fsBtn" onclick="toggleFullscreen()">⛶</button>
 <div class="screen active" id="menu">
-<h1>PROMPT SHOWDOWN v4</h1>
+<h1>PROMPT SHOWDOWN v5</h1>
 <div class="group">
 <div class="pill">🏆 <span id="wins">0</span></div>
 <div class="pill">⭐ Lv<span id="playerLevel">1</span></div>
@@ -95,6 +95,7 @@ h2{font-size:.95rem;}
 
 <div class="screen" id="draft">
 <h2>DRAFT</h2>
+<div id="livesHUD" style="font-size:.8rem;margin:4px;"></div>
 <div class="detail">Pick 3 units · rarity-weighted</div>
 <div id="draftArea"></div>
 <div class="group">
@@ -105,6 +106,7 @@ h2{font-size:.95rem;}
 
 <div class="screen" id="battle">
 <div style="width:100%;display:flex;justify-content:space-between;padding:4px;font-size:.75rem;">
+<span id="livesBattle" style="font-size:.8rem;"></span>
 <span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
 <span id="turn">T0</span>
 </div>
@@ -120,12 +122,13 @@ h2{font-size:.95rem;}
 
 <div class="screen" id="result">
 <h1 id="resultTitle">RESULT</h1>
-<div class="reward">
+<div id="livesResult" style="font-size:.9rem;margin:6px;"></div>
+<div class="reward" id="matchRewards" style="display:none;">
 <div class="pill">⭐ <span id="xpGain">+0</span> XP</div>
 <div class="pill">💰 <span id="coinGain">+0</span></div>
 </div>
-<button class="btn primary" id="nextRound">NEXT</button>
-<button class="btn" onclick="G.menu()">MENU</button>
+<button class="btn primary" id="nextRound">NEXT ROUND</button>
+<button class="btn" id="matchMenu" style="display:none;" onclick="G.menu()">MENU</button>
 </div>
 
 <div class="screen" id="forge">
@@ -250,7 +253,7 @@ const Q=(a,b)=>a+R()*(b-a);
 const SAVE_KEY="promptShowdownV4";
 
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
-const CURRENT_VERSION=5; // Phase 7: bumped for progression schema.
+const CURRENT_VERSION=6; // Phase 8: bumped for match/lives/loadout/collection schema.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
 function saveData(data){
   try{
@@ -282,6 +285,25 @@ function migrateSave(s){
     s.xp=s.xp||0;
     s.coins=s.coins||0;
     s.version=5;
+  }
+  if(s.version<6){
+    // v5 -> v6 (Phase 8): match/lives/loadout/collection schema.
+    // All new save fields defined here so subsequent phases can use them.
+    s.matchWins=s.matchWins||0;
+    s.arena=s.arena||0;
+    // collection = existing AI units (legacy format, no behaviour API fields).
+    s.collection=(s.ai||[]).map(u=>({...u,legacy:true}));
+    // loadout = first 4 of deck (or first 4 base unit names if deck missing).
+    if(s.loadout){
+      // already has loadout (re-migrating)
+    }else if(s.deck&&s.deck.length>0){
+      s.loadout=s.deck.slice(0,4).map(u=>u.n||u);
+    }else{
+      s.loadout=["Knight","Archer","Slash","Priest"];
+    }
+    // Drop old forge5 achievement (replaced by new forge achievements in Phase 19).
+    if(s.achievements)delete s.achievements.forge5;
+    s.version=6;
   }
   return s;
 }
@@ -482,6 +504,60 @@ function networkReceive(data){
     showError("Network receive error: "+(e&&e.message||e));
   }
 }
+
+// Phase 8: Match object — owns the match arc (lives, rounds, history).
+// Sibling of Battle; G delegates the round flow to this.
+const DEFAULT_LIVES=3;
+const Match={
+  livesPlayer:DEFAULT_LIVES,
+  livesEnemy:DEFAULT_LIVES,
+  round:0,
+  history:[],         // [{round,winner}] per completed round
+  onMatchEnd:null,    // (winner:"player"|"enemy"|"draw")=>void
+  active:false,
+
+  start(lives,onMatchEnd){
+    this.livesPlayer=lives||DEFAULT_LIVES;
+    this.livesEnemy=lives||DEFAULT_LIVES;
+    this.round=0;
+    this.history=[];
+    this.onMatchEnd=onMatchEnd||null;
+    this.active=true;
+    this.startRound();
+  },
+
+  // Start the next round's draft (called by G.start via Match).
+  startRound(){
+    this.round++;
+    // G.start handles the draft UI; Match just tracks state.
+    G.startRoundDraft();
+  },
+
+  // Called by G.onBattleEnd after a round's battle finishes.
+  onRoundEnd(winner){
+    this.history.push({round:this.round,winner});
+    if(winner==="player")this.livesEnemy--;
+    else if(winner==="enemy")this.livesPlayer--;
+    // Check match end
+    if(this.livesPlayer<=0||this.livesEnemy<=0){
+      const matchWinner=this.livesPlayer<=0&&this.livesEnemy<=0?"draw":
+        this.livesPlayer<=0?"enemy":"player";
+      this.active=false;
+      if(this.onMatchEnd)try{this.onMatchEnd(matchWinner);}catch(e){showError("Match end handler failed: "+(e&&e.message||e));}
+      return;
+    }
+    // Match continues — show round result, then next round on button.
+    G.roundResult(winner,this.livesPlayer,this.livesEnemy);
+  },
+
+  // Does the loser of the last round get a comeback (4th draw)?
+  comebackEligible(){
+    if(this.history.length===0)return false;
+    const last=this.history[this.history.length-1];
+    // The player gets comeback if they lost the last round.
+    return last.winner==="enemy";
+  }
+};
 
 // Phase 2 + Phase 3: dedicated Battle object — owns combat state + simulation.
 // G orchestrates menus/save/AI/network and delegates battle to this.
@@ -840,6 +916,11 @@ const G={
     if(!this.save.coins)this.save.coins=0;
     if(!this.save.achievements)this.save.achievements={};
     if(!this.save.upgrades)this.save.upgrades={}; // name -> level
+    // Phase 8: match/loadout/collection fields (defined in migrateSave v6).
+    if(!this.save.matchWins)this.save.matchWins=0;
+    if(!this.save.arena)this.save.arena=0;
+    if(!this.save.loadout)this.save.loadout=["Knight","Archer","Slash","Priest"];
+    if(!this.save.collection)this.save.collection=[];
     saveData(this.save);
     this.wins();
     this.menu();
@@ -866,7 +947,7 @@ const G={
     if(target)target.classList.add("active");
   },
   wins(){
-    setText("wins",this.save.wins||0);
+    setText("wins",this.save.matchWins||0);
     setText("aiUnits",this.save.ai.length);
     setText("totalUnits",this.deckUnits().length);
     // Phase 6: progression HUD.
@@ -877,13 +958,34 @@ const G={
   deckUnits(){return [...this.save.deck,...this.save.ai];},
   menu(){this.screen("menu");this.wins();},
   lobby(){this.screen("lobby");},
-  // Phase 3: draft state — offering[row] holds the 3 cards shown for that slot.
+  // Phase 8: G.start now starts a Match (not a single battle).
+  // Match drives rounds; each round calls G.startRoundDraft().
   start(){
+    Match.start(DEFAULT_LIVES,winner=>this.onMatchEnd(winner));
+  },
+
+  // Phase 8: called by Match.startRound() to show the draft screen.
+  startRoundDraft(){
     this.selected=[null,null,null];
     this.draftOffering=[[],[],[]];
     this.rerolls=3;
     this.screen("draft");
+    this.updateLivesHUD();
     this.makeDraft();
+  },
+
+  // Phase 8: lives hearts HUD for draft and battle screens.
+  livesHearts(lives,max){
+    const full="❤️".repeat(Math.max(0,lives));
+    const empty="🖤".repeat(Math.max(0,max-lives));
+    return full+empty;
+  },
+  updateLivesHUD(){
+    const txt=`You ${this.livesHearts(Match.livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(Match.livesEnemy,DEFAULT_LIVES)}`;
+    const draftHUD=$("livesHUD");
+    if(draftHUD)draftHUD.innerText=txt;
+    const battleHUD=$("livesBattle");
+    if(battleHUD)battleHUD.innerText=txt;
   },
 
   // Phase 3: rarity-weighted draw. common ~70%, rare ~25%, legendary ~5%.
@@ -983,6 +1085,7 @@ const G={
       // Host builds its army, then asks the guest for their deck.
       this.pendingHostArmy=myArmy;
       this.screen("battle");
+      this.updateLivesHUD();
       transmit("request_deck",{});
       setText("turn","WAIT");
       setText("battleHP",myArmy.length);
@@ -992,6 +1095,7 @@ const G={
     if(connected&&role==="guest"){
       // Guest sends its deck to the host and waits for snapshots.
       this.screen("battle");
+      this.updateLivesHUD();
       transmit("deck",{selected:this.selected});
       setText("turn","WAIT");
       setText("battleHP","?");
@@ -1005,6 +1109,7 @@ const G={
       enemies.push({...e,x:Q(40,360),y:Q(40,150),h:e.h,mh:e.h,team:1,cool:0});
     }
     this.screen("battle");
+    this.updateLivesHUD();
     Battle.start(myArmy,enemies,winner=>this.onBattleEnd(winner));
   },
 
@@ -1012,6 +1117,7 @@ const G={
   startHostBattle(guestSelected){
     const guestArmy=this.buildArmyFromSelected(guestSelected,1);
     Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner));
+    this.updateLivesHUD();
     this.startSnapshots();
   },
 
@@ -1046,17 +1152,50 @@ const G={
     if(this.snapTimer){clearInterval(this.snapTimer);this.snapTimer=null;}
   },
 
-  // Battle ended — handle save + rewards + result screen.
+  // Phase 8: Battle ended — delegate to Match for round/match logic.
   onBattleEnd(winner){
     this.stopSnapshots();
     // Phase 5: in multiplayer the host already broadcast the final winner;
     // guests reach here via the snapshot path with a translated winner.
+    if(Match.active){
+      Match.onRoundEnd(winner);
+    }else{
+      // Fallback (no active match — shouldn't happen, but safety net).
+      this.onMatchEnd(winner);
+    }
+  },
+
+  // Phase 8: Round result (mid-match) — show lives, "NEXT ROUND" button.
+  roundResult(winner,livesPlayer,livesEnemy){
+    this.screen("result");
     const win=winner==="player";
-    // Phase 6: award XP + coins on win, then check achievements.
+    setText("resultTitle",win?"ROUND WON":"ROUND LOST");
+    const lr=$("livesResult");
+    if(lr)lr.innerText=`You ${this.livesHearts(livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(livesEnemy,DEFAULT_LIVES)}`;
+    // Hide match rewards (awarded on match end, not round end).
+    const rw=$("matchRewards");if(rw)rw.style.display="none";
+    const mm=$("matchMenu");if(mm)mm.style.display="none";
+    const nr=$("nextRound");
+    if(nr){
+      nr.style.display="block";
+      nr.innerText="NEXT ROUND";
+      nr.onclick=()=>{Match.startRound();};
+    }
+    // 5 XP consolation for losing a round (softens comebacks).
+    if(!win){
+      this.save.xp=(this.save.xp||0)+5;
+      saveData(this.save);
+    }
+  },
+
+  // Phase 8: Match ended — award XP/coins, show match result, update wins.
+  onMatchEnd(winner){
+    const win=winner==="player";
     let xpGain=0,coinGain=0;
     if(win){
       vibrate([40,30,40]); // Phase 7: victory haptic
       this.save.wins=(this.save.wins||0)+1;
+      this.save.matchWins=(this.save.matchWins||0)+1;
       xpGain=50+this.playerLevel()*10;
       coinGain=20+F(R()*15);
       this.save.xp=(this.save.xp||0)+xpGain;
@@ -1064,25 +1203,39 @@ const G={
       saveData(this.save);
       this.checkAchievements();
     }
-    this.roundEnd(win,xpGain,coinGain);
-  },
-
-  roundEnd(win,xpGain,coinGain){
+    // Show match result screen.
     this.screen("result");
-    setText("resultTitle",win?"ROUND WON":"ROUND LOST");
-    setText("xpGain","+"+(xpGain||0));
-    setText("coinGain","+"+(coinGain||0));
+    setText("resultTitle",win?"MATCH WON!🏆":"MATCH LOST");
+    const lr=$("livesResult");
+    if(lr)lr.innerText=`You ${this.livesHearts(Match.livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(Match.livesEnemy,DEFAULT_LIVES)}`;
+    const rw=$("matchRewards");
+    if(rw){
+      rw.style.display="flex";
+      setText("xpGain","+"+(xpGain||0));
+      setText("coinGain","+"+(coinGain||0));
+    }
     const nr=$("nextRound");
-    if(nr)nr.onclick=()=>{if(win)this.forge();else this.start();};
+    if(nr){
+      nr.style.display="block";
+      nr.innerText=win?"FORGE NEW UNIT":"PLAY AGAIN";
+      nr.onclick=()=>{if(win)this.forge();else this.start();};
+    }
+    const mm=$("matchMenu");
+    if(mm)mm.style.display="inline-block";
   },
 
-  // Phase 6: achievement definitions + unlock checks.
+  // Phase 6/8: achievement definitions + unlock checks.
   achievements:{
-    firstWin:{name:"First Victory",desc:"Win your first round",check:G=>G.save.wins>=1},
-    win10:{name:"Veteran",desc:"Win 10 rounds",check:G=>G.save.wins>=10},
-    forge5:{name:"AI Smith",desc:"Forge 5 AI units",check:G=>G.save.ai.length>=5},
+    firstWin:{name:"First Victory",desc:"Win your first match",check:G=>G.save.matchWins>=1},
+    win10:{name:"Veteran",desc:"Win 10 matches",check:G=>G.save.matchWins>=10},
     level5:{name:"Rising Hero",desc:"Reach player level 5",check:G=>G.playerLevel()>=5},
-    rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100}
+    rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100},
+    comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck()}
+  },
+  _comebackCheck(){
+    // Check if the player won the match after losing round 1.
+    return Match.history.length>=2&&Match.history[0].winner==="enemy"&&
+      Match.livesPlayer>0&&Match.livesEnemy<=0;
   },
   checkAchievements(){
     const a=this.save.achievements;
@@ -1224,7 +1377,7 @@ const G={
     transmit("forge",u);
   },
 
-  next(){this.start();},
+  next(){this.start();}, // Phase 8: starts a new match (called from forge screen)
 
   deck(){
     this.screen("deck");
@@ -1327,6 +1480,8 @@ G.join=function(){
 };
 
 window.G=G;
+window.Match=Match;
+window.Battle=Battle;
 window.clearError=clearError;
 
 // Phase 7: remove the loading splash once init is done.
