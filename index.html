@@ -74,6 +74,7 @@ h2{font-size:.95rem;}
 <div class="pill">🧠 <span id="aiUnits">0</span></div>
 <div class="pill" id="netPill" style="display:none">🌐 <span id="netText">OFF</span></div>
 </div>
+<div id="arenaBadge" style="margin:8px 0;font-size:.9rem;"></div>
 <button class="btn primary" onclick="G.start()">⚔️ FIGHT</button>
 <button class="btn" onclick="G.lobby()">🌐 P2P</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
@@ -1079,23 +1080,32 @@ const Battle={
   }
 };
 
-// Phase 9: Bot opponent — fake multiplayer. Random drafting, no strategy.
+// Phase 9/15: Bot opponent — fake multiplayer. Random drafting, no strategy.
 // Feels like a casual human opponent, not an AI.
 const Bot={
   loadout:[],         // 4 random units from the pool (generated per match)
 
-  // Generate a random 4-unit loadout from the given pool.
-  generateLoadout(pool){
+  // Phase 15: generate a random 4-unit loadout from the arena's bot pool.
+  // botPool is an array of unit names; resolved against G.base + G.save.collection.
+  generateLoadout(botPool){
     this.loadout=[];
-    const p=[...pool];
+    // Resolve names to unit objects from base roster or collection.
+    const resolve=name=>{
+      const base=G.base.find(u=>u.n===name);
+      if(base)return cloneUnit(base);
+      const coll=(G.save.collection||[]).find(u=>u.n===name);
+      if(coll)return cloneUnit(coll);
+      return null;
+    };
+    const pool=botPool.map(resolve).filter(Boolean);
+    if(!pool.length)return;
+    // Pick 4 random units (with replacement — duplicates allowed).
     for(let i=0;i<4;i++){
-      if(!p.length)break;
-      const idx=F(R()*p.length);
-      this.loadout.push(cloneUnit(p[idx]));
+      this.loadout.push(cloneUnit(pool[F(R()*pool.length)]));
     }
   },
 
-  // Draft a round: pick drawCount random cards from the pool.
+  // Draft a round: pick drawCount random cards from the loadout.
   // Returns array of picked units (3-4 units).
   draftRound(drawCount){
     const picks=[];
@@ -1111,6 +1121,18 @@ const Bot={
 
 const G={
   save:loadData(),
+  // Phase 15: arena ladder. Each arena: name, color, lives, unlock threshold.
+  // botPool = unit names the bot drafts from (themed per arena).
+  arenas:[
+    {n:"Training Yard",c:"#4a4",lives:3,unlock:0,
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer"]},
+    {n:"District Z",c:"#8a4",lives:3,unlock:3,
+     botPool:["Plague","Cultist","Berserker","Knight","Archer","Assassin"]},
+    {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber"]},
+    {n:"Void Rift",c:"#a4f",lives:4,unlock:15,
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserk","Shielder","Healer","Tank"]},
+  ],
   // Phase 10: starter roster with Behaviour Composition API fields.
   // 6 hand-authored units; each sets the 5 behaviour fields directly.
   base:[
@@ -1125,7 +1147,24 @@ const G={
     {n:"Assassin",h:45,d:20,r:30,s:110,a:0.8,c:"#ff44ff",ability:"dodge",rar:"rare",cost:3,crit:0.30,
      targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,role:"counter"},
     {n:"Engineer",h:60,d:8,r:90,s:45,a:1.3,c:"#ff8844",ability:"spawn",rar:"rare",cost:3,crit:0.05,
-     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility"}
+     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility"},
+    // Phase 15: arena-themed units (used by bots in higher arenas).
+    {n:"Plague",h:60,d:12,r:90,s:55,a:1.3,c:"#88ff44",ability:"poison",rar:"rare",cost:3,crit:0.1,
+     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry"},
+    {n:"Cultist",h:50,d:14,r:80,s:60,a:1.2,c:"#aa44ff",ability:"poison",rar:"rare",cost:2,crit:0.1,
+     targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,role:"counter"},
+    {n:"Berserker",h:75,d:18,r:35,s:90,a:0.9,c:"#ff6644",ability:"rage",rar:"rare",cost:3,crit:0.15,
+     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:130,role:"frontline"},
+    {n:"Vamp",h:65,d:14,r:40,s:70,a:1.1,c:"#cc44aa",ability:"lifesteal",rar:"rare",cost:3,crit:0.1,
+     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"frontline"},
+    {n:"Bomber",h:55,d:20,r:30,s:80,a:1.5,c:"#ff8844",ability:"explode",rar:"rare",cost:3,crit:0.05,
+     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_death",moveSpeedMod:140,role:"counter"},
+    {n:"Shielder",h:100,d:10,r:45,s:40,a:1.2,c:"#44aaff",ability:"shield",rar:"rare",cost:3,crit:0.05,
+     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:80,role:"frontline"},
+    {n:"Healer",h:70,d:8,r:110,s:45,a:1.5,c:"#ffdd44",ability:"heal_burst",rar:"rare",cost:3,crit:0.05,
+     targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:90,role:"support"},
+    {n:"Tank",h:150,d:10,r:35,s:35,a:1.3,c:"#888888",ability:"none",rar:"rare",cost:3,crit:0.05,
+     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:70,role:"frontline"}
   ],
   // Phase 10: G.enemy removed. Bot opponents draft from G.base.
   selected:[],
@@ -1207,14 +1246,39 @@ const G={
   },
   // Phase 13: kept for backward compat (achievements HUD).
   deckUnits(){return this.loadoutUnits();},
-  menu(){this.screen("menu");this.wins();},
+  menu(){
+    this.screen("menu");
+    this.wins();
+    // Phase 15: arena badge + unlock progress.
+    const arenaIdx=this.save.arena||0;
+    const arena=this.arenas[arenaIdx];
+    const nextArena=this.arenas[arenaIdx+1];
+    const badge=$("arenaBadge");
+    if(badge&&arena){
+      let html=`<span style="color:${arena.c}">⚔️ ${arena.n}</span> · ${arena.lives} lives`;
+      if(nextArena){
+        const winsNeeded=nextArena.unlock-(this.save.matchWins||0);
+        if(winsNeeded>0){
+          html+=`<br><span style="color:#888;font-size:.8rem">Next: ${nextArena.n} — ${winsNeeded} more wins to unlock</span>`;
+        }else{
+          html+=`<br><span style="color:#0f0;font-size:.8rem">✓ ${nextArena.n} unlocked! Play to advance</span>`;
+        }
+      }else{
+        html+=`<br><span style="color:#fa0;font-size:.8rem">★ Final arena</span>`;
+      }
+      badge.innerHTML=html;
+    }
+  },
   lobby(){this.screen("lobby");},
-  // Phase 8/9: G.start now starts a Match (not a single battle).
+  // Phase 8/9/15: G.start now starts a Match (not a single battle).
   // Match drives rounds; each round calls G.startRoundDraft().
   start(){
-    // Phase 9: generate bot loadout at match start (fake multiplayer).
-    Bot.generateLoadout(this.base);
-    Match.start(DEFAULT_LIVES,winner=>this.onMatchEnd(winner));
+    // Phase 15: generate bot loadout from the current arena's bot pool.
+    const arena=this.arenas[this.save.arena||0];
+    Bot.generateLoadout(arena?arena.botPool:this.base.map(u=>u.n));
+    // Phase 15: arena determines lives count.
+    const lives=arena?arena.lives:DEFAULT_LIVES;
+    Match.start(lives,winner=>this.onMatchEnd(winner));
   },
 
   // Phase 9: called by Match.startRound() to start the sequential draft.
@@ -1469,7 +1533,7 @@ const G={
   // Phase 8: Match ended — award XP/coins, show match result, update wins.
   onMatchEnd(winner){
     const win=winner==="player";
-    let xpGain=0,coinGain=0;
+    let xpGain=0,coinGain=0,arenaAdvanced=false;
     if(win){
       vibrate([40,30,40]); // Phase 7: victory haptic
       this.save.wins=(this.save.wins||0)+1;
@@ -1478,6 +1542,15 @@ const G={
       coinGain=20+F(R()*15);
       this.save.xp=(this.save.xp||0)+xpGain;
       this.save.coins=(this.save.coins||0)+coinGain;
+      // Phase 15: advance to next arena if unlocked.
+      const arenaIdx=this.save.arena||0;
+      const nextArena=this.arenas[arenaIdx+1];
+      if(nextArena&&this.save.matchWins>=nextArena.unlock){
+        this.save.arena=arenaIdx+1;
+        arenaAdvanced=true;
+        coinGain+=50; // bonus for advancing
+        this.save.coins+=50;
+      }
       saveData(this.save);
       this.checkAchievements();
     }
@@ -1491,6 +1564,11 @@ const G={
       rw.style.display="flex";
       setText("xpGain","+"+(xpGain||0));
       setText("coinGain","+"+(coinGain||0));
+    }
+    // Phase 15: arena advancement notification.
+    if(arenaAdvanced){
+      const arena=this.arenas[this.save.arena];
+      setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
     }
     const nr=$("nextRound");
     if(nr){
