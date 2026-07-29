@@ -188,7 +188,7 @@ This is informed by the macsand project (`/Users/tassio/macsand/WEBLLM_MATERIAL_
 
 ---
 
-## Phase 8 — Match & Lives System
+## Phase 8 — Match & Lives System ✅ DONE
 
 **Why first:** everything else (rounds, comeback, scout) depends on a match arc.
 
