@@ -2496,8 +2496,9 @@ const G={
   // Phase 6: per-unit upgrade level (0 if none).
   unitLevel(name){return this.save.upgrades[name]||0;},
   // Phase 6: apply upgrade bonuses to a cloned unit (+10% hp/d per level).
+  // Capped at level 10 (200% bonus) to prevent runaway stats.
   applyUpgrades(u){
-    const lvl=this.unitLevel(u.n);
+    const lvl=Math.min(this.unitLevel(u.n),10);
     if(lvl>0){
       u.h=F(u.h*(1+0.1*lvl));
       u.d=F(u.d*(1+0.1*lvl));
