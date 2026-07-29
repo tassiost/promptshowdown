@@ -1261,7 +1261,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 15 — Arena Ladder
+## Phase 15 — Arena Ladder ✅ DONE
 
 ### Changes
 - `save.arena` = index into an arenas array. Each arena: name, theme color, **bot loadout pool**, lives config, unlock threshold (matchWins).
