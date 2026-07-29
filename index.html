@@ -1591,6 +1591,23 @@ const SpriteRenderer={
       default:c.arc(u.x,u.y,r,0,Math.PI*2);
     }
   },
+
+  // Phase 14: render a static sprite preview onto a canvas element.
+  // Used by scout cards and deck cards to show unit visuals.
+  renderPreview(canvas,u){
+    if(!canvas||!u)return;
+    const c=canvas.getContext("2d");
+    if(!c)return;
+    const w=canvas.width,h=canvas.height;
+    c.clearRect(0,0,w,h);
+    // Set up a temporary unit with centered position for rendering.
+    const tmp={...u,x:w/2,y:h/2,z:Math.min(u.z||14,w*0.35),animState:"idle"};
+    // Temporarily set Battle.time for animation interpolation (idle pose).
+    const savedTime=Battle.time;
+    Battle.time=0;
+    this.draw(c,tmp);
+    Battle.time=savedTime;
+  },
 };
 
 // Phase 17: Procedural FX System — particles, hit flashes, screen shake.
@@ -2865,7 +2882,7 @@ const G={
     }
   },
 
-  // Phase 14: render the scout screen with opponent's picks.
+  // Phase 14: render the scout screen with opponent's picks + sprite previews.
   showScout(){
     this.screen("scout");
     // Update lives HUD on scout screen too.
@@ -2882,9 +2899,12 @@ const G={
       const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
       card.innerHTML=
         `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
+        `<canvas width="48" height="48" style="display:block;margin:2px auto;"></canvas>`+
         `<div class="title" style="color:${u.c}">${u.n}</div>`+
         `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r}${abLabel}${roleLabel}</div>`;
       area.appendChild(card);
+      // Phase 14: render sprite preview onto the canvas.
+      SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
     }
   },
 
@@ -3307,9 +3327,11 @@ const G={
     const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
     preview.innerHTML=`<div class="card" style="border-color:#fa0;">
       <div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>
+      <canvas width="56" height="56" style="display:block;margin:2px auto;"></canvas>
       <div class="title" style="color:${u.c}">${u.n}</div>
       <div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · ⚡${u.s}${abLabel}${roleLabel}</div>
     </div>`;
+    SpriteRenderer.renderPreview(preview.querySelector("canvas"),u);
     const actions=$("forgeActions");
     if(actions)actions.style.display="block";
   },
@@ -3355,7 +3377,8 @@ const G={
         const card=document.createElement("div");
         card.className="card";
         card.style.borderColor="#0ff";
-        card.innerHTML=`<div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG<br><span style="color:#0ff">SLOT ${i+1}</span></div>`;
+        card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG<br><span style="color:#0ff">SLOT ${i+1}</span></div>`;
+        SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
         card.onclick=()=>this.swapLoadoutSlot(i);
         la.appendChild(card);
       });
@@ -3380,7 +3403,8 @@ const G={
       const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
       const card=document.createElement("div");
       card.className="card";
-      card.innerHTML=`<div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div>`;
+      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div>`;
+      SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       if(canFuse){
         card.style.borderColor="#fb0";
         card.onclick=()=>this.fuseUnit(u.n);
