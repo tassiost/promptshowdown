@@ -197,6 +197,7 @@ h2{font-size:.95rem;}
 // and let the game run even if CDNs are unreachable.
 let W = null;       // web-llm
 let joinRoom = null; // trystero
+let LZString = null; // lz-string for P2P recipe compression (Phase 18)
 let moduleLoadErrors = [];
 
 async function loadModules(){
@@ -221,6 +222,13 @@ async function loadModules(){
     joinRoom = tr.joinRoom;
   }catch(e){
     console.warn("trystero import failed: "+(e&&e.message||e)+" — multiplayer disabled.");
+  }
+  // lz-string: compression for P2P recipe serialization (Phase 18).
+  try{
+    const lz = await import("https://esm.sh/lz-string");
+    LZString = lz.LZString || lz.default?.LZString || lz.default;
+  }catch(e){
+    console.warn("lz-string import failed: "+(e&&e.message||e)+" — recipes sent uncompressed.");
   }
 }
 
@@ -831,9 +839,9 @@ function expandRecipe(min){
   return{shapes,animations:anim};
 }
 // Serialize units for P2P: dedupe starter units (send name only),
-// minify recipes for custom (LLM-forged) units.
+// minify recipes for custom (LLM-forged) units, compress with lz-string.
 function serializeUnitsForPeer(units){
-  return units.map(u=>{
+  const data=units.map(u=>{
     // Starter unit: send name only, receiver resolves from G.base.
     const starter=G.base.find(b=>b.n===u.n);
     if(starter&&!u.weaponType)return u.n;
@@ -841,10 +849,21 @@ function serializeUnitsForPeer(units){
     const recipe=minifyRecipe(u.recipe);
     return{...u,recipe};
   });
+  // Compress the full payload with lz-string if available.
+  if(LZString){
+    try{return LZString.compressToUTF16(JSON.stringify(data));}catch(e){/* fall through */}
+  }
+  return data;
 }
-// Deserialize units from P2P: resolve starter names, expand recipes.
+// Deserialize units from P2P: decompress, resolve starter names, expand recipes.
 function deserializeUnitsFromPeer(data){
-  return data.map(d=>{
+  let arr=data;
+  // Decompress if lz-string is available and data is a string (compressed).
+  if(LZString&&typeof data==="string"){
+    try{arr=JSON.parse(LZString.decompressFromUTF16(data));}catch(e){arr=[];}
+  }
+  if(!Array.isArray(arr))return[];
+  return arr.map(d=>{
     if(typeof d==="string"){
       // Starter unit name → resolve from G.base.
       const starter=G.base.find(b=>b.n===d);
