@@ -1,6 +1,6 @@
 # Prompt Showdown v5 — Draft Showdown Clone + LLM Reward Layer
 
-**Status: ALL PHASES COMPLETE ✅ (implemented, audited, detail-checked, bug-fixed)**
+**Status: ALL PHASES COMPLETE ✅ (implemented, audited, detail-checked, bug-fixed, template-expanded)**
 
 **Product strategy: two tiers.**
 
