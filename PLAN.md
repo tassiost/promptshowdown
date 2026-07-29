@@ -1284,7 +1284,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 16 — Synergy Hints & Strategy
+## Phase 16 — Synergy Hints & Strategy ✅ DONE
 
 ### Changes
 - On the loadout screen, show a **synergy meter**: counts roles in your 4-card loadout, warns if unbalanced ("⚠ No frontline — backline exposed").
