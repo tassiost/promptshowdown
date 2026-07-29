@@ -771,17 +771,16 @@ const RecipeAssembler={
   }
 };
 
-// Phase 12: template fallback — keyword-matched attribute templates.
-// Order matters: more specific templates (elemental, dragon) before generic (mage, assassin).
+// Phase 12: template fallback — minimal archetype templates for when LLM is unavailable.
+// These cover basic gameplay archetypes only (archer, tank, mage, etc.).
+// Creative concepts (dragon, pumpkin, ice mage, etc.) are intentionally NOT templated —
+// the LLM is the source of creativity. Unrecognized prompts get a random template,
+// which keeps the fallback surprising rather than prescriptive.
 const TEMPLATES=[
-  {kw:["dragon","drake","wyrm","wyrven"],a:{role:"carry",targeting:"highest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:110,hp:120,dmg:25,range:100,speed:80,ability:"splash",bodyPlan:"quadruped",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large"}},
-  {kw:["ice","frost","snow","winter"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:90,hp:75,dmg:18,range:130,speed:55,ability:"slow",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
-  {kw:["fire","flame","pyro","ember"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:85,dmg:22,range:120,speed:50,ability:"splash",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"red",accentColor:"orange",sizeMod:"medium"}},
-  {kw:["ninja","samurai","shinobi"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:140,hp:50,dmg:20,range:25,speed:100,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"purple",sizeMod:"small"}},
   {kw:["archer","bow","hunter","ranger"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:55,dmg:18,range:170,speed:65,ability:"none",bodyPlan:"humanoid",weaponType:"bow",primaryColor:"green",accentColor:"green",sizeMod:"medium"}},
   {kw:["tank","knight","warrior","guard","defender"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:80,hp:110,dmg:12,range:40,speed:50,ability:"shield",bodyPlan:"humanoid",weaponType:"shield",primaryColor:"blue",accentColor:"white",sizeMod:"large"}},
   {kw:["mage","wizard","sorcerer","warlock"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:50,hp:80,dmg:20,range:140,speed:40,ability:"splash",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"purple",accentColor:"cyan",sizeMod:"medium"}},
-  {kw:["assassin","rogue","shadow"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,hp:45,dmg:22,range:30,speed:110,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
+  {kw:["assassin","rogue","ninja","shadow","samurai","shinobi"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,hp:45,dmg:22,range:30,speed:110,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
   {kw:["healer","priest","cleric","monk"],a:{role:"support",targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,hp:65,dmg:10,range:100,speed:50,ability:"heal",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"yellow",accentColor:"white",sizeMod:"medium"}},
   {kw:["engineer","builder","mech","tinker"],a:{role:"utility",targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:60,dmg:8,range:90,speed:45,ability:"spawn",bodyPlan:"mechanical",weaponType:"hammer",primaryColor:"orange",accentColor:"gray",sizeMod:"medium"}},
   {kw:["vampire","dracula","leech","blood"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:120,hp:70,dmg:16,range:35,speed:80,ability:"lifesteal",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"red",accentColor:"black",sizeMod:"medium"}},
@@ -789,7 +788,6 @@ const TEMPLATES=[
   {kw:["bomber","grenadier","suicide","explosive"],a:{role:"counter",targeting:"enemy_cluster",movement:"chase",attackCondition:"never",abilityTrigger:"on_death",moveSpeedMod:130,hp:50,dmg:30,range:40,speed:100,ability:"explode",bodyPlan:"mechanical",weaponType:"none",primaryColor:"gray",accentColor:"orange",sizeMod:"small"}},
   {kw:["turtle","shell","crab","tortoise"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:50,hp:150,dmg:8,range:30,speed:30,ability:"shield",bodyPlan:"quadruped",weaponType:"claws",primaryColor:"green",accentColor:"brown",sizeMod:"large"}},
   {kw:["wall","tower","turret","crystal","fortress"],a:{role:"frontline",targeting:"closest",movement:"hold",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:50,hp:200,dmg:15,range:120,speed:30,ability:"slow",bodyPlan:"structure",weaponType:"none",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
-  {kw:["pumpkin","jack","lantern","scarecrow","gourd"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_death",moveSpeedMod:70,hp:90,dmg:12,range:60,speed:40,ability:"heal_burst",bodyPlan:"humanoid",weaponType:"none",primaryColor:"orange",accentColor:"yellow",sizeMod:"medium"}},
 ];
 function templateFallback(prompt){
   const p=(prompt||"").toLowerCase();
@@ -924,7 +922,7 @@ function attrsToUnit(attrs,arenaIndex){
 }
 
 // Phase 12: IndexedDB cache for generated units.
-const DB_NAME="promptshowdown_llm_cache_v7";
+const DB_NAME="promptshowdown_llm_cache_v8";
 const STORE="unit_specs";
 const SCHEMA_VERSION=1;
 function cacheKey(prompt,modelId){return modelId+":"+prompt;}
