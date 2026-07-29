@@ -914,6 +914,8 @@ const DB_NAME="promptshowdown_llm_cache";
 const STORE="unit_specs";
 const SCHEMA_VERSION=1;
 function cacheKey(prompt,modelId){return modelId+":"+prompt;}
+// Phase 12: normalize prompt for cache key + fusion matching.
+function normalizePrompt(s){return(s||"").trim().toLowerCase().slice(0,100)||"warrior";}
 function openDB(){
   return new Promise((res,rej)=>{
     if(!indexedDB){rej(new Error("no IndexedDB"));return;}
@@ -1005,7 +1007,7 @@ async function reaskFields(name,attrs,flagged){
 
 // Phase 12: main generation orchestrator (hybrid JSON-mode + per-field fallback).
 async function generateUnit(rawPrompt,arenaIndex){
-  const prompt=(rawPrompt||"").trim().slice(0,100)||"warrior";
+  const prompt=normalizePrompt(rawPrompt);
   const key=cacheKey(prompt,MODEL);
   // 1. Cache hit?
   const cached=await cacheGet(key);
@@ -1058,7 +1060,7 @@ function showAdStub(duration,onComplete){
   const overlay=document.createElement("div");
   overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
   let remaining=Math.ceil(duration/1000);
-  overlay.innerHTML=`<div style="font-size:1.5rem;margin-bottom:10px;">📺 Ad Playback</div><div id="adCountdown" style="font-size:2rem;">${remaining}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Ad ends in ${remaining}s</div>`;
+  overlay.innerHTML=`<div style="font-size:1.5rem;margin-bottom:10px;">📺 Ad: ${remaining}s...</div><div id="adCountdown" style="font-size:2rem;">${remaining}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Ad ends in ${remaining}s</div>`;
   document.body.appendChild(overlay);
   const interval=setInterval(()=>{
     remaining--;
@@ -2069,6 +2071,8 @@ const Battle={
   render(){
     let c=this.ctx;
     if(!c)return;
+    // Phase 10: update canvasH if canvas resized mid-battle.
+    if(c.canvas.height!==this.canvasH)this.canvasH=c.canvas.height;
     c.fillStyle="#080810";
     c.fillRect(0,0,c.canvas.width,c.canvas.height);
     // Phase 17: apply screen shake transform.
@@ -3203,7 +3207,7 @@ const G={
     // Phase 12: model cache check — if LLM not ready and no WebGPU, skip LLM.
     const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
     // Start ad + generation in parallel (if watching ad).
-    const adPromise=watchAd?new Promise(res=>showAdStub(5000,res)):Promise.resolve();
+    const adPromise=watchAd?new Promise(res=>showAdStub(15000,res)):Promise.resolve();
     let genPromise;
     if(canUseLLM){
       // Phase 12: if LLM is still loading, show model download progress.
