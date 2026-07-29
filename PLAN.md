@@ -1210,7 +1210,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 9 — Round-Based Draft Cadence
+## Phase 9 — Round-Based Draft Cadence ✅ DONE
 
 **Draft Showdown's signature:** 3 draws × 3 picks per round, plus 4th-draw comeback.
 
