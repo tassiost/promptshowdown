@@ -391,7 +391,7 @@ function unit(x={}){
     abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
     role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
-    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws"].includes(x.weaponType)?x.weaponType:"none",
+    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"].includes(x.weaponType)?x.weaponType:"none",
     recipe:x.recipe||null // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
@@ -493,13 +493,16 @@ function validateUnit(raw,arenaIndex){
   try{
     const u=unit(raw); // unit() already clamps + validates enums.
     // Phase 15: arena-dependent param clamps (gates power progression).
+    // Clamp instead of reject — ensures forge always produces a unit.
     const ai=arenaIndex||(G.save?.arena||0);
     const arena=G.arenas?.[ai];
     const maxHp=arena?.maxHp||100;
     const maxDmg=arena?.maxDmg||30;
-    if(u.h>maxHp||u.d>maxDmg)return null;
-    if(u.h<10||u.d<3)return null;
-    if(u.r>250&&u.d>40)return null; // sniper + heavy hitter = unfun
+    u.h=Math.min(u.h,maxHp);
+    u.d=Math.min(u.d,maxDmg);
+    if(u.h<10)u.h=10;
+    if(u.d<3)u.d=3;
+    if(u.r>250&&u.d>40)u.d=40; // sniper + heavy hitter = unfun
     // Semantic validation: passive abilities require abilityTrigger: never.
     if(PASSIVE_ABILITIES.has(u.ability)&&u.abilityTrigger!=="never")u.abilityTrigger="never";
     // Triggered abilities require a non-never trigger.
@@ -519,8 +522,8 @@ const COLOR_MAP={
   yellow:"#fd4",orange:"#f84",black:"#222",white:"#eee",
   brown:"#a72",gray:"#888",pink:"#f6c",cyan:"#0ff"
 };
-const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",none:"#888"};
-const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",none:"none"};
+const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",breath:"#f80",none:"#888"};
+const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",breath:"burst",none:"none"};
 const SIZE_SCALE={small:0.7,medium:1.0,large:1.3};
 
 // Phase 12: JSON schema for grammar-constrained generation (17 fields).
@@ -540,7 +543,7 @@ const UNIT_SCHEMA={
     speed:{type:"integer",minimum:30,maximum:120},
     ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"]},
     bodyPlan:{type:"string",enum:["humanoid","quadruped","blob","flying","mechanical","structure"]},
-    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws"]},
+    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"]},
     primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
     accentColor:{type:"string",enum:Object.keys(COLOR_MAP)},
     sizeMod:{type:"string",enum:["small","medium","large"]}
@@ -769,11 +772,16 @@ const RecipeAssembler={
 };
 
 // Phase 12: template fallback — keyword-matched attribute templates.
+// Order matters: more specific templates (elemental, dragon) before generic (mage, assassin).
 const TEMPLATES=[
+  {kw:["dragon","drake","wyrm","wyrven"],a:{role:"carry",targeting:"highest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:110,hp:120,dmg:25,range:100,speed:80,ability:"splash",bodyPlan:"quadruped",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large"}},
+  {kw:["ice","frost","snow","winter"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:90,hp:75,dmg:18,range:130,speed:55,ability:"slow",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
+  {kw:["fire","flame","pyro","ember"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:85,dmg:22,range:120,speed:50,ability:"splash",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"red",accentColor:"orange",sizeMod:"medium"}},
+  {kw:["ninja","samurai","shinobi"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:140,hp:50,dmg:20,range:25,speed:100,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"purple",sizeMod:"small"}},
   {kw:["archer","bow","hunter","ranger"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:55,dmg:18,range:170,speed:65,ability:"none",bodyPlan:"humanoid",weaponType:"bow",primaryColor:"green",accentColor:"green",sizeMod:"medium"}},
   {kw:["tank","knight","warrior","guard","defender"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:80,hp:110,dmg:12,range:40,speed:50,ability:"shield",bodyPlan:"humanoid",weaponType:"shield",primaryColor:"blue",accentColor:"white",sizeMod:"large"}},
   {kw:["mage","wizard","sorcerer","warlock"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:50,hp:80,dmg:20,range:140,speed:40,ability:"splash",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"purple",accentColor:"cyan",sizeMod:"medium"}},
-  {kw:["assassin","rogue","ninja","shadow"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,hp:45,dmg:22,range:30,speed:110,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
+  {kw:["assassin","rogue","shadow"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,hp:45,dmg:22,range:30,speed:110,ability:"dodge",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
   {kw:["healer","priest","cleric","monk"],a:{role:"support",targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,hp:65,dmg:10,range:100,speed:50,ability:"heal",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"yellow",accentColor:"white",sizeMod:"medium"}},
   {kw:["engineer","builder","mech","tinker"],a:{role:"utility",targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:60,dmg:8,range:90,speed:45,ability:"spawn",bodyPlan:"mechanical",weaponType:"hammer",primaryColor:"orange",accentColor:"gray",sizeMod:"medium"}},
   {kw:["vampire","dracula","leech","blood"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:120,hp:70,dmg:16,range:35,speed:80,ability:"lifesteal",bodyPlan:"humanoid",weaponType:"dagger",primaryColor:"red",accentColor:"black",sizeMod:"medium"}},
@@ -917,7 +925,7 @@ function attrsToUnit(attrs,arenaIndex){
 // Phase 12: IndexedDB cache for generated units.
 const DB_NAME="promptshowdown_llm_cache";
 const STORE="unit_specs";
-const SCHEMA_VERSION=1;
+const SCHEMA_VERSION=2; // bumped to invalidate cache entries missing weaponType
 function cacheKey(prompt,modelId){return modelId+":"+prompt;}
 // Phase 12: normalize prompt for cache key + fusion matching.
 function normalizePrompt(s){return(s||"").trim().toLowerCase().slice(0,100)||"warrior";}
@@ -958,7 +966,7 @@ const ENUM_FIELDS={
   abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
   ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"],
   bodyPlan:["humanoid","quadruped","blob","flying","mechanical","structure"],
-  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws"],
+  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"],
   primaryColor:Object.keys(COLOR_MAP),
   accentColor:Object.keys(COLOR_MAP),
   sizeMod:["small","medium","large"]
@@ -985,7 +993,7 @@ const FIELD_PROMPTS={
   speed:(n,a)=>`A ${n} moves by ${a.movement}. How fast should a ${a.movement} unit be, 30 (slow) to 120 (fast)? Answer with a number only.`,
   ability:(n,a)=>`A ${n} triggers abilities ${a.abilityTrigger}. What ability fits: none, splash, heal, dodge, poison, spawn, lifesteal, explode, heal_burst, shield, rage, slow? Answer with one word.`,
   bodyPlan:(n,a)=>`A ${n} — what body plan fits: humanoid, quadruped, blob, flying, mechanical, structure? Answer with one word.`,
-  weaponType:(n,a)=>`A ${n} — what weapon fits: none, sword, bow, staff, dagger, shield, hammer, claws? Answer with one word.`,
+  weaponType:(n,a)=>`A ${n} — what weapon fits: none, sword, bow, staff, dagger, shield, hammer, claws, breath? Answer with one word.`,
   primaryColor:(n,a)=>`A ${n} — what color fits: green, blue, red, purple, yellow, orange, black, white, brown, gray, pink, cyan? Answer with one word.`,
   accentColor:(n,a)=>`A ${n} — what accent color fits: green, blue, red, purple, yellow, orange, black, white, brown, gray, pink, cyan? Answer with one word.`,
   sizeMod:(n,a)=>`A ${n} — what size fits: small, medium, large? Answer with one word.`,
@@ -3519,6 +3527,9 @@ window.Match=Match;
 window.Battle=Battle;
 window.Bot=Bot;
 window.unit=unit;
+window.attrsToUnit=attrsToUnit;
+window.validateUnit=validateUnit;
+window.templateFallback=templateFallback;
 window.clearError=clearError;
 
 // Phase 7: remove the loading splash once init is done.
