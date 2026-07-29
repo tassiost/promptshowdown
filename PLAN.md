@@ -1245,7 +1245,7 @@ async function forgeWithAd(prompt) {
 
 ---
 
-## Phase 14 — Opponent Scout
+## Phase 14 — Opponent Scout ✅ DONE
 
 ### Changes
 - Pre-battle (after draft, before horn): show opponent portrait card. Tap reveals their 3 picked units for the round with stats + sprite preview.
