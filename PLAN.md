@@ -1,5 +1,7 @@
 # Prompt Showdown v5 — Draft Showdown Clone + LLM Reward Layer
 
+**Status: ALL PHASES COMPLETE ✅**
+
 **Product strategy: two tiers.**
 
 1. **Tier 1 — Draft Showdown clone (ship first):** A complete, fully-playable hybrid-casual PVP card-draft auto-battler. Rounds, lives, 3-pick-per-round drafting, comeback mechanic, 4-card loadout, arenas, opponent scout, synergy hints, P2P multiplayer. Uses a curated 6-unit roster with simple visuals (colored shapes with role-coded borders). No LLM dependency — the game is fun and complete without it. **There is no separate "singleplayer" mode.** Every match goes through the same matchmaking flow — if no human opponent is found within a timeout, the slot is filled by a bot (random starter deck, random drafting). The player never knows (or cares) whether they fought a human or a bot; the UX is identical.
