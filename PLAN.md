@@ -216,7 +216,7 @@ This is informed by the macsand project (`/Users/tassio/macsand/WEBLLM_MATERIAL_
 
 ---
 
-## Phase 10 — Behaviour Composition API + Starter Roster
+## Phase 10 — Behaviour Composition API + Starter Roster ✅ DONE
 
 **Today:** `Battle.act()` (line ~583) does chase-closest + attack-when-in-range for all units. No behaviour variety, no role tags. The current model is `Llama-3.2-1B-Instruct-q4f32_1-MLC` (line 323); the forge generates flat stats via a generic prompt.
 
