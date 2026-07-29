@@ -997,6 +997,11 @@ function setupNetwork(id){
     room.onPeerLeave(()=>{
       connected=false;
       setText("connection","Status: disconnected");
+      // Phase 18: mid-match disconnect — offer "Continue vs Bot".
+      if(Match.active&&role==="host"){
+        const lastLoadout=Match.opponentPicks?.map(u=>u.n)||[];
+        showDisconnectPrompt(lastLoadout);
+      }
     });
     return true;
   }
@@ -1010,6 +1015,30 @@ function transmit(type,data){
   if(connected&&sendNet){
     try{sendNet({t:type,d:data});}catch(e){showError("Network send failed: "+(e&&e.message||e));}
   }
+}
+
+// Phase 18: mid-match disconnect prompt — "Continue vs Bot" or "Forfeit".
+function showDisconnectPrompt(lastLoadout){
+  const overlay=document.createElement("div");
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
+  overlay.innerHTML=`<div style="text-align:center;padding:20px;">
+    <div style="font-size:1.3rem;margin-bottom:15px;">Opponent disconnected</div>
+    <button id="discBot" style="margin:5px;padding:10px 20px;font-size:1rem;cursor:pointer;background:#4a7;border:none;color:#fff;border-radius:6px;">Continue vs Bot</button>
+    <button id="discForfeit" style="margin:5px;padding:10px 20px;font-size:1rem;cursor:pointer;background:#f44;border:none;color:#fff;border-radius:6px;">Forfeit</button>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector("#discBot").onclick=()=>{
+    overlay.remove();
+    // Swap opponent to bot using last known loadout.
+    Match.opponentPicks=lastLoadout.length>0
+      ?lastLoadout.map(n=>G.base.find(b=>b.n===n)).filter(Boolean)
+      :Bot.draftRound(Match.comebackEligible()?4:3);
+    toast("Continuing vs bot");
+  };
+  overlay.querySelector("#discForfeit").onclick=()=>{
+    overlay.remove();
+    if(Match.active)Match.forfeit();
+  };
 }
 
 let suppressP2PErrors=false;
@@ -1219,6 +1248,12 @@ const Match={
     const last=this.history[this.history.length-1];
     // The player gets comeback if they lost the last round.
     return last.winner==="enemy";
+  },
+
+  // Phase 18: forfeit the current match (used on disconnect).
+  forfeit(){
+    this.active=false;
+    if(this.onMatchEnd)try{this.onMatchEnd("enemy");}catch(e){showError("Match forfeit handler failed: "+(e&&e.message||e));}
   }
 };
 
@@ -2676,11 +2711,17 @@ const G={
   },
 
   // Phase 5: host broadcasts full state at 20Hz (every 50ms).
+  // Phase 18: snapshot includes match state (round, lives, drawIndex).
   startSnapshots(){
     this.stopSnapshots();
     this.snapTimer=setInterval(()=>{
       if(!Battle.running){this.stopSnapshots();return;}
-      transmit("snap",Battle.snapshot());
+      const snap=Battle.snapshot();
+      snap.round=Match.round;
+      snap.livesPlayer=Match.livesPlayer;
+      snap.livesEnemy=Match.livesEnemy;
+      snap.drawIndex=G.roundDraftState?.drawIndex||0;
+      transmit("snap",snap);
     },50);
   },
   stopSnapshots(){
