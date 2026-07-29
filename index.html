@@ -96,11 +96,11 @@ h2{font-size:.95rem;}
 <div class="screen" id="draft">
 <h2>DRAFT</h2>
 <div id="livesHUD" style="font-size:.8rem;margin:4px;"></div>
-<div class="detail">Pick 3 units · rarity-weighted</div>
+<div id="draftDots" style="font-size:1.2rem;margin:4px;letter-spacing:4px;"></div>
+<div class="detail" id="draftHint">Pick 1 unit</div>
 <div id="draftArea"></div>
 <div class="group">
 <button class="btn" id="rerollButton" onclick="G.reroll()">🎲 REROLL (<span id="rerollsLeft">3</span>)</button>
-<button class="btn primary" id="battleButton" disabled onclick="G.battle()">⚔️ BATTLE</button>
 </div>
 </div>
 
@@ -1076,6 +1076,36 @@ const Battle={
   }
 };
 
+// Phase 9: Bot opponent — fake multiplayer. Random drafting, no strategy.
+// Feels like a casual human opponent, not an AI.
+const Bot={
+  loadout:[],         // 4 random units from the pool (generated per match)
+
+  // Generate a random 4-unit loadout from the given pool.
+  generateLoadout(pool){
+    this.loadout=[];
+    const p=[...pool];
+    for(let i=0;i<4;i++){
+      if(!p.length)break;
+      const idx=F(R()*p.length);
+      this.loadout.push(cloneUnit(p[idx]));
+    }
+  },
+
+  // Draft a round: pick drawCount random cards from the pool.
+  // Returns array of picked units (3-4 units).
+  draftRound(drawCount){
+    const picks=[];
+    const pool=[...this.loadout];
+    for(let i=0;i<drawCount;i++){
+      if(!pool.length)break;
+      const idx=F(R()*pool.length);
+      picks.push(cloneUnit(pool[idx]));
+    }
+    return picks;
+  },
+};
+
 const G={
   save:loadData(),
   // Phase 10: starter roster with Behaviour Composition API fields.
@@ -1153,20 +1183,25 @@ const G={
   deckUnits(){return [...this.save.deck,...this.save.ai];},
   menu(){this.screen("menu");this.wins();},
   lobby(){this.screen("lobby");},
-  // Phase 8: G.start now starts a Match (not a single battle).
+  // Phase 8/9: G.start now starts a Match (not a single battle).
   // Match drives rounds; each round calls G.startRoundDraft().
   start(){
+    // Phase 9: generate bot loadout at match start (fake multiplayer).
+    Bot.generateLoadout(this.base);
     Match.start(DEFAULT_LIVES,winner=>this.onMatchEnd(winner));
   },
 
-  // Phase 8: called by Match.startRound() to show the draft screen.
+  // Phase 9: called by Match.startRound() to start the sequential draft.
   startRoundDraft(){
-    this.selected=[null,null,null];
-    this.draftOffering=[[],[],[]];
-    this.rerolls=3;
+    // Rerolls are per-match: only reset on round 1.
+    if(Match.round===1)this.rerolls=3;
+    // Determine draw count: 4th-draw comeback if player lost last round.
+    const drawCount=Match.comebackEligible()?4:3;
+    this.roundDraftState={drawIndex:0,picks:[],drawCount};
+    this.selected=[];
     this.screen("draft");
     this.updateLivesHUD();
-    this.makeDraft();
+    this.drawOne();
   },
 
   // Phase 8: lives hearts HUD for draft and battle screens.
@@ -1183,6 +1218,89 @@ const G={
     if(battleHUD)battleHUD.innerText=txt;
   },
 
+  // Phase 9: show a single draw of 3 cards. Player picks 1 → next draw.
+  drawOne(){
+    const st=this.roundDraftState;
+    if(!st)return;
+    // Generate 3 cards for this draw (no dupes within this draw).
+    const usedNames=new Set(st.picks.map(u=>u.n));
+    const offering=[];
+    for(let i=0;i<3;i++){
+      const u=this.rollOne(usedNames);
+      if(!u)continue;
+      usedNames.add(u.n);
+      offering.push(u);
+    }
+    this.currentOffering=offering;
+    this.renderDraw();
+  },
+
+  // Phase 9: render the current draw (3 cards + progress dots).
+  renderDraw(){
+    const st=this.roundDraftState;
+    if(!st)return;
+    let area=$("draftArea");
+    if(!area)return;
+    area.innerHTML="";
+    const group=document.createElement("div");
+    group.className="group";
+    for(const u of this.currentOffering){
+      group.appendChild(this.draftCard(u));
+    }
+    area.appendChild(group);
+    // Progress dots: ● for done, ○ for remaining, ★ for comeback 4th draw.
+    let dots="";
+    for(let i=0;i<st.drawCount;i++){
+      if(i<st.drawIndex)dots+="● ";
+      else if(i===3)dots+="★ ";
+      else dots+="○ ";
+    }
+    const dd=$("draftDots");
+    if(dd)dd.innerText=dots.trim();
+    const dh=$("draftHint");
+    if(dh)dh.innerText=`Draw ${st.drawIndex+1} of ${st.drawCount}: Pick 1 unit`;
+    this.updateRerollUI();
+  },
+
+  // Phase 9: draft card onclick — pick this unit, advance to next draw.
+  draftCard(u){
+    const card=document.createElement("div");
+    card.className="card rar-"+u.rar;
+    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
+    const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
+    card.innerHTML=
+      `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
+      `<div class="title" style="color:${u.c}">${u.n}</div>`+
+      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${roleLabel}</div>`;
+    card.onclick=()=>{
+      const st=this.roundDraftState;
+      if(!st)return;
+      st.picks.push(u);
+      st.drawIndex++;
+      if(st.drawIndex>=st.drawCount){
+        // All draws done → army locked → battle.
+        this.selected=st.picks;
+        this.battle();
+      }else{
+        this.drawOne();
+      }
+    };
+    return card;
+  },
+
+  // Phase 9: reroll re-rolls the current draw's cards.
+  reroll(){
+    if(this.rerolls<=0)return;
+    this.rerolls--;
+    this.drawOne(); // re-rolls the current offering
+  },
+
+  updateRerollUI(){
+    setText("rerollsLeft",this.rerolls);
+    const rb=$("rerollButton");
+    if(rb)rb.disabled=this.rerolls<=0;
+  },
+
   // Phase 3: rarity-weighted draw. common ~70%, rare ~25%, legendary ~5%.
   // Excludes names already used elsewhere in this draft offering (no dupes).
   rollOne(usedNames){
@@ -1194,68 +1312,6 @@ const G={
     if(candidates.length===0)candidates=pool.filter(u=>!usedNames.has(u.n));
     if(candidates.length===0)candidates=pool; // edge case: tiny pool
     return cloneUnit(candidates[F(R()*candidates.length)]);
-  },
-
-  makeDraft(){
-    let area=$("draftArea");
-    if(!area)return;
-    area.innerHTML="";
-    const usedNames=new Set();
-    for(let row=0;row<3;row++){
-      // Preserve already-selected unit for this row; otherwise roll fresh.
-      if(this.selected[row]){
-        usedNames.add(this.selected[row].n);
-        this.draftOffering[row]=[this.selected[row]];
-      }else{
-        this.draftOffering[row]=[];
-        for(let i=0;i<3;i++){
-          const u=this.rollOne(usedNames);
-          if(!u)continue;
-          usedNames.add(u.n);
-          this.draftOffering[row].push(u);
-        }
-      }
-      const group=document.createElement("div");
-      group.className="group";
-      for(const u of this.draftOffering[row]){
-        group.appendChild(this.draftCard(u,row));
-      }
-      area.appendChild(group);
-    }
-    this.updateRerollUI();
-  },
-
-  draftCard(u,row){
-    const card=document.createElement("div");
-    card.className="card rar-"+u.rar;
-    if(this.selected[row]&&this.selected[row].id===u.id)card.classList.add("selected");
-    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
-    card.innerHTML=
-      `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
-      `<div class="title" style="color:${u.c}">${u.n}</div>`+
-      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}</div>`;
-    card.onclick=()=>{
-      this.selected[row]=u;
-      // Re-render so the selected highlight shows and dupes are recomputed.
-      this.makeDraft();
-      const bb=$("battleButton");
-      if(bb)bb.disabled=this.selected.filter(Boolean).length!==3;
-    };
-    return card;
-  },
-
-  // Phase 3: reroll re-rolls only slots that haven't been picked yet.
-  reroll(){
-    if(this.rerolls<=0)return;
-    this.rerolls--;
-    for(let row=0;row<3;row++){if(!this.selected[row])this.draftOffering[row]=[];}
-    this.makeDraft();
-  },
-
-  updateRerollUI(){
-    setText("rerollsLeft",this.rerolls);
-    const rb=$("rerollButton");
-    if(rb)rb.disabled=this.rerolls<=0;
   },
 
   // Phase 10: build an army (3 copies of each picked unit).
@@ -1272,17 +1328,11 @@ const G={
     return out;
   },
 
-  // Phase 10: build a bot army — random 4 from base, 3 copies each.
+  // Phase 9: build a bot army from bot's round picks (3 copies each).
   buildBotArmy(){
+    const drawCount=Match.comebackEligible()?4:3; // bot also gets comeback
+    const botPicks=Bot.draftRound(drawCount);
     const out=[];
-    const pool=[...this.base];
-    // Pick 3 random unique units for the bot's draft.
-    const botPicks=[];
-    for(let i=0;i<3;i++){
-      if(!pool.length)break;
-      const idx=F(R()*pool.length);
-      botPicks.push(pool.splice(idx,1)[0]);
-    }
     for(const pick of botPicks){
       for(let i=0;i<3;i++){
         const u=cloneUnit(pick);
@@ -1314,7 +1364,8 @@ const G={
       setText("battleEnemy","?");
       return;
     }
-    // Phase 10: single-player bot match — bot drafts from G.base.
+    // Phase 9: bot match — bot drafts from its loadout (fake multiplayer).
+    if(!Bot.loadout.length)Bot.generateLoadout(this.base);
     const enemies=this.buildBotArmy();
     this.screen("battle");
     this.updateLivesHUD();
@@ -1685,6 +1736,7 @@ G.join=function(){
 window.G=G;
 window.Match=Match;
 window.Battle=Battle;
+window.Bot=Bot;
 window.unit=unit;
 window.clearError=clearError;
 
