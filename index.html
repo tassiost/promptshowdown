@@ -132,6 +132,7 @@ h2{font-size:.95rem;}
 <div class="screen" id="result">
 <h1 id="resultTitle">RESULT</h1>
 <div id="livesResult" style="font-size:.9rem;margin:6px;"></div>
+<div id="matchHint" style="font-size:.8rem;margin:6px;color:#fa0;padding:6px;border-radius:6px;background:#111;"></div>
 <div class="reward" id="matchRewards" style="display:none;">
 <div class="pill">⭐ <span id="xpGain">+0</span> XP</div>
 <div class="pill">💰 <span id="coinGain">+0</span></div>
@@ -154,6 +155,7 @@ h2{font-size:.95rem;}
 <h2>📋 LOADOUT</h2>
 <div class="detail">4 cards in your loadout · tap collection to swap</div>
 <div id="loadoutArea" style="display:flex;gap:5px;justify-content:center;margin:8px 0;"></div>
+<div id="synergyMeter" style="margin:8px 0;font-size:.8rem;padding:6px;border-radius:6px;background:#111;"></div>
 <h2 style="font-size:.8rem;margin-top:10px;">COLLECTION</h2>
 <div class="detail">Tap a unit with a duplicate to fuse (2 → +1 Lv)</div>
 <div id="deckArea"></div>
@@ -1360,16 +1362,22 @@ const G={
     this.updateRerollUI();
   },
 
-  // Phase 9: draft card onclick — pick this unit, advance to next draw.
+  // Phase 9/16: draft card onclick — pick this unit, advance to next draw.
+  // Phase 16: highlights picks that fill missing roles in current round army.
   draftCard(u){
     const card=document.createElement("div");
     card.className="card rar-"+u.rar;
+    // Phase 16: check if this unit fills a missing role (only after first pick).
+    const pickedRoles=this.roundDraftState.picks.map(p=>p.role);
+    const missingRole=this.roundDraftState.picks.length>0&&!pickedRoles.includes(u.role);
+    const roleFillHint=missingRole?`<br><span style="color:#4f4">fills ${u.role}</span>`:"";
     const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
     const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
     card.innerHTML=
       `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
-      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${roleLabel}</div>`;
+      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${roleLabel}${roleFillHint}</div>`;
+    if(missingRole)card.style.borderColor="#4f4";
     card.onclick=()=>{
       const st=this.roundDraftState;
       if(!st)return;
@@ -1629,6 +1637,10 @@ const G={
       const arena=this.arenas[this.save.arena];
       setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
     }
+    // Phase 16: post-match strategy hint.
+    const hint=this.generateMatchHint(win);
+    const mh=$("matchHint");
+    if(mh)mh.innerHTML=hint;
     const nr=$("nextRound");
     if(nr){
       nr.style.display="block";
@@ -1638,6 +1650,24 @@ const G={
     }
     const mm=$("matchMenu");
     if(mm)mm.style.display="inline-block";
+  },
+
+  // Phase 16: generate a one-line strategy hint based on loadout roles.
+  generateMatchHint(win){
+    const units=this.loadoutUnits();
+    const roles={};
+    for(const u of units)roles[u.role]=(roles[u.role]||0)+1;
+    if(win){
+      if(roles["frontline"]&&roles["carry"])return"💡 Solid frontline + carry combo won the day";
+      if(roles["counter"])return"💡 Your counter units dove effectively";
+      return"💡 Balanced play took the match";
+    }
+    // Loss hints based on role gaps.
+    if(!roles["frontline"])return"💡 Lost — no frontline to protect your carries. Add a tanky unit";
+    if(!roles["carry"]&&!roles["ranged"])return"💡 Lost — no ranged DPS. Add an Archer or ranged unit";
+    if(!roles["support"])return"💡 Lost — no healing. A Priest could sustain your frontline";
+    if(!roles["counter"])return"💡 Lost — no divers to threaten enemy carries. Add an Assassin";
+    return"💡 Close match — try adjusting your loadout strategy";
   },
 
   // Phase 6/8: achievement definitions + unlock checks.
@@ -1801,7 +1831,7 @@ const G={
 
   next(){this.start();}, // Phase 8: starts a new match (called from forge screen)
 
-  // Phase 13: deck screen = 4 loadout slots + scrollable collection.
+  // Phase 13/16: deck screen = 4 loadout slots + synergy meter + collection.
   deck(){
     this.screen("deck");
     // Render loadout slots (4 cards).
@@ -1820,6 +1850,8 @@ const G={
         la.appendChild(card);
       });
     }
+    // Phase 16: synergy meter — role balance analysis.
+    this.renderSynergyMeter();
     // Render collection (all owned units, with fusion for duplicates).
     let area=$("deckArea");
     if(!area)return;
@@ -1847,6 +1879,25 @@ const G={
       }
       area.appendChild(card);
     }
+  },
+
+  // Phase 16: synergy meter — analyzes role balance in the loadout.
+  renderSynergyMeter(){
+    const meter=$("synergyMeter");
+    if(!meter)return;
+    const units=this.loadoutUnits();
+    const roles={};
+    for(const u of units)roles[u.role]=(roles[u.role]||0)+1;
+    // Build role summary.
+    const roleList=Object.entries(roles).map(([r,c])=>`${r}:${c}`).join(" · ");
+    // Warnings for missing/overloaded roles.
+    const warnings=[];
+    if(!roles["frontline"])warnings.push("⚠ No frontline — backline exposed");
+    if(!roles["carry"]&&!roles["ranged"])warnings.push("⚠ No carry — low DPS");
+    if(!roles["support"])warnings.push("⚠ No support — no healing");
+    if(!roles["counter"])warnings.push("⚠ No counter — can't dive enemy carries");
+    const warnText=warnings.length?`<br><span style="color:#f84">${warnings.join("<br>")}</span>`:`<br><span style="color:#4f4">✓ Balanced loadout</span>`;
+    meter.innerHTML=`<b>Roles:</b> ${roleList||"empty"}${warnText}`;
   },
 
   // Phase 13: swap a loadout slot — cycle to next collection unit.
