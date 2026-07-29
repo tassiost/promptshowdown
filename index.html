@@ -1262,6 +1262,124 @@ const SpriteRenderer={
   },
 };
 
+// Phase 17: Procedural FX System — particles, hit flashes, screen shake.
+// State-derived so P2P guests see the same juice without extra network traffic.
+const MAX_PARTICLES=60;
+const BattleFX={
+  // Spawn particles at a position with given color + count.
+  burst(x,y,color,count,speed){
+    const n=Math.min(count,MAX_PARTICLES-(Battle.particles?.length||0));
+    for(let i=0;i<n;i++){
+      const a=Math.random()*Math.PI*2;
+      const v=speed*(0.5+Math.random()*0.5);
+      Battle.particles.push({
+        x,y,
+        vx:Math.cos(a)*v,vy:Math.sin(a)*v,
+        life:0.3+Math.random()*0.2,
+        maxLife:0.5,
+        c:color,
+        r:2+Math.random()*2
+      });
+    }
+  },
+  // Hit flash: unit flashes white briefly.
+  onHit(u){
+    u.hitFlash=0.08; // 80ms
+  },
+  // Crit burst: gold flash + 6-particle spark + screen shake.
+  onCrit(u){
+    u.hitFlash=0.08;
+    this.burst(u.x,u.y,"#fd4",6,80);
+    this.shake(3);
+  },
+  // Death burst: expand + fade + 8 particles.
+  onDeath(u){
+    this.burst(u.x,u.y,u.c,8,60);
+    if(u.role==="carry")this.shake(4); // carry death = bigger shake
+  },
+  // Spawn pop-in: scale 0->1 ease-out-back.
+  onSpawn(u){
+    u.spawnT=0.001; // start spawn animation
+  },
+  // Attack lunge: offset 4px toward target.
+  onAttack(u,target){
+    if(!target)return;
+    const dx=target.x-u.x,dy=target.y-u.y;
+    const d=Math.hypot(dx,dy)||1;
+    u.lungeT=0.06; // 60ms
+    u.lungeDir={x:dx/d,y:dy/d};
+  },
+  // Screen shake: ±px transform with decay.
+  shake(amount){
+    Battle.shakeAmount=Math.max(Battle.shakeAmount||0,amount);
+  },
+  // Round-end flash: full-canvas color wash.
+  roundEnd(color){
+    Battle.roundFlash={t:0,dur:0.4,c:color||"#fff"};
+  },
+  // Update particles + timers.
+  update(dt){
+    // Update particles.
+    if(Battle.particles){
+      for(const p of Battle.particles){
+        p.x+=p.vx*dt;
+        p.y+=p.vy*dt;
+        p.vx*=0.95;
+        p.vy*=0.95;
+        p.life-=dt;
+      }
+      Battle.particles=Battle.particles.filter(p=>p.life>0);
+    }
+    // Update screen shake decay.
+    if(Battle.shakeAmount>0){
+      Battle.shakeAmount*=0.85;
+      if(Battle.shakeAmount<0.1)Battle.shakeAmount=0;
+    }
+    // Update round flash.
+    if(Battle.roundFlash){
+      Battle.roundFlash.t+=dt;
+      if(Battle.roundFlash.t>=Battle.roundFlash.dur)Battle.roundFlash=null;
+    }
+  },
+  // Draw particles on canvas.
+  drawParticles(c){
+    if(!Battle.particles)return;
+    for(const p of Battle.particles){
+      c.globalAlpha=Math.max(0,p.life/p.maxLife);
+      c.fillStyle=p.c;
+      c.beginPath();
+      c.arc(p.x,p.y,p.r,0,Math.PI*2);
+      c.fill();
+    }
+    c.globalAlpha=1;
+  },
+  // Draw round-end flash overlay.
+  drawRoundFlash(c){
+    if(!Battle.roundFlash)return;
+    const rf=Battle.roundFlash;
+    const alpha=Math.max(0,1-rf.t/rf.dur)*0.3;
+    c.globalAlpha=alpha;
+    c.fillStyle=rf.c;
+    c.fillRect(0,0,c.canvas.width,c.canvas.height);
+    c.globalAlpha=1;
+  },
+  // Get lunge offset for a unit (for rendering).
+  getLungeOffset(u){
+    if(u.lungeT<=0)return{x:0,y:0};
+    const f=u.lungeT/0.06;
+    const dist=4*f;
+    return{x:u.lungeDir.x*dist,y:u.lungeDir.y*dist};
+  },
+  // Get spawn scale for a unit (ease-out-back).
+  getSpawnScale(u){
+    if(u.spawnT<=0)return 1;
+    const t=Math.min(1,u.spawnT/0.15);
+    // Ease-out-back: 1 + c3*(t-1)^3 + c1*(t-1)^2
+    const c1=1.70158,c3=c1+1;
+    return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);
+  },
+};
+
 // Phase 2 + Phase 3: dedicated Battle object — owns combat state + simulation.
 // G orchestrates menus/save/AI/network and delegates battle to this.
 // Phase 3 adds: projectiles (ranged), collision separation, crits,
@@ -1270,6 +1388,9 @@ const RANGED_THRESHOLD=80;
 const Battle={
   units:[],          // Phase 10: single array (was units + enemies)
   projectiles:[],
+  particles:[],      // Phase 17: particle system (capped at MAX_PARTICLES)
+  shakeAmount:0,     // Phase 17: screen shake amount (decays)
+  roundFlash:null,   // Phase 17: round-end flash {t,dur,c}
   time:0,
   running:false,
   winner:null,
@@ -1302,6 +1423,12 @@ const Battle={
     u.attackedThisFrame=false;
     u.prevX=u.x;          // for move detection
     u.prevY=u.y;
+    // Phase 17: FX runtime fields.
+    u.prevH=u.h;          // for hit flash detection
+    u.spawnT=0;           // spawn pop-in animation (0->1 over 150ms)
+    u.hitFlash=0;         // hit flash timer (counts down from 80ms)
+    u.lungeT=0;           // attack lunge timer (counts down from 60ms)
+    u.lungeDir={x:0,y:0}; // lunge direction
     return u;
   },
 
@@ -1312,7 +1439,12 @@ const Battle={
       ...units.map(u=>({...u,team:"player"})),
       ...enemies.map(u=>({...u,team:"enemy"}))
     ].map(u=>this.initRuntime(u));
+    // Phase 17: trigger spawn FX for all units.
+    for(const u of this.units)BattleFX.onSpawn(u);
     this.projectiles=[];
+    this.particles=[];     // Phase 17: clear particles
+    this.shakeAmount=0;    // Phase 17: reset shake
+    this.roundFlash=null;  // Phase 17: reset round flash
     this.time=0;
     this.running=true;
     this.winner=null;
@@ -1372,6 +1504,10 @@ const Battle={
       else if(u.attackT>=0)u.animState="attack";
       else if(u.movedThisFrame)u.animState="move";
       else u.animState="idle";
+      // Phase 17: advance FX timers.
+      if(u.hitFlash>0)u.hitFlash-=dt;
+      if(u.lungeT>0)u.lungeT-=dt;
+      if(u.spawnT>0)u.spawnT+=dt/0.15; // 150ms spawn anim
     }
     // 2. detect newly dead units → onUnitDeath
     for(let u of this.units){
@@ -1399,6 +1535,8 @@ const Battle={
     this.updateProjectiles(dt);
     // 5. collision separation
     this.separate(this.units);
+    // Phase 17: update FX (particles, shake, round flash).
+    BattleFX.update(dt);
     // 6. clamp positions to canvas bounds (prevent flee/kite from flying off)
     const cw=this.ctx?.canvas?.width||400, ch=this.canvasH;
     for(let u of this.units){
@@ -1432,6 +1570,7 @@ const Battle={
 
   // Ranged units fire projectiles; melee deal damage instantly.
   attack(attacker,target,enemies){
+    BattleFX.onAttack(attacker,target); // Phase 17: attack lunge FX
     if(attacker.r>RANGED_THRESHOLD){
       this.projectiles.push({
         x:attacker.x,y:attacker.y,
@@ -1461,6 +1600,9 @@ const Battle={
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
     target.h-=dmg;
+    // Phase 17: FX on hit.
+    if(crit)BattleFX.onCrit(target);
+    else BattleFX.onHit(target);
     this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
     transmit("hit",{target:target.id,damage:dmg});
     // lifesteal: heal attacker for 50% of damage dealt
@@ -1494,6 +1636,7 @@ const Battle={
         minion.y=u.y+Q(-20,20);
         minion.ttl=5;
         this.units.push(this.initRuntime(minion));
+        BattleFX.onSpawn(minion); // Phase 17: spawn pop-in FX
         u.abCool=2.0;
         this.log(u.n+" spawns a minion");
         break;
@@ -1529,6 +1672,7 @@ const Battle={
       this.triggerAbility(u,allies,enemies);
     }
     u.deathT=0;
+    BattleFX.onDeath(u); // Phase 17: death burst FX
   },
 
   updateProjectiles(dt){
@@ -1586,9 +1730,22 @@ const Battle={
     if(!c)return;
     c.fillStyle="#080810";
     c.fillRect(0,0,c.canvas.width,c.canvas.height);
+    // Phase 17: apply screen shake transform.
+    const shake=this.shakeAmount||0;
+    if(shake>0){
+      c.save();
+      c.translate((Math.random()-0.5)*shake*2,(Math.random()-0.5)*shake*2);
+    }
     // units
     for(let u of this.units){
       if(u.h<=0&&u.deathT===undefined)continue;
+      // Phase 17: apply lunge offset + spawn scale.
+      const lunge=BattleFX.getLungeOffset(u);
+      const spawnScale=BattleFX.getSpawnScale(u);
+      const origX=u.x,origY=u.y,origZ=u.z;
+      u.x=origX+lunge.x;
+      u.y=origY+lunge.y;
+      u.z=origZ*spawnScale;
       // Phase 11: use SpriteRenderer for units with recipes, fallback otherwise.
       const hasRecipe=!!u.recipe;
       if(hasRecipe){
@@ -1603,6 +1760,16 @@ const Battle={
         c.stroke();
         c.globalAlpha=1;
       }
+      // Phase 17: hit flash overlay (white tint on top of sprite).
+      if(u.hitFlash>0){
+        c.globalAlpha=Math.min(0.6,u.hitFlash/0.08*0.6);
+        c.fillStyle="#fff";
+        SpriteRenderer._drawRoleShape(c,u);
+        c.fill();
+        c.globalAlpha=1;
+      }
+      // Restore original position (lunge is visual only).
+      u.x=origX;u.y=origY;u.z=origZ;
       // status rings (always drawn, on top of sprite)
       if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
       if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
@@ -1623,6 +1790,12 @@ const Battle={
       c.arc(p.x,p.y,3,0,Math.PI*2);
       c.fill();
     }
+    // Phase 17: draw particles on top.
+    BattleFX.drawParticles(c);
+    // Phase 17: restore shake transform.
+    if(shake>0)c.restore();
+    // Phase 17: draw round-end flash (after shake restore, full canvas).
+    BattleFX.drawRoundFlash(c);
   },
 
   log(t){
@@ -1637,6 +1810,9 @@ const Battle={
     const enemyAlive=this.units.some(u=>u.team==="enemy"&&u.h>0);
     if(playerAlive&&enemyAlive)return;
     this.winner=playerAlive?"player":(enemyAlive?"enemy":"draw");
+    // Phase 17: round-end flash + screen shake.
+    BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
+    BattleFX.shake(4);
     this.stop();
     if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle end handler failed: "+(e&&e.message||e));}
   },
