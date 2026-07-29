@@ -473,8 +473,12 @@ async function preloadAI(){
 function validateUnit(raw,arenaIndex){
   try{
     const u=unit(raw); // unit() already clamps + validates enums.
-    // Training Yard clamps (arenaIndex 0). Phase 15 adds per-arena clamps.
-    if(u.h>100||u.d>60)return null;
+    // Phase 15: arena-dependent param clamps (gates power progression).
+    const ai=arenaIndex||(G.save?.arena||0);
+    const arena=G.arenas?.[ai];
+    const maxHp=arena?.maxHp||100;
+    const maxDmg=arena?.maxDmg||30;
+    if(u.h>maxHp||u.d>maxDmg)return null;
     if(u.h<10||u.d<3)return null;
     if(u.r>250&&u.d>40)return null; // sniper + heavy hitter = unfun
     // Semantic validation: passive abilities require abilityTrigger: never.
@@ -2230,13 +2234,13 @@ const G={
   // Phase 15: arena ladder. Each arena: name, color, lives, unlock threshold.
   // botPool = unit names the bot drafts from (themed per arena).
   arenas:[
-    {n:"Training Yard",c:"#4a4",lives:3,unlock:0,
+    {n:"Training Yard",c:"#4a4",lives:3,unlock:0,maxHp:100,maxDmg:30,
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer"]},
-    {n:"District Z",c:"#8a4",lives:3,unlock:3,
+    {n:"District Z",c:"#8a4",lives:3,unlock:3,maxHp:130,maxDmg:35,
      botPool:["Plague","Cultist","Berserker","Knight","Archer","Assassin"]},
-    {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,
+    {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,maxHp:160,maxDmg:45,
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber"]},
-    {n:"Void Rift",c:"#a4f",lives:4,unlock:15,
+    {n:"Void Rift",c:"#a4f",lives:4,unlock:15,maxHp:200,maxDmg:50,
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserk","Shielder","Healer","Tank"]},
   ],
   // Phase 10/11: starter roster with Behaviour Composition API fields + recipes.
