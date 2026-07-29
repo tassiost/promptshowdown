@@ -309,16 +309,18 @@ function migrateSave(s){
 }
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 
-// Phase 3: extended unit schema. New optional fields (backward compatible):
+// Phase 3/10: extended unit schema with Behaviour Composition API fields.
 //   crit   0..1   critical-hit chance (default 0.1)
-//   ab     string ability key: "splash" | "heal" | "dodge" | "poison" | "" 
-//   rar    string rarity: "common" | "rare" | "legendary" (draft system, Phase 3)
+//   ab     string ability key (Phase 10: 12 values, was 5)
+//   rar    string rarity: "common" | "rare" | "legendary"
 //   cost   number draft cost
-// Runtime-only fields (poison/slow/stun/dead) are added by Battle, not persisted.
+// Phase 10 behaviour fields (5 composable enums + role):
+//   targeting, movement, attackCondition, abilityTrigger, moveSpeedMod, role
+// Runtime-only fields (poison/slow/stun/dead/deathT) are added by Battle, not persisted.
 function unit(x={}){
   return {
     id:x.id||Date.now()+F(R()*99999),
-    n:String(x.n||"Unit"),
+    n:String(x.n||"Unit").slice(0,20),
     h:clamp(Number(x.h)||50,1,1000),
     d:clamp(Number(x.d)||10,1,200),
     r:clamp(Number(x.r)||50,10,300),
@@ -327,9 +329,16 @@ function unit(x={}){
     c:x.c||"#0ff",
     z:clamp(Number(x.z)||10,4,40),
     crit:clamp(Number(x.crit)||0.1,0,1),
-    ab:String(x.ab||""),
+    ability:ABILITY_OPTS.includes(x.ability||x.ab)?(x.ability||x.ab):"none",
     rar:["common","rare","legendary"].includes(x.rar)?x.rar:"common",
-    cost:clamp(Number(x.cost)||1,1,20)
+    cost:clamp(Number(x.cost)||1,1,20),
+    // Phase 10: Behaviour Composition API fields.
+    targeting:TARGETING_OPTS.includes(x.targeting)?x.targeting:"closest",
+    movement:MOVEMENT_OPTS.includes(x.movement)?x.movement:"chase",
+    attackCondition:ATTACK_CONDITION_OPTS.includes(x.attackCondition)?x.attackCondition:"always",
+    abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
+    moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
+    role:ROLE_OPTS.includes(x.role)?x.role:"frontline"
   };
 }
 function cloneUnit(u){return unit(JSON.parse(JSON.stringify(u)));}
@@ -406,20 +415,26 @@ async function preloadAI(){
   try{await initLLM();}catch(e){showError("AI preload error: "+(e&&e.message||e));}
 }
 
-// Phase 4: validate an AI-generated unit. Rejects broken/out-of-range units
-// so the LLM can't produce game-breaking stats. Returns a sanitized unit or null.
-function validateAIUnit(raw){
+// Phase 10: unified unit validation. Replaces v4's validateAIUnit.
+// Validates the 5 behaviour fields (each must be in its enum) + role + clamped params.
+// One function used by starter units, bot units, and LLM units.
+// arenaIndex optional (defaults to 0 = Training Yard clamps). Phase 15 makes
+// the clamps arena-dependent.
+function validateUnit(raw,arenaIndex){
   try{
-    const u=unit(raw); // unit() already clamps all numeric fields.
-    // Extra balance guards beyond clamp: reject absurd combos.
-    if(u.h>500||u.d>100)return null;
+    const u=unit(raw); // unit() already clamps + validates enums.
+    // Training Yard clamps (arenaIndex 0). Phase 15 adds per-arena clamps.
+    if(u.h>100||u.d>60)return null;
     if(u.h<10||u.d<3)return null;
-    if(u.r>250&&u.d>60)return null; // sniper + heavy hitter = unfun
-    // ability must be a known key (or empty).
-    const known=["","splash","heal","dodge","poison"];
-    if(!known.includes(u.ab))u.ab="";
-    // rarity must be valid; default common.
-    if(!["common","rare","legendary"].includes(u.rar))u.rar="common";
+    if(u.r>250&&u.d>40)return null; // sniper + heavy hitter = unfun
+    // Semantic validation: passive abilities require abilityTrigger: never.
+    if(PASSIVE_ABILITIES.has(u.ability)&&u.abilityTrigger!=="never")u.abilityTrigger="never";
+    // Triggered abilities require a non-never trigger.
+    if(TRIGGERED_ABILITIES.has(u.ability)&&u.abilityTrigger==="never")u.abilityTrigger="on_cooldown";
+    // heal_burst pairs with on_death, on_cooldown, or when_ally_hurt.
+    // shield pairs with on_low_hp or on_first_hit.
+    // explode pairs with on_death or on_cooldown.
+    // (These are soft constraints — we just fix the trigger, not reject.)
     return u;
   }catch(e){return null;}
 }
@@ -505,6 +520,112 @@ function networkReceive(data){
   }
 }
 
+// Phase 10: Behaviour Composition API — helper functions + lookup tables.
+// These replace the inline distance/movement code in v4's Battle.act().
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+function moveToward(u,t,d){
+  const dx=t.x-u.x, dy=t.y-u.y, dd=Math.hypot(dx,dy);
+  if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
+}
+function moveAway(u,t,d){
+  const dx=u.x-t.x, dy=u.y-t.y, dd=Math.hypot(dx,dy);
+  if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
+}
+function closestEnemy(u,enemies){
+  let best=null,bd=Infinity;
+  for(const e of enemies){
+    if(e.h<=0)continue;
+    const d=(u.x-e.x)**2+(u.y-e.y)**2;
+    if(d<bd){bd=d;best=e;}
+  }
+  return best;
+}
+function lowestBy(arr,fn){
+  let best=null,bv=Infinity;
+  for(const x of arr){if(x.h<=0)continue;const v=fn(x);if(v<bv){bv=v;best=x;}}
+  return best;
+}
+function highestBy(arr,fn){
+  let best=null,bv=-Infinity;
+  for(const x of arr){if(x.h<=0)continue;const v=fn(x);if(v>bv){bv=v;best=x;}}
+  return best;
+}
+
+// Phase 10: enum value lists (used by unit() defaults + validateUnit).
+const TARGETING_OPTS=["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","random"];
+const MOVEMENT_OPTS=["chase","flee","hold","hold_midpoint","kite","patrol"];
+const ATTACK_CONDITION_OPTS=["always","only_if_healthy","only_if_target_low","never"];
+const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"];
+const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"];
+const ROLE_OPTS=["frontline","carry","support","counter","utility"];
+const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow"]);
+const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield"]);
+
+// Phase 10: lookup tables — each enum maps to a pure function.
+const TARGETING={
+  closest:(u,enemies,allies)=>closestEnemy(u,enemies),
+  lowest_hp:(u,enemies,allies)=>lowestBy(enemies,e=>e.h),
+  highest_hp:(u,enemies,allies)=>highestBy(enemies,e=>e.h),
+  enemy_carry:(u,enemies,allies)=>enemies.find(e=>e.h>0&&e.role==="carry")||closestEnemy(u,enemies),
+  enemy_support:(u,enemies,allies)=>enemies.find(e=>e.h>0&&e.role==="support")||closestEnemy(u,enemies),
+  enemy_backline:(u,enemies,allies)=>{
+    if(!enemies.length)return null;
+    const backY=enemies[0].team==="player"?Math.max(...enemies.map(e=>e.y)):Math.min(...enemies.map(e=>e.y));
+    return enemies.reduce((b,e)=>Math.abs(e.y-backY)<Math.abs(b.y-backY)?e:b,enemies[0]);
+  },
+  enemy_frontline:(u,enemies,allies)=>{
+    if(!enemies.length)return null;
+    const frontY=enemies[0].team==="player"?Math.min(...enemies.map(e=>e.y)):Math.max(...enemies.map(e=>e.y));
+    return enemies.reduce((b,e)=>Math.abs(e.y-frontY)<Math.abs(b.y-frontY)?e:b,enemies[0]);
+  },
+  enemy_cluster:(u,enemies,allies)=>{
+    if(!enemies.length)return null;
+    let best=enemies[0],bestCount=0;
+    for(const e of enemies){const c=enemies.filter(o=>dist(e,o)<80).length;if(c>bestCount){bestCount=c;best=e;}}
+    return best;
+  },
+  lowest_ally:(u,enemies,allies)=>lowestBy(allies.filter(a=>a!==u),a=>a.h),
+  random:(u,enemies,allies)=>{const alive=enemies.filter(e=>e.h>0);return alive.length?alive[F(R()*alive.length)]:null;},
+};
+
+const MOVEMENT={
+  chase:(u,target,dt)=>{if(target)moveToward(u,target,u.s*(u.moveSpeedMod/100)*dt);},
+  flee:(u,target,dt)=>{if(target)moveAway(u,target,u.s*(u.moveSpeedMod/100)*dt);},
+  hold:(u,target,dt)=>{/* no movement */},
+  hold_midpoint:(u,target,dt)=>{
+    const mid=u.team==="player"?Battle.canvasH*0.6:Battle.canvasH*0.4;
+    if(Math.abs(u.y-mid)>10)u.y+=Math.sign(mid-u.y)*u.s*(u.moveSpeedMod/100)*dt;
+  },
+  kite:(u,target,dt)=>{
+    if(!target)return;
+    const d=dist(u,target);
+    const sp=u.s*(u.moveSpeedMod/100)*dt;
+    if(d<u.r*0.5)moveAway(u,target,sp);
+    else if(d>u.r*1.1)moveToward(u,target,sp);
+  },
+  patrol:(u,target,dt)=>{
+    u.patrolT=(u.patrolT||0)+dt;
+    u.x+=Math.sin(u.patrolT*2)*u.s*(u.moveSpeedMod/100)*dt*0.5;
+  },
+};
+
+const ATTACK_CONDITIONS={
+  always:(u,target)=>true,
+  only_if_healthy:(u,target)=>u.h>u.mh*0.5,
+  only_if_target_low:(u,target)=>target&&target.h<target.mh*0.3,
+  never:(u,target)=>false,
+};
+
+const ABILITY_TRIGGERS={
+  on_cooldown:(u,allies,enemies)=>u.abCool<=0,
+  when_ally_hurt:(u,allies,enemies)=>allies.some(a=>a!==u&&a.h>0&&a.h<a.mh*0.5)&&u.abCool<=0,
+  when_surrounded:(u,allies,enemies)=>enemies.filter(e=>e.h>0&&dist(u,e)<60).length>=2&&u.abCool<=0,
+  on_low_hp:(u,allies,enemies)=>u.h<u.mh*0.3&&u.abCool<=0,
+  on_death:(u,allies,enemies)=>false,  // handled in onUnitDeath()
+  on_first_hit:(u,allies,enemies)=>!u.firstHitUsed,
+  never:(u,allies,enemies)=>false,
+};
+
 // Phase 8: Match object — owns the match arc (lives, rounds, history).
 // Sibling of Battle; G delegates the round flow to this.
 const DEFAULT_LIVES=3;
@@ -565,8 +686,7 @@ const Match={
 // status effects (poison/slow/stun), and abilities (splash/heal/dodge/poison).
 const RANGED_THRESHOLD=80;
 const Battle={
-  units:[],
-  enemies:[],
+  units:[],          // Phase 10: single array (was units + enemies)
   projectiles:[],
   time:0,
   running:false,
@@ -574,6 +694,7 @@ const Battle={
   ctx:null,
   frame:0,
   last:0,
+  canvasH:550,       // Phase 10: for hold_midpoint movement
   onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
   autoTimer:null,
 
@@ -586,12 +707,21 @@ const Battle={
     u.slow=0;          // slow remaining seconds
     u.stun=0;          // stun remaining seconds
     u.mh=u.mh||u.h;    // max hp
+    u.patrolT=0;       // Phase 10: patrol movement timer
+    u.firstHitUsed=false; // Phase 10: on_first_hit flag
+    u.shieldActive=0;  // Phase 10: shield immunity timer
+    u.deathT=undefined;// Phase 10: death animation timer
+    u.ttl=u.ttl||0;    // Phase 10: minion time-to-live
     return u;
   },
 
+  // Phase 10: single units array; team set on each unit.
   start(units,enemies,onEnd){
-    this.units=units.map(u=>this.initRuntime(u));
-    this.enemies=enemies.map(u=>this.initRuntime(u));
+    // Set team strings before initRuntime so hold_midpoint etc. work.
+    this.units=[
+      ...units.map(u=>({...u,team:"player"})),
+      ...enemies.map(u=>({...u,team:"enemy"}))
+    ].map(u=>this.initRuntime(u));
     this.projectiles=[];
     this.time=0;
     this.running=true;
@@ -601,6 +731,7 @@ const Battle={
     if(!cv){this.stop();return;}
     cv.width=Math.min(400,innerWidth-20);
     cv.height=550;
+    this.canvasH=cv.height;
     this.ctx=cv.getContext("2d");
     this.last=performance.now();
     cancelAnimationFrame(this.frame);
@@ -613,10 +744,8 @@ const Battle={
   loop(time){
     if(!this.running)return;
     this.frame=requestAnimationFrame(this.loop.bind(this));
-    // Phase 7: pause simulation when the tab is hidden (battery + correctness).
     if(document.hidden){this.last=time;return;}
     let dt=(time-this.last)/1000;
-    // Throttle to target FPS by skipping frames that come in too fast.
     if(dt<this.targetFrameTime())return;
     this.last=time;
     dt=Math.min(dt,0.05);
@@ -625,12 +754,15 @@ const Battle={
     this.checkEnd();
   },
 
+  // Phase 10: single units array, split by team each frame.
   update(dt){
     this.time+=dt;
-    const all=[...this.units,...this.enemies];
-    // 1. status ticks
-    for(let u of all){
-      if(u.h<=0)continue;
+    // 1. status ticks + death animation + minion TTL
+    for(let u of this.units){
+      if(u.h<=0){
+        if(u.deathT!==undefined)u.deathT+=dt;
+        continue;
+      }
       if(u.poison>0){
         u.poison-=dt;
         u.poisonTick-=dt;
@@ -640,124 +772,185 @@ const Battle={
       if(u.stun>0)u.stun-=dt;
       if(u.cool>0)u.cool-=dt;
       if(u.abCool>0)u.abCool-=dt;
+      if(u.shieldActive>0)u.shieldActive-=dt;
+      if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0)u.h=0;} // minion expires
     }
-    // 2. movement + attacks + abilities
-    for(let u of this.units){this.act(u,this.enemies,dt);}
-    for(let e of this.enemies){this.act(e,this.units,dt);}
-    // 3. projectiles
+    // 2. detect newly dead units → onUnitDeath
+    for(let u of this.units){
+      if(u.h<=0&&u.deathT===undefined)this.onUnitDeath(u);
+    }
+    // 3. movement + attacks + abilities (split by team)
+    const players=this.units.filter(u=>u.team==="player"&&u.h>0);
+    const enemies=this.units.filter(u=>u.team==="enemy"&&u.h>0);
+    for(let u of this.units){
+      if(u.h<=0)continue;
+      const allies=u.team==="player"?players:enemies;
+      const targets=u.team==="player"?enemies:players;
+      this.act(u,targets,allies,dt);
+    }
+    // 4. projectiles
     this.updateProjectiles(dt);
-    // 4. collision separation (prevents overlap)
-    this.separate(all);
+    // 5. collision separation
+    this.separate(this.units);
+    // 6. clamp positions to canvas bounds (prevent flee/kite from flying off)
+    const cw=this.ctx?.canvas?.width||400, ch=this.canvasH;
+    for(let u of this.units){
+      if(u.h<=0)continue;
+      u.x=clamp(u.x,u.z,cw-u.z);
+      u.y=clamp(u.y,u.z,ch-u.z);
+    }
+    // 6. death cleanup: remove units with deathT >= 0.5
+    this.units=this.units.filter(u=>u.deathT===undefined||u.deathT<0.5);
     // HUD
-    setText("battleHP",this.units.filter(u=>u.h>0).length);
-    setText("battleEnemy",this.enemies.filter(u=>u.h>0).length);
+    setText("battleHP",players.length);
+    setText("battleEnemy",enemies.length);
     setText("turn","T"+Math.floor(this.time));
   },
 
-  // Per-unit action: move toward closest target, attack when in range,
-  // fire projectile if ranged, trigger ability if ready.
-  act(attacker,targets,dt){
-    if(attacker.h<=0)return;
-    if(attacker.stun>0)return; // stunned: no move, no attack
-    const target=this.closest(attacker,targets);
-    if(!target)return;
-    const dx=target.x-attacker.x;
-    const dy=target.y-attacker.y;
-    const dist=Math.hypot(dx,dy);
-    const speed=attacker.s*(attacker.slow>0?0.5:1);
-    if(dist<=attacker.r){
-      if(attacker.cool<=0){
-        this.attack(attacker,target,targets);
-        attacker.cool=attacker.a;
-      }
+  // Phase 10: 4-line composition via lookup tables.
+  act(u,enemies,allies,dt){
+    if(u.h<=0||u.stun>0)return;
+    const target=TARGETING[u.targeting](u,enemies,allies);
+    MOVEMENT[u.movement](u,target,dt);
+    if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
+      this.attack(u,target,enemies);
+      u.cool=u.a;
     }
-    else{
-      attacker.x+=(dx/dist)*speed*dt;
-      attacker.y+=(dy/dist)*speed*dt;
-    }
-    // Passive/active abilities
-    if(attacker.ab==="heal"&&attacker.abCool<=0){
-      this.healAllies(attacker);
-      attacker.abCool=3;
+    if(ABILITY_TRIGGERS[u.abilityTrigger](u,allies,enemies)){
+      this.triggerAbility(u,allies,enemies);
     }
   },
 
   // Ranged units fire projectiles; melee deal damage instantly.
-  attack(attacker,target,allTargets){
+  attack(attacker,target,enemies){
     if(attacker.r>RANGED_THRESHOLD){
       this.projectiles.push({
         x:attacker.x,y:attacker.y,
         tx:target.x,ty:target.y,
         d:attacker.d,team:attacker.team,owner:attacker.id,
-        c:attacker.c,ab:attacker.ab,crit:attacker.crit,
+        c:attacker.c,ability:attacker.ability,crit:attacker.crit,
+        role:attacker.role,moveSpeedMod:100,
         life:2,dead:false
       });
     }
     else{
-      this.dealDamage(attacker,target,allTargets);
+      this.takeDamage(attacker,target,enemies);
     }
   },
 
-  // Resolve one damage instance with dodge, crit, splash, poison.
-  dealDamage(attacker,target,allTargets){
+  // Phase 10: unified damage resolution with all passive abilities.
+  takeDamage(attacker,target,enemies){
     if(target.h<=0)return;
-    if(target.ab==="dodge"&&R()<0.2){this.log(target.n+" dodges!");return;}
+    // dodge: 50% chance to completely avoid (was 20% in v4)
+    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");return;}
+    // shield: immune if active
+    if(target.shieldActive>0){this.log(target.n+" shielded!");return;}
     let dmg=attacker.d;
+    // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
+    if(attacker.ability==="rage")dmg*=1+(1-attacker.h/attacker.mh);
+    // crit
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
     target.h-=dmg;
     this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
     transmit("hit",{target:target.id,damage:dmg});
-    if(attacker.ab==="splash"){
-      for(let t of allTargets){
-        if(t!==target&&t.h>0&&Math.hypot(t.x-attacker.x,t.y-attacker.y)<=attacker.r){
-          t.h-=dmg*0.5;
-        }
+    // lifesteal: heal attacker for 50% of damage dealt
+    if(attacker.ability==="lifesteal")attacker.h=Math.min(attacker.mh,attacker.h+dmg*0.5);
+    // slow: debuff target for 1s (refreshes, doesn't stack)
+    if(attacker.ability==="slow")target.slow=1.0;
+    // splash: AoE damage to enemies near target (50% damage)
+    if(attacker.ability==="splash"){
+      for(let e of enemies){
+        if(e!==target&&e.h>0&&dist(target,e)<40)e.h-=dmg*0.5;
       }
     }
-    if(attacker.ab==="poison"){target.poison=3;target.poisonTick=0;}
+    // poison: apply DoT (refreshes duration, doesn't stack damage)
+    if(attacker.ability==="poison"){target.poison=3.0;target.poisonTick=0;}
+  },
+
+  // Phase 10: triggered abilities (heal, spawn, explode, heal_burst, shield).
+  triggerAbility(u,allies,enemies){
+    switch(u.ability){
+      case "heal":{
+        const ally=lowestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h);
+        if(ally){ally.h=Math.min(ally.mh,ally.h+u.d*2);u.abCool=3.0;this.log(u.n+" heals "+ally.n);}
+        break;
+      }
+      case "spawn":{
+        const minion=unit({n:"Minion",h:20,d:5,r:20,s:50,a:1,c:u.c,
+          targeting:"closest",movement:"chase",attackCondition:"always",
+          abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
+        minion.team=u.team;
+        minion.x=u.x+Q(-20,20);
+        minion.y=u.y+Q(-20,20);
+        minion.ttl=5;
+        this.units.push(this.initRuntime(minion));
+        u.abCool=2.0;
+        this.log(u.n+" spawns a minion");
+        break;
+      }
+      case "explode":{
+        for(let e of enemies.filter(e=>e.h>0&&dist(u,e)<60))this.takeDamage(u,e,enemies);
+        u.abCool=5.0;
+        this.log(u.n+" explodes!");
+        break;
+      }
+      case "heal_burst":{
+        for(let a of allies.filter(a=>a.h>0&&dist(u,a)<60))a.h=Math.min(a.mh,a.h+u.d*2);
+        u.abCool=4.0;
+        this.log(u.n+" heal burst!");
+        break;
+      }
+      case "shield":{
+        u.shieldActive=2.0;
+        u.abCool=8.0;
+        if(u.abilityTrigger==="on_first_hit")u.firstHitUsed=true;
+        this.log(u.n+" raises shield");
+        break;
+      }
+      // "none" and passive abilities: no-op here
+    }
+  },
+
+  // Phase 10: death hook — fires on_death abilities before removal.
+  onUnitDeath(u){
+    if(u.abilityTrigger==="on_death"){
+      const allies=this.units.filter(x=>x.team===u.team&&x.h>0);
+      const enemies=this.units.filter(x=>x.team!==u.team&&x.h>0);
+      this.triggerAbility(u,allies,enemies);
+    }
+    u.deathT=0;
   },
 
   updateProjectiles(dt){
     if(!this.projectiles.length)return;
     for(let p of this.projectiles){
       if(p.dead)continue;
-      const dx=p.tx-p.x, dy=p.ty-p.y, dist=Math.hypot(dx,dy);
+      const dx=p.tx-p.x, dy=p.ty-p.y, dd=Math.hypot(dx,dy);
       const sp=320*dt;
-      if(dist<=sp){
-        const foes=p.team===0?this.enemies:this.units;
+      if(dd<=sp){
+        const foes=this.units.filter(u=>u.team!==p.team&&u.h>0);
         let hit=false;
         for(let f of foes){
-          if(f.h<=0)continue;
           if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22){
-            // Synthetic attacker object carrying projectile properties.
-            this.dealDamage({d:p.d,ab:p.ab,crit:p.crit,team:p.team,id:p.owner,c:p.c,r:0,x:p.tx,y:p.ty},f,foes);
+            // Synthetic attacker carrying projectile properties.
+            const synth={d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
+              c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role};
+            this.takeDamage(synth,f,foes);
             hit=true;break;
           }
         }
         p.dead=true;
-        if(!hit){this.log(p.c+" shot missed");}
+        if(!hit)this.log("shot missed");
       }
       else{
-        p.x+=(dx/dist)*sp;
-        p.y+=(dy/dist)*sp;
+        p.x+=(dx/dd)*sp;
+        p.y+=(dy/dd)*sp;
       }
       p.life-=dt;
       if(p.life<=0)p.dead=true;
     }
     this.projectiles=this.projectiles.filter(p=>!p.dead);
-  },
-
-  healAllies(healer){
-    const allies=healer.team===0?this.units:this.enemies;
-    let lowest=null;
-    for(let a of allies){
-      if(a.h>0&&a.h<a.mh){if(!lowest||a.h/a.mh<lowest.h/lowest.mh)lowest=a;}
-    }
-    if(lowest){
-      lowest.h=Math.min(lowest.mh,lowest.h+15);
-      this.log(healer.n+" heals "+lowest.n+" +15");
-    }
   },
 
   // Push overlapping units apart so they don't stack on one pixel.
@@ -779,23 +972,24 @@ const Battle={
     }
   },
 
-  closest(a,list){let best=null;let distance=Infinity;for(let x of list){if(x.h<=0)continue;let d=(a.x-x.x)**2+(a.y-x.y)**2;if(d<distance){distance=d;best=x;}}return best;},
-
   render(){
     let c=this.ctx;
     if(!c)return;
     c.fillStyle="#080810";
     c.fillRect(0,0,c.canvas.width,c.canvas.height);
     // units
-    for(let u of [...this.units,...this.enemies]){
-      if(u.h<=0)continue;
+    for(let u of this.units){
+      if(u.h<=0&&u.deathT===undefined)continue;
+      const alpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5):1;
+      c.globalAlpha=alpha;
       c.fillStyle=u.c;
       c.beginPath();
       c.arc(u.x,u.y,u.z,0,Math.PI*2);
       c.fill();
-      c.strokeStyle=u.team?"#f44":"#0ff";
+      c.strokeStyle=u.team==="enemy"?"#f44":"#0ff";
       c.stroke();
       // status rings
+      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
       if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
       if(u.poison>0){c.strokeStyle="#3f3";c.beginPath();c.arc(u.x,u.y,u.z+6,0,Math.PI*2);c.stroke();}
       if(u.slow>0){c.strokeStyle="#39f";c.beginPath();c.arc(u.x,u.y,u.z+9,0,Math.PI*2);c.stroke();}
@@ -805,6 +999,7 @@ const Battle={
       c.fillRect(u.x-18,u.y-12,36,5);
       c.fillStyle="#0f0";
       c.fillRect(u.x-18,u.y-12,36*Math.max(0,u.h/u.mh),5);
+      c.globalAlpha=1;
     }
     // projectiles
     for(let p of this.projectiles){
@@ -823,8 +1018,8 @@ const Battle={
   },
 
   checkEnd(){
-    const playerAlive=this.units.some(u=>u.h>0);
-    const enemyAlive=this.enemies.some(u=>u.h>0);
+    const playerAlive=this.units.some(u=>u.team==="player"&&u.h>0);
+    const enemyAlive=this.units.some(u=>u.team==="enemy"&&u.h>0);
     if(playerAlive&&enemyAlive)return;
     this.winner=playerAlive?"player":(enemyAlive?"enemy":"draw");
     this.stop();
@@ -837,7 +1032,6 @@ const Battle={
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
   },
 
-  // Manual step (used by ⏵ button).
   tick(){
     if(!this.running)return;
     this.update(0.05);
@@ -845,7 +1039,6 @@ const Battle={
     this.checkEnd();
   },
 
-  // Auto-play (used by ⏩ button).
   auto(){
     if(this.autoTimer)clearInterval(this.autoTimer);
     this.autoTimer=setInterval(()=>{
@@ -854,28 +1047,29 @@ const Battle={
     },120);
   },
 
-  // Forfeit (used by ✕ button).
   skip(){
     this.winner="enemy";
     this.stop();
     if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip handler failed: "+(e&&e.message||e));}
   },
 
-  // Guest receives a remote snapshot of unit/enemy state.
+  // Phase 10: snapshot uses single units array.
+  snapshot(){
+    return{time:this.time,units:this.units,projectiles:this.projectiles,winner:this.winner};
+  },
+
   applySnapshot(s){
     if(!s)return;
     if(s.units)this.units=s.units.map(u=>this.initRuntime({...u}));
-    if(s.enemies)this.enemies=s.enemies.map(u=>this.initRuntime({...u}));
   },
 
-  // Phase 5: render-only path for the guest (no simulation loop).
-  // Ensures the canvas/context exist, then draws current state once.
   renderOnly(){
     let cv=$("cv");
     if(!cv)return;
     if(!this.ctx){
       cv.width=Math.min(400,innerWidth-20);
       cv.height=550;
+      this.canvasH=cv.height;
       this.ctx=cv.getContext("2d");
     }
     this.render();
@@ -884,23 +1078,24 @@ const Battle={
 
 const G={
   save:loadData(),
-  // Phase 3: base units now carry abilities + rarity + cost.
+  // Phase 10: starter roster with Behaviour Composition API fields.
+  // 6 hand-authored units; each sets the 5 behaviour fields directly.
   base:[
-    {n:"Knight",h:90,d:14,r:45,s:70,a:1,c:"#44aaff",ab:"",rar:"common",cost:1,crit:0.1},
-    {n:"Archer",h:55,d:20,r:180,s:60,a:1.2,c:"#44ff44",ab:"",rar:"common",cost:2,crit:0.15},
-    {n:"Slash",h:65,d:26,r:35,s:90,a:1,c:"#ff4444",ab:"splash",rar:"rare",cost:3,crit:0.1},
-    {n:"Priest",h:70,d:8,r:120,s:50,a:1.5,c:"#ffdd44",ab:"heal",rar:"rare",cost:3,crit:0.05},
-    {n:"Assassin",h:50,d:22,r:30,s:120,a:0.8,c:"#ff44ff",ab:"dodge",rar:"rare",cost:3,crit:0.3},
-    {n:"Plague",h:60,d:12,r:90,s:55,a:1.3,c:"#88ff44",ab:"poison",rar:"rare",cost:3,crit:0.1}
+    {n:"Knight",h:110,d:12,r:40,s:50,a:1,c:"#44aaff",ability:"none",rar:"common",cost:1,crit:0.05,
+     targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"frontline"},
+    {n:"Archer",h:55,d:18,r:170,s:65,a:1.2,c:"#44ff44",ability:"none",rar:"common",cost:2,crit:0.15,
+     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry"},
+    {n:"Slash",h:70,d:24,r:35,s:85,a:1,c:"#ff4444",ability:"splash",rar:"rare",cost:3,crit:0.10,
+     targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"counter"},
+    {n:"Priest",h:65,d:10,r:100,s:50,a:1.5,c:"#ffdd44",ability:"heal",rar:"rare",cost:3,crit:0.05,
+     targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:100,role:"support"},
+    {n:"Assassin",h:45,d:20,r:30,s:110,a:0.8,c:"#ff44ff",ability:"dodge",rar:"rare",cost:3,crit:0.30,
+     targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:150,role:"counter"},
+    {n:"Engineer",h:60,d:8,r:90,s:45,a:1.3,c:"#ff8844",ability:"spawn",rar:"rare",cost:3,crit:0.05,
+     targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility"}
   ],
-  enemy:[
-    {n:"Guard",h:80,d:12,r:40,s:60,a:1,c:"#888888",ab:"",crit:0.1},
-    {n:"Mage",h:120,d:18,r:100,s:45,a:1.4,c:"#aa44ff",ab:"splash",crit:0.1},
-    {n:"Cultist",h:60,d:10,r:90,s:55,a:1.3,c:"#88ff44",ab:"poison",crit:0.1},
-    {n:"Ranger",h:55,d:16,r:170,s:60,a:1.2,c:"#44ff88",ab:"",crit:0.15}
-  ],
+  // Phase 10: G.enemy removed. Bot opponents draft from G.base.
   selected:[],
-  // Phase 5: multiplayer authoritative state.
   snapTimer:null,
   pendingHostArmy:null,
 
@@ -1034,7 +1229,7 @@ const G={
     const card=document.createElement("div");
     card.className="card rar-"+u.rar;
     if(this.selected[row]&&this.selected[row].id===u.id)card.classList.add("selected");
-    const abLabel=u.ab?`<br><span style="color:#0ff">${u.ab}</span>`:"";
+    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
     card.innerHTML=
       `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
@@ -1063,26 +1258,44 @@ const G={
     if(rb)rb.disabled=this.rerolls<=0;
   },
 
-  // Build an army (3 copies of each picked unit) for the given team.
-  // Phase 6: applies per-unit upgrade bonuses before spawning.
-  buildArmy(team){
+  // Phase 10: build an army (3 copies of each picked unit).
+  // Team is now a string ("player"/"enemy"); Battle.start() sets it.
+  buildArmy(){
     const out=[];
-    const yRange=team===0?[420,600]:[40,150];
     for(const pick of this.selected){
       if(!pick)continue;
       for(let i=0;i<3;i++){
         const u=this.applyUpgrades(cloneUnit(pick));
-        out.push({...u,x:Q(40,360),y:Q(yRange[0],yRange[1]),h:u.h,mh:u.h,team,cool:0});
+        out.push({...u,x:Q(40,360),y:Q(420,600),h:u.h,mh:u.h});
+      }
+    }
+    return out;
+  },
+
+  // Phase 10: build a bot army — random 4 from base, 3 copies each.
+  buildBotArmy(){
+    const out=[];
+    const pool=[...this.base];
+    // Pick 3 random unique units for the bot's draft.
+    const botPicks=[];
+    for(let i=0;i<3;i++){
+      if(!pool.length)break;
+      const idx=F(R()*pool.length);
+      botPicks.push(pool.splice(idx,1)[0]);
+    }
+    for(const pick of botPicks){
+      for(let i=0;i<3;i++){
+        const u=cloneUnit(pick);
+        out.push({...u,x:Q(40,360),y:Q(40,150),h:u.h,mh:u.h});
       }
     }
     return out;
   },
 
   battle(){
-    const myArmy=this.buildArmy(0);
+    const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
     if(connected&&role==="host"){
-      // Host builds its army, then asks the guest for their deck.
       this.pendingHostArmy=myArmy;
       this.screen("battle");
       this.updateLivesHUD();
@@ -1093,7 +1306,6 @@ const G={
       return;
     }
     if(connected&&role==="guest"){
-      // Guest sends its deck to the host and waits for snapshots.
       this.screen("battle");
       this.updateLivesHUD();
       transmit("deck",{selected:this.selected});
@@ -1102,12 +1314,8 @@ const G={
       setText("battleEnemy","?");
       return;
     }
-    // Single-player: build local AI enemies and simulate here.
-    const enemies=[];
-    for(let i=0;i<6;i++){
-      const e=cloneUnit(this.enemy[F(R()*this.enemy.length)]);
-      enemies.push({...e,x:Q(40,360),y:Q(40,150),h:e.h,mh:e.h,team:1,cool:0});
-    }
+    // Phase 10: single-player bot match — bot drafts from G.base.
+    const enemies=this.buildBotArmy();
     this.screen("battle");
     this.updateLivesHUD();
     Battle.start(myArmy,enemies,winner=>this.onBattleEnd(winner));
@@ -1115,20 +1323,19 @@ const G={
 
   // Phase 5: host assembles the full battle once the guest's deck arrives.
   startHostBattle(guestSelected){
-    const guestArmy=this.buildArmyFromSelected(guestSelected,1);
+    const guestArmy=this.buildArmyFromSelected(guestSelected);
     Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner));
     this.updateLivesHUD();
     this.startSnapshots();
   },
 
-  buildArmyFromSelected(selected,team){
+  buildArmyFromSelected(selected){
     const out=[];
-    const yRange=team===0?[420,600]:[40,150];
     for(const pick of selected){
       if(!pick)continue;
       for(let i=0;i<3;i++){
         const u=this.applyUpgrades(cloneUnit(pick));
-        out.push({...u,x:Q(40,360),y:Q(yRange[0],yRange[1]),h:u.h,mh:u.h,team,cool:0});
+        out.push({...u,x:Q(40,360),y:Q(40,150),h:u.h,mh:u.h});
       }
     }
     return out;
@@ -1139,13 +1346,7 @@ const G={
     this.stopSnapshots();
     this.snapTimer=setInterval(()=>{
       if(!Battle.running){this.stopSnapshots();return;}
-      transmit("snap",{
-        time:Battle.time,
-        units:Battle.units,
-        enemies:Battle.enemies,
-        projectiles:Battle.projectiles,
-        winner:Battle.winner
-      });
+      transmit("snap",Battle.snapshot());
     },50);
   },
   stopSnapshots(){
@@ -1217,8 +1418,9 @@ const G={
     const nr=$("nextRound");
     if(nr){
       nr.style.display="block";
-      nr.innerText=win?"FORGE NEW UNIT":"PLAY AGAIN";
-      nr.onclick=()=>{if(win)this.forge();else this.start();};
+      // Phase 10: forge hidden in Tier 1 (re-enabled in Phase 12).
+      nr.innerText="PLAY AGAIN";
+      nr.onclick=()=>{this.start();};
     }
     const mm=$("matchMenu");
     if(mm)mm.style.display="inline-block";
@@ -1267,17 +1469,18 @@ const G={
     Battle.skip();
   },
 
-  // Phase 5: guest applies a host snapshot and renders it (no local sim).
+  // Phase 5/10: guest applies a host snapshot and renders it (no local sim).
   applyRemoteSnapshot(snap){
     if(!snap)return;
-    Battle.units=(snap.units||[]).map(u=>Battle.initRuntime({...u}));
-    Battle.enemies=(snap.enemies||[]).map(u=>Battle.initRuntime({...u}));
+    Battle.applySnapshot(snap);
     Battle.projectiles=snap.projectiles||[];
     Battle.time=snap.time||0;
     Battle.renderOnly();
-    // HUD: from the guest's perspective, "enemies" (team 1) are the guest's own army.
-    setText("battleHP",Battle.units.filter(u=>u.h>0).length);
-    setText("battleEnemy",Battle.enemies.filter(u=>u.h>0).length);
+    // HUD: from the guest's perspective, "enemy" team is the guest's own army.
+    const myAlive=Battle.units.filter(u=>u.team==="enemy"&&u.h>0).length;
+    const hostAlive=Battle.units.filter(u=>u.team==="player"&&u.h>0).length;
+    setText("battleHP",myAlive);
+    setText("battleEnemy",hostAlive);
     setText("turn","T"+Math.floor(Battle.time));
     if(snap.winner){
       // Host's "player" = host won → guest lost. Host's "enemy" = guest won.
@@ -1304,7 +1507,7 @@ const G={
     try{
       await initLLM();
       if(!llmReady)throw Error("No AI");
-      const prompt="Create a balanced fantasy battle unit. Return JSON only with keys: n (name string), h (10..300 hp), d (3..60 dmg), r (20..200 range), s (30..150 speed), a (0.5..2 attack cooldown), c (hex color), ab (one of: '', splash, heal, dodge, poison), rar (common, rare, legendary).";
+      const prompt="Create a balanced fantasy battle unit. Return JSON only with keys: n (name string), h (10..300 hp), d (3..60 dmg), r (20..200 range), s (30..150 speed), a (0.5..2 attack cooldown), c (hex color), ability (one of: none, splash, heal, dodge, poison), rar (common, rare, legendary).";
       let forged=null;
       for(let attempt=0;attempt<3&&!forged;attempt++){
         const result=await llm.chat.completions.create({
@@ -1318,7 +1521,7 @@ const G={
         if(!match)continue;
         let raw;
         try{raw=JSON.parse(match[0]);}catch(e){continue;}
-        forged=validateAIUnit(raw);
+        forged=validateUnit(raw);
       }
       if(!forged){throw Error("AI produced no valid unit after retries");}
       // Phase 4: warm the cache with one extra validated unit for next time.
@@ -1338,13 +1541,13 @@ const G={
       const result=await llm.chat.completions.create({
         messages:[
           {role:"system",content:"Return ONLY a single JSON object, no prose."},
-          {role:"user",content:"Create a balanced fantasy battle unit. JSON keys: n,h(10..300),d(3..60),r(20..200),s(30..150),a(0.5..2),c(hex),ab(''|splash|heal|dodge|poison),rar(common|rare|legendary)."}
+          {role:"user",content:"Create a balanced fantasy battle unit. JSON keys: n,h(10..300),d(3..60),r(20..200),s(30..150),a(0.5..2),c(hex),ability(none|splash|heal|dodge|poison),rar(common|rare|legendary)."}
         ],
         max_tokens:120
       });
       const match=result.choices[0].message.content.match(/\{[\s\S]*\}/);
       if(match){
-        const u=validateAIUnit(JSON.parse(match[0]));
+        const u=validateUnit(JSON.parse(match[0]));
         if(u)aiCache.push(u);
       }
     }catch(e){/* cache warm is best-effort */}
@@ -1352,7 +1555,7 @@ const G={
 
   randomForge(){
     let names=["Ember","Frost","Nova","Volt","Shadow","Bloom"];
-    let abs=["","splash","heal","dodge","poison"];
+    let abs=["none","splash","heal","dodge","poison","lifesteal","rage","slow"];
     let rars=["common","common","rare","legendary"];
     this.addForge(unit({
       n:names[F(R()*names.length)],
@@ -1362,7 +1565,7 @@ const G={
       s:50+F(R()*60),
       a:0.8+R()*0.8,
       c:"#"+F(R()*16777215).toString(16).padStart(6,"0"),
-      ab:abs[F(R()*abs.length)],
+      ability:abs[F(R()*abs.length)],
       rar:rars[F(R()*rars.length)]
     }));
   },
@@ -1482,6 +1685,7 @@ G.join=function(){
 window.G=G;
 window.Match=Match;
 window.Battle=Battle;
+window.unit=unit;
 window.clearError=clearError;
 
 // Phase 7: remove the loading splash once init is done.
