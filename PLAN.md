@@ -594,7 +594,7 @@ else:                   state = "idle", t = (Battle.time / 2.0) % 1
 
 ---
 
-## Phase 12 — LLM Integration
+## Phase 12 — LLM Integration ✅ DONE
 
 **Today:** The forge (line ~1137) generates flat stats via a generic prompt. The current model is `Llama-3.2-1B-Instruct-q4f32_1-MLC` (line 323). The `@mlc-ai/web-llm` import is already correct (lines 176-178, multi-CDN). The forge button is hidden in Tier 1 (Phase 10). This phase re-enables it as an ad-gated LLM unit forge.
 
