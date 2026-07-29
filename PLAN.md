@@ -1250,16 +1250,18 @@ async function forgeWithAd(prompt) {
 ## Phase 14 — Opponent Scout ✅ DONE
 
 ### Changes
-- Pre-battle (after draft, before horn): show opponent portrait card. Tap reveals their 3 picked units for the round with stats + sprite preview.
+- Pre-battle (after draft, before horn): show opponent portrait card. Tap reveals their 3 picked units for the round with stats + **sprite preview** (canvas-rendered idle pose via `SpriteRenderer.renderPreview`).
 - Opponent is either a human (P2P) or a bot (fake multiplayer) — the scout screen looks identical either way. The player doesn't know which.
 - In P2P: host broadcasts `opponent_picks` to guest at round start.
 - In bot matches: the bot's picks are generated locally (no network).
 - Strategic layer: see enemy Assassin → protect your carry; see enemy Sniper → add a diver.
+- **Sprite previews also added to deck loadout, collection, and forge preview cards** for visual consistency across all card UIs.
 
 ### Code touchpoints
 - New "scout" sub-screen between draft and battle.
 - `G.battle()` (line ~976) — generate/receive opponent picks, store on `Match`, render scout UI.
 - Multiplayer: new `opponent_picks` message in `networkReceive` (line ~450).
+- `SpriteRenderer.renderPreview(canvas, unit)` — renders a static idle-pose sprite onto a small canvas.
 
 ---
 
