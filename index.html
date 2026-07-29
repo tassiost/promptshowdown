@@ -104,6 +104,7 @@ h2{font-size:.95rem;}
 <h2>DRAFT</h2>
 <div id="livesHUD" style="font-size:.8rem;margin:4px;"></div>
 <div id="draftDots" style="font-size:1.2rem;margin:4px;letter-spacing:4px;"></div>
+<div id="comebackBanner" style="display:none;font-size:1.1rem;color:#fa0;margin:6px;padding:6px;border-radius:6px;background:#210;text-align:center;font-weight:bold;">⭐ COMEBACK BONUS — 4th draw!</div>
 <div class="detail" id="draftHint">Pick 1 unit</div>
 <div id="draftArea"></div>
 <div class="group">
@@ -1003,6 +1004,41 @@ const Battle={
     }
   },
 
+  // Phase 19a: role-coded shape for a unit.
+  // frontline=square, carry=triangle, counter=diamond, support=hexagon, utility=circle.
+  drawShape(c,u){
+    const r=u.z;
+    c.beginPath();
+    switch(u.role){
+      case "frontline": // square
+        c.rect(u.x-r,u.y-r,r*2,r*2);
+        break;
+      case "carry": // triangle (pointing up)
+        c.moveTo(u.x,u.y-r);
+        c.lineTo(u.x+r,u.y+r);
+        c.lineTo(u.x-r,u.y+r);
+        c.closePath();
+        break;
+      case "counter": // diamond
+        c.moveTo(u.x,u.y-r);
+        c.lineTo(u.x+r,u.y);
+        c.lineTo(u.x,u.y+r);
+        c.lineTo(u.x-r,u.y);
+        c.closePath();
+        break;
+      case "support": // hexagon
+        for(let i=0;i<6;i++){
+          const a=i*Math.PI/3-Math.PI/2;
+          const px=u.x+r*Math.cos(a),py=u.y+r*Math.sin(a);
+          if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+        }
+        c.closePath();
+        break;
+      default: // utility or unknown = circle
+        c.arc(u.x,u.y,r,0,Math.PI*2);
+    }
+  },
+
   render(){
     let c=this.ctx;
     if(!c)return;
@@ -1014,8 +1050,7 @@ const Battle={
       const alpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5):1;
       c.globalAlpha=alpha;
       c.fillStyle=u.c;
-      c.beginPath();
-      c.arc(u.x,u.y,u.z,0,Math.PI*2);
+      this.drawShape(c,u);
       c.fill();
       c.strokeStyle=u.team==="enemy"?"#f44":"#0ff";
       c.stroke();
@@ -1276,7 +1311,7 @@ const G={
   menu(){
     this.screen("menu");
     this.wins();
-    // Phase 15: arena badge + unlock progress.
+    // Phase 15/19a: arena badge + unlock progress + theme color.
     const arenaIdx=this.save.arena||0;
     const arena=this.arenas[arenaIdx];
     const nextArena=this.arenas[arenaIdx+1];
@@ -1294,6 +1329,9 @@ const G={
         html+=`<br><span style="color:#fa0;font-size:.8rem">★ Final arena</span>`;
       }
       badge.innerHTML=html;
+      // Phase 19a: theme color shift on the h1.
+      const h1=document.querySelector("#menu h1");
+      if(h1)h1.style.color=arena.c;
     }
   },
   lobby(){this.screen("lobby");},
@@ -1418,6 +1456,9 @@ const G={
     if(dd)dd.innerText=dots.trim();
     const dh=$("draftHint");
     if(dh)dh.innerText=`Draw ${st.drawIndex+1} of ${st.drawCount}: Pick 1 unit`;
+    // Phase 19a: comeback banner for 4th draw.
+    const cb=$("comebackBanner");
+    if(cb)cb.style.display=st.drawCount===4?"block":"none";
     this.updateRerollUI();
   },
 
@@ -1623,6 +1664,16 @@ const G={
   // Phase 8: Battle ended — delegate to Match for round/match logic.
   onBattleEnd(winner){
     this.stopSnapshots();
+    // Phase 19a: track last surviving player unit's role for Role Master.
+    if(winner==="player"){
+      const survivors=Battle.units.filter(u=>u.team==="player"&&u.h>0);
+      if(survivors.length>0){
+        const lastRole=survivors[0].role;
+        if(!this.save.roleWins)this.save.roleWins={};
+        this.save.roleWins[lastRole]=(this.save.roleWins[lastRole]||0)+1;
+        saveData(this.save);
+      }
+    }
     // Phase 5: in multiplayer the host already broadcast the final winner;
     // guests reach here via the snapshot path with a translated winner.
     if(Match.active){
@@ -1735,7 +1786,14 @@ const G={
     win10:{name:"Veteran",desc:"Win 10 matches",check:G=>G.save.matchWins>=10},
     level5:{name:"Rising Hero",desc:"Reach player level 5",check:G=>G.playerLevel()>=5},
     rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100},
-    comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck()}
+    comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck()},
+    arenaMaster:{name:"Arena Master",desc:"Unlock all arenas",check:G=>(G.save.arena||0)>=G.arenas.length-1},
+    roleMaster:{name:"Role Master",desc:"Win with each role as last standing",check:G=>G._roleMasterCheck()}
+  },
+  _roleMasterCheck(){
+    // Check if the player has won matches with each role as the last unit standing.
+    const wins=(G.save.roleWins||{});
+    return ["frontline","carry","counter","support","utility"].every(r=>wins[r]>0);
   },
   _comebackCheck(){
     // Check if the player won the match after losing round 1.
