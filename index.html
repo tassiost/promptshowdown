@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<meta name="theme-color" content="#080810">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Prompt Showdown v4</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:#080810;color:#fff;font-family:sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;}
+.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;}
+.screen.active{display:flex;}
+h1,h2{color:#0ff;text-align:center;margin:6px;}
+h1{font-size:1.4rem;}
+h2{font-size:.95rem;}
+.btn{background:#151525;border:1px solid #0ff;color:#0ff;padding:10px 16px;margin:4px;border-radius:4px;cursor:pointer;font-size:.8rem;}
+.btn.primary{background:#0ff;color:#000;}
+.btn.red{border-color:#f44;color:#f44;}
+.btn:disabled{opacity:.3;}
+.group{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;margin:5px;}
+.pill{background:#111122;border:1px solid #222244;padding:5px 10px;border-radius:4px;font-size:.7rem;}
+.card{background:#111122;border:1px solid #222244;padding:8px;margin:4px;min-width:90px;text-align:center;border-radius:4px;cursor:pointer;}
+.card.selected{border-color:#0f0;box-shadow:0 0 8px #0f04;}
+.title{font-weight:bold;}
+.detail{font-size:.65rem;color:#999;}
+/* Phase 3: rarity borders for draft cards */
+.card.rar-common{border-color:#444;}
+.card.rar-rare{border-color:#44aaff;box-shadow:0 0 4px #44aaff44;}
+.card.rar-legendary{border-color:#fb0;box-shadow:0 0 8px #fb088;}
+.rarityTag{font-size:.6rem;font-weight:bold;letter-spacing:1px;}
+.rarityTag.common{color:#888;}
+.rarityTag.rare{color:#44aaff;}
+.rarityTag.legendary{color:#fb0;}
+/* Phase 6: progression UI */
+.lvlBadge{display:inline-block;background:#fb0;color:#000;font-size:.55rem;font-weight:bold;padding:1px 4px;border-radius:3px;margin-left:3px;}
+.upRow{display:flex;align-items:center;justify-content:space-between;background:#111122;border:1px solid #222244;padding:6px 8px;margin:3px 0;border-radius:4px;font-size:.7rem;width:280px;}
+.upRow .upName{font-weight:bold;}
+.upRow .upStats{color:#999;font-size:.6rem;}
+#toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#151525;border:1px solid #fb0;color:#fb0;padding:8px 14px;border-radius:6px;font-size:.75rem;font-weight:bold;z-index:10000;display:none;text-align:center;box-shadow:0 0 12px #fb055;}
+.reward{display:flex;gap:8px;justify-content:center;margin:6px 0;}
+.reward .pill{font-size:.8rem;}
+/* Phase 7: loading splash */
+#splash{position:fixed;inset:0;background:#080810;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:#0ff;font-size:.9rem;text-align:center;}
+#splash .spin{width:36px;height:36px;border:3px solid #222;border-top-color:#0ff;border-radius:50%;animation:sp 1s linear infinite;margin-bottom:12px;}
+@keyframes sp{to{transform:rotate(360deg);}}
+#fsBtn{position:fixed;left:5px;top:5px;background:#151525;border:1px solid #0ff;color:#0ff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.7rem;z-index:9000;}
+.input{background:#111122;border:1px solid #0ff;color:#0ff;padding:8px;width:180px;margin:5px;}
+#cv{background:#101020;border:1px solid #202040;touch-action:none;max-width:100%;}
+#battleLog{position:fixed;right:5px;top:70px;width:120px;max-height:140px;overflow:auto;background:#000d;border:1px solid #333;font-size:8px;padding:5px;}
+#networkBadge{position:fixed;top:5px;right:5px;display:none;color:#fb0;border:1px solid #fb0;padding:4px;font-size:10px;}
+.aiBox{background:#111122;border:1px solid #222244;padding:8px;margin:5px;width:230px;text-align:center;font-size:.7rem;}
+.aiBar{height:10px;width:100%;background:#05050a;border:1px solid #0ff;margin-top:5px;}
+#aiFill{height:100%;width:0%;background:#0ff;}
+/* Phase 1: visible error panel */
+#errorPanel{position:fixed;left:5px;bottom:5px;right:5px;max-width:410px;max-height:120px;overflow:auto;background:#2a0a0a;border:1px solid #f44;color:#fcc;font-size:11px;padding:8px;border-radius:4px;display:none;z-index:9999;}
+#errorPanel .errHead{font-weight:bold;color:#f44;margin-bottom:4px;display:flex;justify-content:space-between;}
+#errorPanel .errClose{cursor:pointer;color:#fcc;}
+</style>
+</head>
+<body>
+
+<!-- Phase 7: loading splash (removed once init completes) -->
+<div id="splash"><div class="spin"></div><div>Loading Prompt Showdown…</div></div>
+<button id="fsBtn" onclick="toggleFullscreen()">⛶</button>
+<div class="screen active" id="menu">
+<h1>PROMPT SHOWDOWN v4</h1>
+<div class="group">
+<div class="pill">🏆 <span id="wins">0</span></div>
+<div class="pill">⭐ Lv<span id="playerLevel">1</span></div>
+<div class="pill">💰 <span id="coins">0</span></div>
+<div class="pill">🧠 <span id="aiUnits">0</span></div>
+<div class="pill" id="netPill" style="display:none">🌐 <span id="netText">OFF</span></div>
+</div>
+<button class="btn primary" onclick="G.start()">⚔️ FIGHT</button>
+<button class="btn" onclick="G.lobby()">🌐 P2P</button>
+<button class="btn" onclick="G.deck()">📋 DECK</button>
+<button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
+<button class="btn red" onclick="G.reset()">↺ RESET</button>
+</div>
+
+<div class="screen" id="lobby">
+<h2>🌐 P2P LOBBY</h2>
+<div class="detail">Torrent signalling</div>
+<input class="input" id="roomId" value="room1">
+<div class="group">
+<button class="btn primary" onclick="G.host()">HOST</button>
+<button class="btn" onclick="G.join()">JOIN</button>
+</div>
+<div class="pill" id="connection">Status: idle</div>
+<button class="btn" onclick="G.menu()">BACK</button>
+</div>
+
+<div class="screen" id="draft">
+<h2>DRAFT</h2>
+<div class="detail">Pick 3 units · rarity-weighted</div>
+<div id="draftArea"></div>
+<div class="group">
+<button class="btn" id="rerollButton" onclick="G.reroll()">🎲 REROLL (<span id="rerollsLeft">3</span>)</button>
+<button class="btn primary" id="battleButton" disabled onclick="G.battle()">⚔️ BATTLE</button>
+</div>
+</div>
+
+<div class="screen" id="battle">
+<div style="width:100%;display:flex;justify-content:space-between;padding:4px;font-size:.75rem;">
+<span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
+<span id="turn">T0</span>
+</div>
+<canvas id="cv"></canvas>
+<div id="battleLog"></div>
+<div id="networkBadge">🌐 ONLINE</div>
+<div class="group">
+<button class="btn primary" onclick="G.tick()">⏵</button>
+<button class="btn" onclick="G.auto()">⏩</button>
+<button class="btn red" onclick="G.skip()">✕</button>
+</div>
+</div>
+
+<div class="screen" id="result">
+<h1 id="resultTitle">RESULT</h1>
+<div class="reward">
+<div class="pill">⭐ <span id="xpGain">+0</span> XP</div>
+<div class="pill">💰 <span id="coinGain">+0</span></div>
+</div>
+<button class="btn primary" id="nextRound">NEXT</button>
+<button class="btn" onclick="G.menu()">MENU</button>
+</div>
+
+<div class="screen" id="forge">
+<h2>🔮 FORGE</h2>
+<div id="forgeArea"></div>
+<div class="aiBox">
+<div id="aiText">AI: idle</div>
+<div class="aiBar"><div id="aiFill"></div></div>
+</div>
+<button class="btn primary" onclick="G.next()">CONTINUE</button>
+</div>
+
+<div class="screen" id="deck">
+<h2>📋 DECK</h2>
+<div class="detail">Tap a unit with a duplicate to fuse (combine 2 → +1 level)</div>
+<div id="deckArea"></div>
+<button class="btn" onclick="G.menu()">BACK</button>
+</div>
+
+<div class="screen" id="upgrade">
+<h2>⬆ UPGRADE</h2>
+<div class="pill">💰 <span id="upgradeCoins">0</span> coins</div>
+<div class="detail">Spend coins to level up units (+10% HP/DMG per level)</div>
+<div id="upgradeArea"></div>
+<button class="btn" onclick="G.menu()">BACK</button>
+</div>
+
+<!-- Phase 1: visible error panel -->
+<div id="errorPanel" role="alert" aria-live="assertive">
+<div class="errHead"><span>⚠ Error</span><span class="errClose" onclick="clearError()">✕</span></div>
+<div id="errorBody"></div>
+</div>
+
+<!-- Phase 6: achievement / event toast -->
+<div id="toast"></div>
+
+<script type="module">
+// Phase 1: dynamic imports with graceful fallback.
+// Static `import` cannot be wrapped in try/catch, so we use dynamic import()
+// and let the game run even if CDNs are unreachable.
+let W = null;       // web-llm
+let joinRoom = null; // trystero
+let moduleLoadErrors = [];
+
+async function loadModules(){
+  // web-llm: try multiple CDNs. This is a heavy WebGPU/WASM package that may
+  // not be available on all CDNs; the procedural forge fallback covers failures.
+  const webllmUrls=[
+    "https://esm.run/@mlc-ai/web-llm",
+    "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm"
+  ];
+  for(const url of webllmUrls){
+    try{
+      W = await import(url);
+      break;
+    }catch(e){
+      // Expected on many setups — don't show a scary error panel, just log.
+      console.warn("web-llm import failed ("+url+"): "+(e&&e.message||e));
+    }
+  }
+  // trystero: package was renamed from "trystero" to "@trystero-p2p/torrent".
+  try{
+    const tr = await import("https://esm.sh/@trystero-p2p/torrent");
+    joinRoom = tr.joinRoom;
+  }catch(e){
+    console.warn("trystero import failed: "+(e&&e.message||e)+" — multiplayer disabled.");
+  }
+}
+
+// Phase 1: visible error panel helpers (defined before anything that can throw).
+function showError(msg){
+  const panel=document.getElementById("errorPanel");
+  const body=document.getElementById("errorBody");
+  if(!panel||!body)return;
+  body.innerText=String(msg);
+  panel.style.display="block";
+  console.error(msg);
+}
+function clearError(){
+  const panel=document.getElementById("errorPanel");
+  if(panel)panel.style.display="none";
+}
+// Phase 6: transient toast for achievements / events.
+let toastTimer=null;
+function toast(msg){
+  const el=$("toast");
+  if(!el)return;
+  el.innerText=msg;
+  el.style.display="block";
+  if(toastTimer)clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.style.display="none";},2500);
+}
+
+// Phase 7: mobile detection + haptics + fullscreen.
+const isMobile=(('ontouchstart'in window)||navigator.maxTouchPoints>0)&&window.matchMedia("(max-width: 820px)").matches;
+function vibrate(ms){
+  if(navigator.vibrate){try{navigator.vibrate(ms);}catch(e){}}
+}
+function toggleFullscreen(){
+  try{
+    if(!document.fullscreenElement){
+      (document.documentElement.requestFullscreen||document.documentElement.webkitRequestFullscreen||function(){}).call(document.documentElement);
+    }else{
+      (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document);
+    }
+  }catch(e){showError("Fullscreen unavailable: "+(e&&e.message||e));}
+}
+window.toggleFullscreen=toggleFullscreen;
+
+// Route uncaught errors to the panel instead of silent console-only.
+window.addEventListener("error",e=>{
+  if(e&&e.error)showError(e.message||String(e.error));
+});
+window.addEventListener("unhandledrejection",e=>{
+  const r=e&&e.reason;
+  showError("Unhandled promise: "+(r&&(r.message||r)||r));
+});
+
+const R=Math.random;
+const F=Math.floor;
+const Q=(a,b)=>a+R()*(b-a);
+const SAVE_KEY="promptShowdownV4";
+
+const SAVE_BACKUP_KEY="promptShowdownV4_backup";
+const CURRENT_VERSION=5; // Phase 7: bumped for progression schema.
+// Phase 7: backup-before-overwrite so a bad write can't wipe progress.
+function saveData(data){
+  try{
+    const prev=localStorage.getItem(SAVE_KEY);
+    if(prev)localStorage.setItem(SAVE_BACKUP_KEY,prev);
+    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
+  }catch(e){showError("Save failed: "+(e&&e.message||e));}
+}
+// Phase 7: load with crash recovery — fall back to backup if primary is corrupt.
+function loadData(){
+  try{return JSON.parse(localStorage.getItem(SAVE_KEY))||{};}
+  catch(e){
+    showError("Save corrupt, restoring backup.");
+    try{return JSON.parse(localStorage.getItem(SAVE_BACKUP_KEY))||{};}
+    catch(e2){return {};}
+  }
+}
+// Phase 7: migrate older save schemas forward.
+function migrateSave(s){
+  if(!s)return s;
+  if(!s.version||s.version<4){
+    // v3 and earlier had no progression fields; re-init defaults via G.init.
+    s.version=4;
+  }
+  if(s.version<5){
+    // v4 -> v5: add progression fields (achievements, upgrades, xp, coins).
+    s.achievements=s.achievements||{};
+    s.upgrades=s.upgrades||{};
+    s.xp=s.xp||0;
+    s.coins=s.coins||0;
+    s.version=5;
+  }
+  return s;
+}
+function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+
+// Phase 3: extended unit schema. New optional fields (backward compatible):
+//   crit   0..1   critical-hit chance (default 0.1)
+//   ab     string ability key: "splash" | "heal" | "dodge" | "poison" | "" 
+//   rar    string rarity: "common" | "rare" | "legendary" (draft system, Phase 3)
+//   cost   number draft cost
+// Runtime-only fields (poison/slow/stun/dead) are added by Battle, not persisted.
+function unit(x={}){
+  return {
+    id:x.id||Date.now()+F(R()*99999),
+    n:String(x.n||"Unit"),
+    h:clamp(Number(x.h)||50,1,1000),
+    d:clamp(Number(x.d)||10,1,200),
+    r:clamp(Number(x.r)||50,10,300),
+    s:clamp(Number(x.s)||60,10,300),
+    a:clamp(Number(x.a)||1,0.1,10),
+    c:x.c||"#0ff",
+    z:clamp(Number(x.z)||10,4,40),
+    crit:clamp(Number(x.crit)||0.1,0,1),
+    ab:String(x.ab||""),
+    rar:["common","rare","legendary"].includes(x.rar)?x.rar:"common",
+    cost:clamp(Number(x.cost)||1,1,20)
+  };
+}
+function cloneUnit(u){return unit(JSON.parse(JSON.stringify(u)));}
+
+// Phase 1: small DOM helper with null guard.
+function $(id){return document.getElementById(id);}
+function setText(id,val){const el=$(id);if(el)el.innerText=val;}
+function setStyle(id,prop,val){const el=$(id);if(el)el.style[prop]=val;}
+
+let llm=null;
+let llmReady=false;
+let llmLoading=false;
+const MODEL="Llama-3.2-1B-Instruct-q4f32_1-MLC";
+const AI_TIMEOUT_MS=60000; // Phase 4: give slow phones 60s, then give up.
+// Phase 4: cache of validated AI-generated units so re-forge is instant
+// and we don't re-query the LLM every round.
+let aiCache=[];
+
+async function updateAI(text,percent){
+  setText("aiText",text);
+  setStyle("aiFill","width",(percent||0)+"%");
+}
+
+// Phase 4: race the engine creation against a timeout.
+function withTimeout(promise,ms,msg){
+  return Promise.race([
+    promise,
+    new Promise((_,reject)=>setTimeout(()=>reject(new Error(msg)),ms))
+  ]);
+}
+
+async function initLLM(){
+  if(llmReady||llmLoading)return;
+  // Phase 1: if web-llm never loaded, fail fast and visibly.
+  if(!W||!W.CreateMLCEngine){
+    await updateAI("AI unavailable",0);
+    return;
+  }
+  // Phase 4: skip preload entirely if no WebGPU — go straight to procedural.
+  if(!navigator.gpu){
+    await updateAI("AI unavailable (no WebGPU)",0);
+    return;
+  }
+  llmLoading=true;
+  await updateAI("AI loading...",0);
+  try{
+    llm=await withTimeout(
+      W.CreateMLCEngine(MODEL,{initProgressCallback:p=>{
+        let percent=Math.floor(p.progress*100);
+        updateAI("Downloading AI "+percent+"%",percent);
+      }}),
+      AI_TIMEOUT_MS,
+      "AI load timed out"
+    );
+    llmReady=true;
+    await updateAI("AI READY",100);
+  }
+  catch(e){
+    // Expected on slow connections (model download > 60s) or no WebGPU.
+    // The forge screen already shows "AI fallback" via updateAI — no need
+    // for a scary error panel. Log quietly and use procedural generation.
+    console.warn("AI init failed, using procedural forge: "+(e&&e.message||e));
+    await updateAI("AI fallback",0);
+    llm=null;
+  }
+  llmLoading=false;
+}
+
+// Phase 4: preload AI in the background right after startup, if WebGPU exists.
+// Does not block the menu; the forge screen reuses the ready engine.
+async function preloadAI(){
+  if(!navigator.gpu)return;       // no point trying without WebGPU
+  if(!W)return;                   // web-llm module not loaded yet
+  try{await initLLM();}catch(e){showError("AI preload error: "+(e&&e.message||e));}
+}
+
+// Phase 4: validate an AI-generated unit. Rejects broken/out-of-range units
+// so the LLM can't produce game-breaking stats. Returns a sanitized unit or null.
+function validateAIUnit(raw){
+  try{
+    const u=unit(raw); // unit() already clamps all numeric fields.
+    // Extra balance guards beyond clamp: reject absurd combos.
+    if(u.h>500||u.d>100)return null;
+    if(u.h<10||u.d<3)return null;
+    if(u.r>250&&u.d>60)return null; // sniper + heavy hitter = unfun
+    // ability must be a known key (or empty).
+    const known=["","splash","heal","dodge","poison"];
+    if(!known.includes(u.ab))u.ab="";
+    // rarity must be valid; default common.
+    if(!["common","rare","legendary"].includes(u.rar))u.rar="common";
+    return u;
+  }catch(e){return null;}
+}
+
+// Phase 1: network state + functions hoisted ABOVE G so role/transmit
+// are never accessed in a temporal-dead-zone during G construction.
+let room=null;
+let sendNet=null;
+let connected=false;
+let role="none";
+
+function setupNetwork(id){
+  if(!joinRoom){
+    showError("P2P unavailable (trystero not loaded).");
+    return false;
+  }
+  try{
+    room=joinRoom({appId:"prompt-showdown-v4"},id);
+    let action=room.makeAction("game");
+    sendNet=action[0];
+    action[1](data=>{if(data)networkReceive(data);});
+    room.onPeerJoin(()=>{
+      connected=true;
+      setText("connection","Status: connected");
+      const np=$("netPill");if(np)np.style.display="inline-flex";
+      setText("netText","ON");
+      const nb=$("networkBadge");if(nb)nb.style.display="block";
+    });
+    room.onPeerLeave(()=>{
+      connected=false;
+      setText("connection","Status: disconnected");
+    });
+    return true;
+  }
+  catch(e){
+    showError("P2P error: "+(e&&e.message||e));
+    return false;
+  }
+}
+
+function transmit(type,data){
+  if(connected&&sendNet){
+    try{sendNet({t:type,d:data});}catch(e){showError("Network send failed: "+(e&&e.message||e));}
+  }
+}
+
+// Phase 5: host-authoritative protocol.
+//   request_deck : host -> guest  "send me your drafted units"
+//   deck         : guest -> host  {selected:[unit,...]}
+//   snap         : host -> guest  full state snapshot at 20Hz
+//   cmd          : guest -> host  {cmd:"tick"|"auto"|"skip"}
+//   forge        : either -> other  share a forged unit (kept from v4)
+function networkReceive(data){
+  try{
+    if(data.t==="role"){if(role==="none")role=data.d;}
+    if(data.t==="request_deck"){
+      // Host asked for our deck; send our currently selected units.
+      if(role==="guest")transmit("deck",{selected:G.selected});
+    }
+    if(data.t==="deck"){
+      // Host receives the guest's deck and starts the authoritative battle.
+      if(role==="host")G.startHostBattle(data.d.selected);
+    }
+    if(data.t==="snap"){
+      // Guest renders the host's authoritative snapshot.
+      if(role==="guest")G.applyRemoteSnapshot(data.d);
+    }
+    if(data.t==="cmd"){
+      // Host applies a guest command to its local simulation.
+      if(role==="host"){
+        const c=data.d&&data.d.cmd;
+        if(c==="tick")Battle.tick();
+        else if(c==="auto")Battle.auto();
+        else if(c==="skip")Battle.skip();
+      }
+    }
+    if(data.t==="forge"){
+      let u=unit(data.d);
+      if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);saveData(G.save);G.wins();}
+    }
+  }catch(e){
+    showError("Network receive error: "+(e&&e.message||e));
+  }
+}
+
+// Phase 2 + Phase 3: dedicated Battle object — owns combat state + simulation.
+// G orchestrates menus/save/AI/network and delegates battle to this.
+// Phase 3 adds: projectiles (ranged), collision separation, crits,
+// status effects (poison/slow/stun), and abilities (splash/heal/dodge/poison).
+const RANGED_THRESHOLD=80;
+const Battle={
+  units:[],
+  enemies:[],
+  projectiles:[],
+  time:0,
+  running:false,
+  winner:null,
+  ctx:null,
+  frame:0,
+  last:0,
+  onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
+  autoTimer:null,
+
+  // Attach runtime-only combat fields to a unit (not persisted).
+  initRuntime(u){
+    u.cool=0;          // attack cooldown
+    u.abCool=0;        // ability cooldown
+    u.poison=0;        // poison remaining seconds
+    u.poisonTick=0;    // poison damage accumulator
+    u.slow=0;          // slow remaining seconds
+    u.stun=0;          // stun remaining seconds
+    u.mh=u.mh||u.h;    // max hp
+    return u;
+  },
+
+  start(units,enemies,onEnd){
+    this.units=units.map(u=>this.initRuntime(u));
+    this.enemies=enemies.map(u=>this.initRuntime(u));
+    this.projectiles=[];
+    this.time=0;
+    this.running=true;
+    this.winner=null;
+    this.onEnd=onEnd||null;
+    const cv=$("cv");
+    if(!cv){this.stop();return;}
+    cv.width=Math.min(400,innerWidth-20);
+    cv.height=550;
+    this.ctx=cv.getContext("2d");
+    this.last=performance.now();
+    cancelAnimationFrame(this.frame);
+    this.frame=requestAnimationFrame(this.loop.bind(this));
+  },
+
+  // Phase 7: adaptive frame budget — 60fps desktop, ~30fps mobile (battery).
+  targetFrameTime(){return isMobile?1/30:1/60;},
+
+  loop(time){
+    if(!this.running)return;
+    this.frame=requestAnimationFrame(this.loop.bind(this));
+    // Phase 7: pause simulation when the tab is hidden (battery + correctness).
+    if(document.hidden){this.last=time;return;}
+    let dt=(time-this.last)/1000;
+    // Throttle to target FPS by skipping frames that come in too fast.
+    if(dt<this.targetFrameTime())return;
+    this.last=time;
+    dt=Math.min(dt,0.05);
+    this.update(dt);
+    this.render();
+    this.checkEnd();
+  },
+
+  update(dt){
+    this.time+=dt;
+    const all=[...this.units,...this.enemies];
+    // 1. status ticks
+    for(let u of all){
+      if(u.h<=0)continue;
+      if(u.poison>0){
+        u.poison-=dt;
+        u.poisonTick-=dt;
+        if(u.poisonTick<=0){u.h-=3;u.poisonTick=0.5;}
+      }
+      if(u.slow>0)u.slow-=dt;
+      if(u.stun>0)u.stun-=dt;
+      if(u.cool>0)u.cool-=dt;
+      if(u.abCool>0)u.abCool-=dt;
+    }
+    // 2. movement + attacks + abilities
+    for(let u of this.units){this.act(u,this.enemies,dt);}
+    for(let e of this.enemies){this.act(e,this.units,dt);}
+    // 3. projectiles
+    this.updateProjectiles(dt);
+    // 4. collision separation (prevents overlap)
+    this.separate(all);
+    // HUD
+    setText("battleHP",this.units.filter(u=>u.h>0).length);
+    setText("battleEnemy",this.enemies.filter(u=>u.h>0).length);
+    setText("turn","T"+Math.floor(this.time));
+  },
+
+  // Per-unit action: move toward closest target, attack when in range,
+  // fire projectile if ranged, trigger ability if ready.
+  act(attacker,targets,dt){
+    if(attacker.h<=0)return;
+    if(attacker.stun>0)return; // stunned: no move, no attack
+    const target=this.closest(attacker,targets);
+    if(!target)return;
+    const dx=target.x-attacker.x;
+    const dy=target.y-attacker.y;
+    const dist=Math.hypot(dx,dy);
+    const speed=attacker.s*(attacker.slow>0?0.5:1);
+    if(dist<=attacker.r){
+      if(attacker.cool<=0){
+        this.attack(attacker,target,targets);
+        attacker.cool=attacker.a;
+      }
+    }
+    else{
+      attacker.x+=(dx/dist)*speed*dt;
+      attacker.y+=(dy/dist)*speed*dt;
+    }
+    // Passive/active abilities
+    if(attacker.ab==="heal"&&attacker.abCool<=0){
+      this.healAllies(attacker);
+      attacker.abCool=3;
+    }
+  },
+
+  // Ranged units fire projectiles; melee deal damage instantly.
+  attack(attacker,target,allTargets){
+    if(attacker.r>RANGED_THRESHOLD){
+      this.projectiles.push({
+        x:attacker.x,y:attacker.y,
+        tx:target.x,ty:target.y,
+        d:attacker.d,team:attacker.team,owner:attacker.id,
+        c:attacker.c,ab:attacker.ab,crit:attacker.crit,
+        life:2,dead:false
+      });
+    }
+    else{
+      this.dealDamage(attacker,target,allTargets);
+    }
+  },
+
+  // Resolve one damage instance with dodge, crit, splash, poison.
+  dealDamage(attacker,target,allTargets){
+    if(target.h<=0)return;
+    if(target.ab==="dodge"&&R()<0.2){this.log(target.n+" dodges!");return;}
+    let dmg=attacker.d;
+    const crit=R()<(attacker.crit||0);
+    if(crit){dmg*=2;vibrate(25);}
+    target.h-=dmg;
+    this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
+    transmit("hit",{target:target.id,damage:dmg});
+    if(attacker.ab==="splash"){
+      for(let t of allTargets){
+        if(t!==target&&t.h>0&&Math.hypot(t.x-attacker.x,t.y-attacker.y)<=attacker.r){
+          t.h-=dmg*0.5;
+        }
+      }
+    }
+    if(attacker.ab==="poison"){target.poison=3;target.poisonTick=0;}
+  },
+
+  updateProjectiles(dt){
+    if(!this.projectiles.length)return;
+    for(let p of this.projectiles){
+      if(p.dead)continue;
+      const dx=p.tx-p.x, dy=p.ty-p.y, dist=Math.hypot(dx,dy);
+      const sp=320*dt;
+      if(dist<=sp){
+        const foes=p.team===0?this.enemies:this.units;
+        let hit=false;
+        for(let f of foes){
+          if(f.h<=0)continue;
+          if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22){
+            // Synthetic attacker object carrying projectile properties.
+            this.dealDamage({d:p.d,ab:p.ab,crit:p.crit,team:p.team,id:p.owner,c:p.c,r:0,x:p.tx,y:p.ty},f,foes);
+            hit=true;break;
+          }
+        }
+        p.dead=true;
+        if(!hit){this.log(p.c+" shot missed");}
+      }
+      else{
+        p.x+=(dx/dist)*sp;
+        p.y+=(dy/dist)*sp;
+      }
+      p.life-=dt;
+      if(p.life<=0)p.dead=true;
+    }
+    this.projectiles=this.projectiles.filter(p=>!p.dead);
+  },
+
+  healAllies(healer){
+    const allies=healer.team===0?this.units:this.enemies;
+    let lowest=null;
+    for(let a of allies){
+      if(a.h>0&&a.h<a.mh){if(!lowest||a.h/a.mh<lowest.h/lowest.mh)lowest=a;}
+    }
+    if(lowest){
+      lowest.h=Math.min(lowest.mh,lowest.h+15);
+      this.log(healer.n+" heals "+lowest.n+" +15");
+    }
+  },
+
+  // Push overlapping units apart so they don't stack on one pixel.
+  separate(all){
+    for(let i=0;i<all.length;i++){
+      const a=all[i];if(a.h<=0)continue;
+      for(let j=i+1;j<all.length;j++){
+        const b=all[j];if(b.h<=0)continue;
+        const dx=b.x-a.x, dy=b.y-a.y;
+        const d=Math.hypot(dx,dy);
+        const minD=a.z+b.z;
+        if(d>0&&d<minD){
+          const push=(minD-d)/2;
+          const nx=dx/d, ny=dy/d;
+          a.x-=nx*push;a.y-=ny*push;
+          b.x+=nx*push;b.y+=ny*push;
+        }
+      }
+    }
+  },
+
+  closest(a,list){let best=null;let distance=Infinity;for(let x of list){if(x.h<=0)continue;let d=(a.x-x.x)**2+(a.y-x.y)**2;if(d<distance){distance=d;best=x;}}return best;},
+
+  render(){
+    let c=this.ctx;
+    if(!c)return;
+    c.fillStyle="#080810";
+    c.fillRect(0,0,c.canvas.width,c.canvas.height);
+    // units
+    for(let u of [...this.units,...this.enemies]){
+      if(u.h<=0)continue;
+      c.fillStyle=u.c;
+      c.beginPath();
+      c.arc(u.x,u.y,u.z,0,Math.PI*2);
+      c.fill();
+      c.strokeStyle=u.team?"#f44":"#0ff";
+      c.stroke();
+      // status rings
+      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
+      if(u.poison>0){c.strokeStyle="#3f3";c.beginPath();c.arc(u.x,u.y,u.z+6,0,Math.PI*2);c.stroke();}
+      if(u.slow>0){c.strokeStyle="#39f";c.beginPath();c.arc(u.x,u.y,u.z+9,0,Math.PI*2);c.stroke();}
+      c.fillStyle="#fff";c.font="9px sans-serif";c.textAlign="center";
+      c.fillText(u.n,u.x,u.y-16);
+      c.fillStyle="#222";
+      c.fillRect(u.x-18,u.y-12,36,5);
+      c.fillStyle="#0f0";
+      c.fillRect(u.x-18,u.y-12,36*Math.max(0,u.h/u.mh),5);
+    }
+    // projectiles
+    for(let p of this.projectiles){
+      c.fillStyle=p.c;
+      c.beginPath();
+      c.arc(p.x,p.y,3,0,Math.PI*2);
+      c.fill();
+    }
+  },
+
+  log(t){
+    let el=$("battleLog");
+    if(!el)return;
+    el.innerHTML+="<div>"+t+"</div>";
+    while(el.children.length>20){el.firstChild.remove();}
+  },
+
+  checkEnd(){
+    const playerAlive=this.units.some(u=>u.h>0);
+    const enemyAlive=this.enemies.some(u=>u.h>0);
+    if(playerAlive&&enemyAlive)return;
+    this.winner=playerAlive?"player":(enemyAlive?"enemy":"draw");
+    this.stop();
+    if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle end handler failed: "+(e&&e.message||e));}
+  },
+
+  stop(){
+    this.running=false;
+    cancelAnimationFrame(this.frame);
+    if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+  },
+
+  // Manual step (used by ⏵ button).
+  tick(){
+    if(!this.running)return;
+    this.update(0.05);
+    this.render();
+    this.checkEnd();
+  },
+
+  // Auto-play (used by ⏩ button).
+  auto(){
+    if(this.autoTimer)clearInterval(this.autoTimer);
+    this.autoTimer=setInterval(()=>{
+      if(!this.running){clearInterval(this.autoTimer);this.autoTimer=null;return;}
+      this.tick();
+    },120);
+  },
+
+  // Forfeit (used by ✕ button).
+  skip(){
+    this.winner="enemy";
+    this.stop();
+    if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip handler failed: "+(e&&e.message||e));}
+  },
+
+  // Guest receives a remote snapshot of unit/enemy state.
+  applySnapshot(s){
+    if(!s)return;
+    if(s.units)this.units=s.units.map(u=>this.initRuntime({...u}));
+    if(s.enemies)this.enemies=s.enemies.map(u=>this.initRuntime({...u}));
+  },
+
+  // Phase 5: render-only path for the guest (no simulation loop).
+  // Ensures the canvas/context exist, then draws current state once.
+  renderOnly(){
+    let cv=$("cv");
+    if(!cv)return;
+    if(!this.ctx){
+      cv.width=Math.min(400,innerWidth-20);
+      cv.height=550;
+      this.ctx=cv.getContext("2d");
+    }
+    this.render();
+  }
+};
+
+const G={
+  save:loadData(),
+  // Phase 3: base units now carry abilities + rarity + cost.
+  base:[
+    {n:"Knight",h:90,d:14,r:45,s:70,a:1,c:"#44aaff",ab:"",rar:"common",cost:1,crit:0.1},
+    {n:"Archer",h:55,d:20,r:180,s:60,a:1.2,c:"#44ff44",ab:"",rar:"common",cost:2,crit:0.15},
+    {n:"Slash",h:65,d:26,r:35,s:90,a:1,c:"#ff4444",ab:"splash",rar:"rare",cost:3,crit:0.1},
+    {n:"Priest",h:70,d:8,r:120,s:50,a:1.5,c:"#ffdd44",ab:"heal",rar:"rare",cost:3,crit:0.05},
+    {n:"Assassin",h:50,d:22,r:30,s:120,a:0.8,c:"#ff44ff",ab:"dodge",rar:"rare",cost:3,crit:0.3},
+    {n:"Plague",h:60,d:12,r:90,s:55,a:1.3,c:"#88ff44",ab:"poison",rar:"rare",cost:3,crit:0.1}
+  ],
+  enemy:[
+    {n:"Guard",h:80,d:12,r:40,s:60,a:1,c:"#888888",ab:"",crit:0.1},
+    {n:"Mage",h:120,d:18,r:100,s:45,a:1.4,c:"#aa44ff",ab:"splash",crit:0.1},
+    {n:"Cultist",h:60,d:10,r:90,s:55,a:1.3,c:"#88ff44",ab:"poison",crit:0.1},
+    {n:"Ranger",h:55,d:16,r:170,s:60,a:1.2,c:"#44ff88",ab:"",crit:0.15}
+  ],
+  selected:[],
+  // Phase 5: multiplayer authoritative state.
+  snapTimer:null,
+  pendingHostArmy:null,
+
+  init(){
+    // Phase 7: migrate older saves forward, then fill any missing defaults.
+    this.save=migrateSave(this.save);
+    if(!this.save.version)this.save.version=CURRENT_VERSION;
+    if(!this.save.wins)this.save.wins=0;
+    if(!this.save.deck)this.save.deck=this.base.map(unit);
+    if(!this.save.ai)this.save.ai=[];
+    // Phase 6: progression fields.
+    if(!this.save.xp)this.save.xp=0;
+    if(!this.save.coins)this.save.coins=0;
+    if(!this.save.achievements)this.save.achievements={};
+    if(!this.save.upgrades)this.save.upgrades={}; // name -> level
+    saveData(this.save);
+    this.wins();
+    this.menu();
+  },
+
+  // Phase 6: player level derived from XP (100 xp per level).
+  playerLevel(){return 1+F(this.save.xp/100);},
+  // Phase 6: per-unit upgrade level (0 if none).
+  unitLevel(name){return this.save.upgrades[name]||0;},
+  // Phase 6: apply upgrade bonuses to a cloned unit (+10% hp/d per level).
+  applyUpgrades(u){
+    const lvl=this.unitLevel(u.n);
+    if(lvl>0){
+      u.h=F(u.h*(1+0.1*lvl));
+      u.d=F(u.d*(1+0.1*lvl));
+      u.lvl=lvl;
+    }
+    return u;
+  },
+
+  screen(id){
+    document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
+    let target=$(id);
+    if(target)target.classList.add("active");
+  },
+  wins(){
+    setText("wins",this.save.wins||0);
+    setText("aiUnits",this.save.ai.length);
+    setText("totalUnits",this.deckUnits().length);
+    // Phase 6: progression HUD.
+    setText("playerLevel",this.playerLevel());
+    setText("coins",this.save.coins||0);
+    setText("upgradeCoins",this.save.coins||0);
+  },
+  deckUnits(){return [...this.save.deck,...this.save.ai];},
+  menu(){this.screen("menu");this.wins();},
+  lobby(){this.screen("lobby");},
+  // Phase 3: draft state — offering[row] holds the 3 cards shown for that slot.
+  start(){
+    this.selected=[null,null,null];
+    this.draftOffering=[[],[],[]];
+    this.rerolls=3;
+    this.screen("draft");
+    this.makeDraft();
+  },
+
+  // Phase 3: rarity-weighted draw. common ~70%, rare ~25%, legendary ~5%.
+  // Excludes names already used elsewhere in this draft offering (no dupes).
+  rollOne(usedNames){
+    const pool=this.deckUnits();
+    if(pool.length===0)return null;
+    const roll=R();
+    const rar=roll<0.7?"common":(roll<0.95?"rare":"legendary");
+    let candidates=pool.filter(u=>u.rar===rar&&!usedNames.has(u.n));
+    if(candidates.length===0)candidates=pool.filter(u=>!usedNames.has(u.n));
+    if(candidates.length===0)candidates=pool; // edge case: tiny pool
+    return cloneUnit(candidates[F(R()*candidates.length)]);
+  },
+
+  makeDraft(){
+    let area=$("draftArea");
+    if(!area)return;
+    area.innerHTML="";
+    const usedNames=new Set();
+    for(let row=0;row<3;row++){
+      // Preserve already-selected unit for this row; otherwise roll fresh.
+      if(this.selected[row]){
+        usedNames.add(this.selected[row].n);
+        this.draftOffering[row]=[this.selected[row]];
+      }else{
+        this.draftOffering[row]=[];
+        for(let i=0;i<3;i++){
+          const u=this.rollOne(usedNames);
+          if(!u)continue;
+          usedNames.add(u.n);
+          this.draftOffering[row].push(u);
+        }
+      }
+      const group=document.createElement("div");
+      group.className="group";
+      for(const u of this.draftOffering[row]){
+        group.appendChild(this.draftCard(u,row));
+      }
+      area.appendChild(group);
+    }
+    this.updateRerollUI();
+  },
+
+  draftCard(u,row){
+    const card=document.createElement("div");
+    card.className="card rar-"+u.rar;
+    if(this.selected[row]&&this.selected[row].id===u.id)card.classList.add("selected");
+    const abLabel=u.ab?`<br><span style="color:#0ff">${u.ab}</span>`:"";
+    card.innerHTML=
+      `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
+      `<div class="title" style="color:${u.c}">${u.n}</div>`+
+      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}</div>`;
+    card.onclick=()=>{
+      this.selected[row]=u;
+      // Re-render so the selected highlight shows and dupes are recomputed.
+      this.makeDraft();
+      const bb=$("battleButton");
+      if(bb)bb.disabled=this.selected.filter(Boolean).length!==3;
+    };
+    return card;
+  },
+
+  // Phase 3: reroll re-rolls only slots that haven't been picked yet.
+  reroll(){
+    if(this.rerolls<=0)return;
+    this.rerolls--;
+    for(let row=0;row<3;row++){if(!this.selected[row])this.draftOffering[row]=[];}
+    this.makeDraft();
+  },
+
+  updateRerollUI(){
+    setText("rerollsLeft",this.rerolls);
+    const rb=$("rerollButton");
+    if(rb)rb.disabled=this.rerolls<=0;
+  },
+
+  // Build an army (3 copies of each picked unit) for the given team.
+  // Phase 6: applies per-unit upgrade bonuses before spawning.
+  buildArmy(team){
+    const out=[];
+    const yRange=team===0?[420,600]:[40,150];
+    for(const pick of this.selected){
+      if(!pick)continue;
+      for(let i=0;i<3;i++){
+        const u=this.applyUpgrades(cloneUnit(pick));
+        out.push({...u,x:Q(40,360),y:Q(yRange[0],yRange[1]),h:u.h,mh:u.h,team,cool:0});
+      }
+    }
+    return out;
+  },
+
+  battle(){
+    const myArmy=this.buildArmy(0);
+    // Phase 5: host-authoritative multiplayer.
+    if(connected&&role==="host"){
+      // Host builds its army, then asks the guest for their deck.
+      this.pendingHostArmy=myArmy;
+      this.screen("battle");
+      transmit("request_deck",{});
+      setText("turn","WAIT");
+      setText("battleHP",myArmy.length);
+      setText("battleEnemy","?");
+      return;
+    }
+    if(connected&&role==="guest"){
+      // Guest sends its deck to the host and waits for snapshots.
+      this.screen("battle");
+      transmit("deck",{selected:this.selected});
+      setText("turn","WAIT");
+      setText("battleHP","?");
+      setText("battleEnemy","?");
+      return;
+    }
+    // Single-player: build local AI enemies and simulate here.
+    const enemies=[];
+    for(let i=0;i<6;i++){
+      const e=cloneUnit(this.enemy[F(R()*this.enemy.length)]);
+      enemies.push({...e,x:Q(40,360),y:Q(40,150),h:e.h,mh:e.h,team:1,cool:0});
+    }
+    this.screen("battle");
+    Battle.start(myArmy,enemies,winner=>this.onBattleEnd(winner));
+  },
+
+  // Phase 5: host assembles the full battle once the guest's deck arrives.
+  startHostBattle(guestSelected){
+    const guestArmy=this.buildArmyFromSelected(guestSelected,1);
+    Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner));
+    this.startSnapshots();
+  },
+
+  buildArmyFromSelected(selected,team){
+    const out=[];
+    const yRange=team===0?[420,600]:[40,150];
+    for(const pick of selected){
+      if(!pick)continue;
+      for(let i=0;i<3;i++){
+        const u=this.applyUpgrades(cloneUnit(pick));
+        out.push({...u,x:Q(40,360),y:Q(yRange[0],yRange[1]),h:u.h,mh:u.h,team,cool:0});
+      }
+    }
+    return out;
+  },
+
+  // Phase 5: host broadcasts full state at 20Hz (every 50ms).
+  startSnapshots(){
+    this.stopSnapshots();
+    this.snapTimer=setInterval(()=>{
+      if(!Battle.running){this.stopSnapshots();return;}
+      transmit("snap",{
+        time:Battle.time,
+        units:Battle.units,
+        enemies:Battle.enemies,
+        projectiles:Battle.projectiles,
+        winner:Battle.winner
+      });
+    },50);
+  },
+  stopSnapshots(){
+    if(this.snapTimer){clearInterval(this.snapTimer);this.snapTimer=null;}
+  },
+
+  // Battle ended — handle save + rewards + result screen.
+  onBattleEnd(winner){
+    this.stopSnapshots();
+    // Phase 5: in multiplayer the host already broadcast the final winner;
+    // guests reach here via the snapshot path with a translated winner.
+    const win=winner==="player";
+    // Phase 6: award XP + coins on win, then check achievements.
+    let xpGain=0,coinGain=0;
+    if(win){
+      vibrate([40,30,40]); // Phase 7: victory haptic
+      this.save.wins=(this.save.wins||0)+1;
+      xpGain=50+this.playerLevel()*10;
+      coinGain=20+F(R()*15);
+      this.save.xp=(this.save.xp||0)+xpGain;
+      this.save.coins=(this.save.coins||0)+coinGain;
+      saveData(this.save);
+      this.checkAchievements();
+    }
+    this.roundEnd(win,xpGain,coinGain);
+  },
+
+  roundEnd(win,xpGain,coinGain){
+    this.screen("result");
+    setText("resultTitle",win?"ROUND WON":"ROUND LOST");
+    setText("xpGain","+"+(xpGain||0));
+    setText("coinGain","+"+(coinGain||0));
+    const nr=$("nextRound");
+    if(nr)nr.onclick=()=>{if(win)this.forge();else this.start();};
+  },
+
+  // Phase 6: achievement definitions + unlock checks.
+  achievements:{
+    firstWin:{name:"First Victory",desc:"Win your first round",check:G=>G.save.wins>=1},
+    win10:{name:"Veteran",desc:"Win 10 rounds",check:G=>G.save.wins>=10},
+    forge5:{name:"AI Smith",desc:"Forge 5 AI units",check:G=>G.save.ai.length>=5},
+    level5:{name:"Rising Hero",desc:"Reach player level 5",check:G=>G.playerLevel()>=5},
+    rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100}
+  },
+  checkAchievements(){
+    const a=this.save.achievements;
+    for(const key in this.achievements){
+      if(!a[key]){
+        try{
+          if(this.achievements[key].check(this)){
+            a[key]=true;
+            toast("🏆 "+this.achievements[key].name+" unlocked!");
+          }
+        }catch(e){/* ignore single achievement check failure */}
+      }
+    }
+    saveData(this.save);
+  },
+
+  // Phase 5: battle control. Host/solo drive Battle directly; guest forwards
+  // commands to the host (authoritative simulation).
+  tick(){
+    if(connected&&role==="guest"){transmit("cmd",{cmd:"tick"});return;}
+    Battle.tick();
+  },
+  auto(){
+    if(connected&&role==="guest"){transmit("cmd",{cmd:"auto"});return;}
+    Battle.auto();
+  },
+  skip(){
+    if(connected&&role==="guest"){transmit("cmd",{cmd:"skip"});return;}
+    Battle.skip();
+  },
+
+  // Phase 5: guest applies a host snapshot and renders it (no local sim).
+  applyRemoteSnapshot(snap){
+    if(!snap)return;
+    Battle.units=(snap.units||[]).map(u=>Battle.initRuntime({...u}));
+    Battle.enemies=(snap.enemies||[]).map(u=>Battle.initRuntime({...u}));
+    Battle.projectiles=snap.projectiles||[];
+    Battle.time=snap.time||0;
+    Battle.renderOnly();
+    // HUD: from the guest's perspective, "enemies" (team 1) are the guest's own army.
+    setText("battleHP",Battle.units.filter(u=>u.h>0).length);
+    setText("battleEnemy",Battle.enemies.filter(u=>u.h>0).length);
+    setText("turn","T"+Math.floor(Battle.time));
+    if(snap.winner){
+      // Host's "player" = host won → guest lost. Host's "enemy" = guest won.
+      const guestWinner=snap.winner==="enemy"?"player":(snap.winner==="player"?"enemy":"draw");
+      Battle.running=false;
+      this.onBattleEnd(guestWinner);
+    }
+  },
+
+  forge(){
+    this.screen("forge");
+    // Phase 4: prefer a cached validated unit if available (instant forge).
+    if(aiCache.length>0){
+      this.addForge(aiCache.pop());
+      return;
+    }
+    if(llmReady){this.generateAI();}
+    else{this.randomForge();}
+  },
+
+  // Phase 4: AI generation with validation + cache. Retries up to 3 times
+  // for a valid unit before falling back to procedural.
+  async generateAI(){
+    try{
+      await initLLM();
+      if(!llmReady)throw Error("No AI");
+      const prompt="Create a balanced fantasy battle unit. Return JSON only with keys: n (name string), h (10..300 hp), d (3..60 dmg), r (20..200 range), s (30..150 speed), a (0.5..2 attack cooldown), c (hex color), ab (one of: '', splash, heal, dodge, poison), rar (common, rare, legendary).";
+      let forged=null;
+      for(let attempt=0;attempt<3&&!forged;attempt++){
+        const result=await llm.chat.completions.create({
+          messages:[
+            {role:"system",content:"You are a game unit generator. Return ONLY a single JSON object, no prose."},
+            {role:"user",content:prompt}
+          ],
+          max_tokens:120
+        });
+        const match=result.choices[0].message.content.match(/\{[\s\S]*\}/);
+        if(!match)continue;
+        let raw;
+        try{raw=JSON.parse(match[0]);}catch(e){continue;}
+        forged=validateAIUnit(raw);
+      }
+      if(!forged){throw Error("AI produced no valid unit after retries");}
+      // Phase 4: warm the cache with one extra validated unit for next time.
+      this.addForge(forged);
+      this.warmAICache();
+    }
+    catch(e){
+      showError("AI generate failed, using procedural: "+(e&&e.message||e));
+      this.randomForge();
+    }
+  },
+
+  // Phase 4: generate an extra unit in the background to refill the cache.
+  async warmAICache(){
+    if(!llmReady||aiCache.length>=3)return;
+    try{
+      const result=await llm.chat.completions.create({
+        messages:[
+          {role:"system",content:"Return ONLY a single JSON object, no prose."},
+          {role:"user",content:"Create a balanced fantasy battle unit. JSON keys: n,h(10..300),d(3..60),r(20..200),s(30..150),a(0.5..2),c(hex),ab(''|splash|heal|dodge|poison),rar(common|rare|legendary)."}
+        ],
+        max_tokens:120
+      });
+      const match=result.choices[0].message.content.match(/\{[\s\S]*\}/);
+      if(match){
+        const u=validateAIUnit(JSON.parse(match[0]));
+        if(u)aiCache.push(u);
+      }
+    }catch(e){/* cache warm is best-effort */}
+  },
+
+  randomForge(){
+    let names=["Ember","Frost","Nova","Volt","Shadow","Bloom"];
+    let abs=["","splash","heal","dodge","poison"];
+    let rars=["common","common","rare","legendary"];
+    this.addForge(unit({
+      n:names[F(R()*names.length)],
+      h:60+F(R()*80),
+      d:10+F(R()*30),
+      r:40+F(R()*120),
+      s:50+F(R()*60),
+      a:0.8+R()*0.8,
+      c:"#"+F(R()*16777215).toString(16).padStart(6,"0"),
+      ab:abs[F(R()*abs.length)],
+      rar:rars[F(R()*rars.length)]
+    }));
+  },
+
+  addForge(u){
+    this.save.ai.push(u);
+    if(this.save.ai.length>50)this.save.ai.shift();
+    saveData(this.save);
+    this.wins();
+    const fa=$("forgeArea");
+    if(fa)fa.innerHTML=`<div class="card"><div class="title" style="color:${u.c}">${u.n}</div><div class="detail">${u.h} HP ${u.d} DMG<br>Range ${u.r}</div></div>`;
+    transmit("forge",u);
+  },
+
+  next(){this.start();},
+
+  deck(){
+    this.screen("deck");
+    let area=$("deckArea");
+    if(!area)return;
+    area.innerHTML="";
+    // Phase 6: count duplicates by name so fusion is offered.
+    const counts={};
+    for(let u of this.deckUnits()){counts[u.n]=(counts[u.n]||0)+1;}
+    for(let u of this.deckUnits()){
+      const lvl=this.unitLevel(u.n);
+      const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
+      const canFuse=counts[u.n]>=2;
+      const fuseHint=canFuse?`<br><span style="color:#fb0">tap to fuse (2→+1 Lv)</span>`:"";
+      const card=document.createElement("div");
+      card.className="card";
+      card.innerHTML=`<div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP ${u.d} DMG${fuseHint}</div>`;
+      if(canFuse){
+        card.style.borderColor="#fb0";
+        card.onclick=()=>this.fuseUnit(u.n);
+      }
+      area.appendChild(card);
+    }
+  },
+
+  // Phase 6: fuse two same-name units into one with +1 level.
+  // Removes one copy from deck/ai and bumps the upgrade level.
+  fuseUnit(name){
+    const all=this.deckUnits();
+    const matches=all.filter(u=>u.n===name);
+    if(matches.length<2){toast("Need 2 of the same unit to fuse");return;}
+    // Remove one copy: prefer ai pool, then deck.
+    const aiIdx=this.save.ai.findIndex(u=>u.n===name);
+    if(aiIdx>=0){this.save.ai.splice(aiIdx,1);}
+    else{
+      const deckIdx=this.save.deck.findIndex(u=>u.n===name);
+      if(deckIdx>=0)this.save.deck.splice(deckIdx,1);
+    }
+    this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;
+    saveData(this.save);
+    this.wins();
+    toast("🔮 Fused "+name+" → Lv"+this.unitLevel(name));
+    this.deck();
+  },
+
+  // Phase 6: upgrade screen — spend coins to level up a unit.
+  upgrade(){
+    this.screen("upgrade");
+    setText("upgradeCoins",this.save.coins||0);
+    const area=$("upgradeArea");
+    if(!area)return;
+    area.innerHTML="";
+    const seen={};
+    for(const u of this.deckUnits()){
+      if(seen[u.n])continue;
+      seen[u.n]=true;
+      const lvl=this.unitLevel(u.n);
+      const cost=30+lvl*20;
+      const canAfford=this.save.coins>=cost;
+      const row=document.createElement("div");
+      row.className="upRow";
+      row.innerHTML=
+        `<div><div class="upName" style="color:${u.c}">${u.n} <span class="lvlBadge">Lv${lvl}</span></div>`+
+        `<div class="upStats">${u.h} HP · ${u.d} DMG → ${F(u.h*(1+0.1*(lvl+1)))} HP · ${F(u.d*(1+0.1*(lvl+1)))} DMG</div></div>`+
+        `<button class="btn ${canAfford?"primary":""}" ${canAfford?"":"disabled"}>${cost}💰</button>`;
+      const btn=row.querySelector("button");
+      if(btn)btn.onclick=()=>this.upgradeUnit(u.n,cost);
+      area.appendChild(row);
+    }
+  },
+
+  // Phase 6: spend coins to raise a unit's upgrade level.
+  upgradeUnit(name,cost){
+    if(this.save.coins<cost){toast("Not enough coins");return;}
+    this.save.coins-=cost;
+    this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;
+    saveData(this.save);
+    this.wins();
+    toast("⬆ "+name+" upgraded to Lv"+this.unitLevel(name));
+    this.upgrade();
+  },
+
+  reset(){if(confirm("Reset progress?")){localStorage.removeItem(SAVE_KEY);location.reload();}}
+};
+
+// Phase 1: host/join assigned after G exists; setupNetwork now null-safe.
+G.host=function(){
+  role="host";
+  const rid=$("roomId");
+  if(setupNetwork(rid?rid.value:"room1")){
+    setTimeout(()=>{transmit("role","host");},500);
+  }
+};
+G.join=function(){
+  role="guest";
+  const rid=$("roomId");
+  if(setupNetwork(rid?rid.value:"room1")){
+    setTimeout(()=>{transmit("role","guest");},500);
+  }
+};
+
+window.G=G;
+window.clearError=clearError;
+
+// Phase 7: remove the loading splash once init is done.
+function hideSplash(){
+  const sp=$("splash");
+  if(sp){sp.style.display="none";if(sp.parentNode)sp.parentNode.removeChild(sp);}
+}
+
+// Phase 7: register a PWA manifest via a blob URL (single-file friendly).
+// A full service worker needs a separate file, so we skip SW here and rely
+// on the manifest + meta tags for installability/add-to-homescreen.
+function setupPWA(){
+  try{
+    const manifest={
+      name:"Prompt Showdown",
+      short_name:"Showdown",
+      description:"AI-forged auto-battler with P2P multiplayer.",
+      start_url:window.location.href,
+      display:"fullscreen",
+      background_color:"#080810",
+      theme_color:"#080810",
+      icons:[{
+        src:"data:image/svg+xml,"+encodeURIComponent(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">'+
+          '<rect width="512" height="512" fill="#080810"/>'+
+          '<text x="256" y="300" font-size="240" text-anchor="middle" fill="#0ff">⚔</text></svg>'),
+        sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"
+      }]
+    };
+    const blob=new Blob([JSON.stringify(manifest)],{type:"application/manifest+json"});
+    const url=URL.createObjectURL(blob);
+    let link=document.querySelector('link[rel="manifest"]');
+    if(!link){link=document.createElement("link");link.rel="manifest";document.head.appendChild(link);}
+    link.href=url;
+  }catch(e){/* PWA setup is best-effort */}
+}
+
+// Phase 7: tap the battle canvas to advance one tick (touch control).
+document.addEventListener("pointerdown",e=>{
+  if(e.target&&e.target.id==="cv"){try{G.tick();}catch(err){/* ignore */}}
+});
+
+// Phase 7: reset Battle.last on visibility change so dt doesn't jump.
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden&&Battle.running){Battle.last=performance.now();}
+});
+
+// Phase 1 + Phase 7: kick off module load + init. Errors surface in the panel.
+// Phase 4: preload AI in the background once modules are available.
+// Phase 7: crash recovery — wrap init so a corrupt save can't brick the game.
+loadModules()
+  .then(()=>{
+    try{G.init();preloadAI();setupPWA();}
+    catch(e){
+      showError("Startup crashed (save may be corrupt): "+(e&&e.message||e)+
+        " — use ↺ RESET on the menu to clear progress.");
+    }
+    finally{hideSplash();}
+  })
+  .catch(e=>{showError("Startup failed: "+(e&&e.message||e));hideSplash();});
+</script>
+</body>
+</html>

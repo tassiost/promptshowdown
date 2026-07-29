@@ -1,0 +1,27 @@
+# Render Blueprint for Prompt Showdown v4
+# Deploys the game as a Static Site (free tier friendly).
+# After connecting this repo to Render, this file auto-creates the service.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: prompt-showdown
+    # Static sites are served from the repo root — no build needed since
+    # the game is a single self-contained index.html.
+    runtime: static
+    buildCommand: "echo 'No build step required — index.html is ready to serve.'"
+    # The public directory is the repo root (where index.html lives).
+    rootDir: ./
+    # Optional: custom headers for caching + module CORS safety.
+    headers:
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      - path: /*.html
+        name: Cache-Control
+        value: public, max-age=300
+    # Auto-deploy on every push to main.
+    autoDeploy: true
+    # Free tier — no paid instance needed for a static site.
+    plan: free
+    # Health check against the served file.
+    healthCheckPath: /index.html

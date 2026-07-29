@@ -1,0 +1,16 @@
+# OS / editor cruft
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Local server logs
+*.log
+
+# Original backup (kept locally, not pushed)
+index.original.html
+
+# Node (only if you later add tooling)
+node_modules/
