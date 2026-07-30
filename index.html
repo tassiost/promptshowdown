@@ -1354,8 +1354,8 @@ const RecipeAssembler={
     for(const s of headFeat(colors))shapes.push(scaleShape(s,scale));
     for(const s of backFeat(colors))shapes.push(scaleShape(s,scale));
     for(const s of tailFeat(colors))shapes.push(scaleShape(s,scale));
-    // Phase 25: cap at 14 shapes (drop lowest-priority: pattern, then back, then head).
-    while(shapes.length>14)shapes.splice(shapes.length-1,1);
+    // Phase 25: cap at 20 shapes (drop lowest-priority: tail, then back, then head).
+    while(shapes.length>20)shapes.splice(shapes.length-1,1);
     return{
       shapes,
       animations:{
@@ -2704,6 +2704,7 @@ const GameAudio={
     const bg=this.ctx.createGain();bg.gain.value=0.08;
     bass.connect(bg);bg.connect(this.musicGain);bass.start();
     this.musicOsc=[bass];
+    this.musicGainNodes=[bg];
     // Slow arpeggio.
     const notes=[root,root*1.25,root*1.5,root*1.875];
     let step=0;
@@ -2723,6 +2724,7 @@ const GameAudio={
     if(this.musicInterval){clearInterval(this.musicInterval);this.musicInterval=null;}
     for(const o of this.musicOsc){try{o.stop();}catch(e){}}
     this.musicOsc=[];
+    if(this.musicGainNodes){for(const g of this.musicGainNodes){try{g.disconnect();}catch(e){}}this.musicGainNodes=[];}
   },
 };
 // Phase 30: fxType → base frequency for attack SFX.
@@ -3154,7 +3156,7 @@ const Spell={
       SPELL_EFFECT[spec.effect]?.(affected,spec,team,battle);
     }
     BattleFX.onSpell(spec,anchor,affected,team);
-    GameAudio.sfx("spell_"+spec.fxType==="explosion"?"fire":spec.fxType==="frost"?"frost":spec.fxType==="lightning"?"lightning":"fire");
+    GameAudio.sfx("spell_"+(spec.fxType==="explosion"?"fire":spec.fxType==="frost"?"frost":spec.fxType==="lightning"?"lightning":"fire"));
   },
   // Phase 23: check trigger conditions each frame.
   checkTriggers(battle,dt){
@@ -3228,6 +3230,8 @@ const Battle={
   autoTimer:null,
   spells:[],         // Phase 23: active spell entries {spec,team,fired,lastFire}
   zones:[],          // Phase 23: persistent spell zones
+  debug:false,       // toggle battle debug logging
+  _debugT:0,         // debug log accumulator
 
   // Attach runtime-only combat fields to a unit (not persisted).
   initRuntime(u){
@@ -3333,7 +3337,8 @@ const Battle={
       if(u.poison>0){
         u.poison-=dt;
         u.poisonTick-=dt;
-        if(u.poisonTick<=0){u.h-=3;u.poisonTick=0.5;}
+        if(u.poisonTick<=0){u.h-=u.poisonDmg||3;u.poisonTick=0.5;}
+        if(u.h<=0){u.poison=0;}
       }
       if(u.slow>0)u.slow-=dt;
       if(u.stun>0)u.stun-=dt;
@@ -3396,6 +3401,28 @@ const Battle={
     setText("battleHP",players.length);
     setText("battleEnemy",enemies.length);
     setText("turn","T"+Math.floor(this.time));
+    // Debug logging: log all battle stats every ~1s when Battle.debug is on.
+    if(this.debug){
+      this._debugT+=dt;
+      if(this._debugT>=1){
+        this._debugT=0;
+        console.group("Battle t="+this.time.toFixed(1)+" alive:P"+players.length+"/E"+enemies.length);
+        for(const u of this.units){
+          if(u.h<=0)continue;
+          const tgt=u.target;
+          const td=tgt?dist(u,tgt).toFixed(0):"-";
+          console.log(u.n+"["+u.team+"] pos=("+u.x.toFixed(0)+","+u.y.toFixed(0)+") hp="+u.h.toFixed(0)+"/"+u.mh.toFixed(0)+" dmg="+u.d+" range="+u.r+" speed="+u.s+" z="+u.z+" cool="+u.cool.toFixed(2)+" tgtDist="+td+" mov="+u.movement+" atkCond="+u.attackCondition);
+        }
+        if(this.projectiles.length){
+          console.log("Projectiles:");
+          for(const p of this.projectiles){
+            if(p.dead)continue;
+            console.log("  proj pos=("+p.x.toFixed(0)+","+p.y.toFixed(0)+") target=("+p.tx.toFixed(0)+","+p.ty.toFixed(0)+") life="+p.life.toFixed(2)+" d="+p.d+" team="+p.team);
+          }
+        }
+        console.groupEnd();
+      }
+    }
   },
 
   // Phase 10: 4-line composition via lookup tables.
@@ -3424,6 +3451,7 @@ const Battle={
       this.projectiles.push({
         x:attacker.x,y:attacker.y,
         tx:target.x,ty:target.y,
+        targetId:target.id,
         d:attacker.d,team:attacker.team,owner:attacker.id,
         n:attacker.n,baseD:attacker.baseD,
         c:attacker.c,ability:attacker.ability,crit:attacker.crit,
@@ -3474,7 +3502,7 @@ const Battle={
       }
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
-    if(attacker.ability==="poison"){target.poison=3.0;target.poisonTick=0;}
+    if(attacker.ability==="poison"){target.poison=3.0;target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
     // Phase 20: track last attacker for ramp-on-kill.
     if(attacker.ability==="ramp")target.lastAttacker=attacker;
   },
@@ -3525,6 +3553,8 @@ const Battle={
       }
       // "none" and passive abilities: no-op here
     }
+    // Phase 10: mark on_first_hit as used for any triggered ability (not just shield).
+    if(u.abilityTrigger==="on_first_hit")u.firstHitUsed=true;
   },
 
   // Phase 10: death hook — fires on_death abilities before removal.
@@ -3561,13 +3591,18 @@ const Battle={
     if(!this.projectiles.length)return;
     for(let p of this.projectiles){
       if(p.dead)continue;
+      // Homing: track target unit if still alive, update target position.
+      if(p.targetId!=null){
+        const tgt=this.units.find(u=>u.id===p.targetId&&u.h>0);
+        if(tgt){p.tx=tgt.x;p.ty=tgt.y;}
+      }
       const dx=p.tx-p.x, dy=p.ty-p.y, dd=Math.hypot(dx,dy);
       const sp=320*dt;
       if(dd<=sp){
         const foes=this.units.filter(u=>u.team!==p.team&&u.h>0);
         let hit=false;
         for(let f of foes){
-          if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22){
+          if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22+f.z){
             // Synthetic attacker carrying projectile properties.
             const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
               c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD};
@@ -3596,7 +3631,7 @@ const Battle={
         const b=all[j];if(b.h<=0)continue;
         const dx=b.x-a.x, dy=b.y-a.y;
         const d=Math.hypot(dx,dy);
-        const minD=a.z+b.z;
+        const minD=Math.max(a.z,b.z);
         if(d>0&&d<minD){
           const push=(minD-d)/2;
           const dd=Math.max(d,0.001); // guard against floating-point zero
@@ -3775,7 +3810,8 @@ const Battle={
   applySnapshot(s){
     if(!s)return;
     const prev=this._prevSnapshot;
-    if(s.units)this.units=s.units.map(u=>this.initRuntime({...u}));
+    if(s.units)this.units=s.units.map(u=>({...u,mh:u.mh||u.h,prevH:u.prevH??u.h}));
+    if(s.projectiles)this.projectiles=s.projectiles;
     // Phase 17: state-derived FX from snapshot deltas.
     if(prev&&prev.units){
       const prevMap=new Map(prev.units.map(u=>[u.id,u]));
@@ -3856,7 +3892,7 @@ const Quests={
     if(reward){
       G.save.coins=(G.save.coins||0)+reward;
       saveData(G.save);
-      toast(`🔥 ${q.streak}-day streak! +${reward} coins`);
+      toast(`🔥 ${q.streak.count}-day streak! +${reward} coins`);
     }
   },
   generateDaily(){
@@ -4997,6 +5033,14 @@ const G={
         out.push({...u,x:400-xSpread,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
+    // Safety: if all picks were spells, add a default unit so the army isn't empty.
+    if(out.length===0){
+      const fallback=cloneUnit(this.base[0]);
+      const [yMin,yMax]=this._formationY(fallback.role,false);
+      for(let i=0;i<3;i++){
+        out.push({...fallback,x:400-Q(40,160),y:Q(yMin,yMax),h:fallback.h,mh:fallback.h});
+      }
+    }
     this.enemySpells=spells; // Phase 23: store guest spells
     return out;
   },
@@ -5077,7 +5121,8 @@ const G={
     const win=winner==="player";
     GameAudio.sfx(win?"match_win":"match_lose"); // Phase 30
     GameAudio.stopMusic(); // Phase 30
-    // Phase 33: quest tracking.
+    // Phase 33: quest tracking + streak check (handles midnight rollover).
+    Quests.checkStreak();
     if(win)Quests.track("match_win");
     if(Match.history.length>=5)Quests.track("round_reach",5);
     // Phase 35: analytics.

@@ -77,7 +77,7 @@ Also add them to `shareUnit`'s data payload.
 **Note:** In practice, the targeting functions pre-filter dead units (line 3350-3351), so `target` should always be alive. However, a unit could die between targeting and movement in the same frame (if another unit kills it first in the loop). Low real-world impact.
 **Fix:** Add `target&&target.h>0` checks in movement functions.
 
-### BUG-006 🔴 Shape cap drops wrong shapes (tail before weapon)
+### BUG-006 � Shape cap too low (14) drops visual features
 **File:** index.html:1346-1347
 **Found:** 2026-07-30
 **Description:** `while(shapes.length>14)shapes.splice(shapes.length-1,1)` drops from the END. Shapes are added: body → weapon → head features → back features → tail features. So it drops tail first, then back, then head, then weapon. The comment says "drop lowest-priority: pattern, then back, then head" but pattern (body shapes) is never dropped.
@@ -106,7 +106,7 @@ Also add them to `shareUnit`'s data payload.
 
 ## Low
 
-### BUG-010 🟡 Poison ticks after unit death
+### BUG-010 � Poison ticks after unit death
 **File:** index.html:3320-3324
 **Found:** 2026-07-30
 **Description:** Poison continues ticking on dead units (h<=0) until duration expires. Harmless (dead units are skipped in main loop) but wastes computation.
@@ -118,13 +118,13 @@ Also add them to `shareUnit`'s data payload.
 **Description:** `EYE_STYLES.closed = null` but `drawFace` doesn't check for `eyeStyle==="closed"` to skip eyes. It only checks `recipe.face===false`. Units with `eyeStyle:"closed"` still draw eyes.
 **Fix:** Add `if(u.recipe?.eyeStyle==="closed")return;` in `drawFace`.
 
-### BUG-012 🟡 `GameAudio.stopMusic` doesn't disconnect gain nodes
+### BUG-012 � `GameAudio.stopMusic` doesn't disconnect gain nodes
 **File:** index.html:2713-2717
 **Found:** 2026-07-30
 **Description:** `stopMusic` stops oscillators but doesn't disconnect gain nodes (`bg`, `g`). Minor memory leak in audio graph.
 **Fix:** Store gain nodes and disconnect them in `stopMusic`.
 
-### BUG-013 🟡 Quest streak doesn't update across midnight
+### BUG-013 � Quest streak doesn't update across midnight
 **File:** index.html:3833-3848
 **Found:** 2026-07-30
 **Description:** `checkStreak()` only runs during `G.init()`. If a session spans midnight, streak won't increment until next restart.
@@ -148,3 +148,61 @@ Also add them to `shareUnit`'s data payload.
 - **Colorblind filter mutates shapes**: NOT a bug — `shape={...shape,c:...}` creates a new object at line 2371.
 - **`scaleShape` mutates original pts**: NOT a bug — `out.pts=out.pts.map(...)` creates new arrays.
 - **RecipeAssembler pattern mutates BODY_PLANS**: NOT a bug — `scaleShape` returns new objects, pattern is applied to the copy.
+
+---
+
+## Round 2 — 2026-07-30 (battle timeout investigation)
+
+### BUG-015 🟢 Projectiles not homing (fixed position → guaranteed miss vs moving targets)
+**File:** index.html:3560-3588 (updateProjectiles)
+**Found:** 2026-07-30
+**Description:** Projectiles stored `tx`/`ty` at fire time but never updated them. Hit check was `Math.hypot(f.x-p.tx,f.y-p.ty)<=22` — if target moved >22px before projectile arrived, it missed. With projectile speed 320px/s and Archer range 170, travel time ~0.53s, a unit at speed 65 moves ~34px → guaranteed miss. This caused ranged units to be ineffective, leading to timeouts.
+**Fix:** Added `targetId` to projectile, track target position each frame (homing). Also added `f.z` to hit radius so larger units are easier to hit.
+
+### BUG-016 🟢 Separation uses `a.z+b.z` (sum of radii) — prevents melee units from closing distance
+**File:** index.html:3599 (separate)
+**Found:** 2026-07-30
+**Description:** `separate()` pushed units apart to `a.z+b.z` distance. Two large forged units (z=40 each) get pushed to 80px apart, but melee range is typically 30-40. They can never close distance → softlock → timeout.
+**Fix:** Changed to `Math.max(a.z,b.z)` — units overlap to the larger unit's radius, allowing melee contact.
+
+### BUG-017 🟢 `on_first_hit` trigger only marks `firstHitUsed` for shield ability
+**File:** index.html:3546-3553
+**Found:** 2026-07-30
+**Description:** `triggerAbility` only set `u.firstHitUsed=true` inside the `case "shield"` block. If a unit had `abilityTrigger:"on_first_hit"` with any other triggered ability (heal, spawn, explode, heal_burst), `firstHitUsed` was never set, so the ability fired every frame.
+**Fix:** Move `firstHitUsed` mark to after the switch statement, applies to all triggered abilities.
+
+### BUG-018 🟢 Spell SFX operator precedence bug (always plays "fire" sound)
+**File:** index.html:3157
+**Found:** 2026-07-30
+**Description:** `GameAudio.sfx("spell_"+spec.fxType==="explosion"?"fire":...)` — JS concatenates first: `"spell_explosion"==="explosion"` is always `false`, so the ternary always falls through to `"fire"`. Frost/lightning spell sounds never play.
+**Fix:** Add parentheses: `"spell_"+(spec.fxType==="explosion"?"fire":...)`.
+
+### BUG-019 🟢 Poison damage hardcoded to 3 (ignores `poisonDmg` from spells/abilities)
+**File:** index.html:3338
+**Found:** 2026-07-30
+**Description:** Poison tick used `u.h-=3` (hardcoded). `SPELL_EFFECT.damage_over_time` set `u.poisonDmg=spec.magnitude||10` but it was never read. Spell-based poison did only 3/tick instead of the specified magnitude. Unit ability `poison` also didn't set `poisonDmg`, so it used the default 3.
+**Fix:** Changed to `u.h-=u.poisonDmg||3`. Also set `poisonDmg` in the unit poison ability (`attacker.d*0.3`).
+
+### BUG-020 🟢 Streak toast displays `[object Object]` instead of count
+**File:** index.html:3894
+**Found:** 2026-07-30
+**Description:** `toast(\`🔥 ${q.streak}-day streak!\`)` — `q.streak` is an object `{lastLogin, count}`, so the template literal prints `[object Object]`.
+**Fix:** Changed to `q.streak.count`.
+
+### BUG-021 🟢 `applySnapshot` resets guest unit animation/runtime state
+**File:** index.html:3813
+**Found:** 2026-07-30
+**Description:** `applySnapshot` called `this.initRuntime({...u})` on every snapshot, which unconditionally resets `animState="idle"`, `attackT=-1`, `cool=0`, etc. This overwrote the host's animation state, so guest saw no attack/move/death animations.
+**Fix:** Changed to shallow copy `{...u, mh:u.mh||u.h, prevH:u.prevH??u.h}` — preserves all runtime fields from host.
+
+### BUG-022 🟢 `applySnapshot` doesn't update projectiles (guest sees no projectiles)
+**File:** index.html:3813
+**Found:** 2026-07-30
+**Description:** `Battle.snapshot()` includes `projectiles` but `applySnapshot` never set `this.projectiles`. Guest rendered stale/empty projectile array.
+**Fix:** Added `if(s.projectiles)this.projectiles=s.projectiles`.
+
+### BUG-023 🟢 `buildArmyFromSelected` missing empty army fallback (P2P guest all-spell picks)
+**File:** index.html:5022-5036
+**Found:** 2026-07-30
+**Description:** `_buildArmyFromPicks` had an empty-army fallback (added in BUG-008 fix), but `buildArmyFromSelected` (used for P2P guest army) did not. If a guest sent all-spell picks, the guest army would be empty → instant loss.
+**Fix:** Added the same empty-army fallback to `buildArmyFromSelected`.
