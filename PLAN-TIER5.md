@@ -310,7 +310,7 @@ Single-file architecture means no `.wav`/`.mp3` files. All SFX are synthesized a
 
 ---
 
-## Phase 35 — Analytics / Telemetry ✅ PLANNED
+## Phase 35 — Analytics / Telemetry ✅ DONE
 
 **Why:** Unblocks all future balancing. Today there's zero event logging — can't see which units win too often, where players churn, what they forge, whether bots are too easy. The bot-strategy (Tier 3 Phase 21) + spell-balance (Phase 23) + ramp-carry tuning (Phase 20) are all flying blind. Analytics is the prerequisite for data-driven iteration.
 
@@ -380,7 +380,7 @@ No PostHog/Amplitude/Firebase (single-file, no deps, no third-party data sharing
 
 ---
 
-## Phase 36 — Ranked Leaderboard + Seasons ✅ PLANNED
+## Phase 36 — Ranked Leaderboard + Seasons ✅ DONE
 
 **Why:** Competitive retention. The arena ladder (Phase 15) is unlock-gated PvE — no competitive ranking, no season reset, no "climb to legend." Ranked play gives the hardcore tail a reason to keep grinding after they've unlocked all arenas.
 
