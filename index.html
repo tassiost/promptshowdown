@@ -493,6 +493,7 @@ const Analytics={
   },
   track(event,props={}){
     if(G.save?.analyticsOptOut)return;
+    if(!this.endpoint)return; // no endpoint configured — don't queue
     this.queue.push({event,props,t:Date.now(),install:this.installId,ver:CURRENT_VERSION});
     this._flush();
   },
@@ -1910,6 +1911,7 @@ let room=null;
 let sendNet=null;
 let connected=false;
 let role="none";
+let _peerId=null;
 function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;}}
 
 function setupNetwork(id){
@@ -1930,6 +1932,7 @@ function setupNetwork(id){
       const np=$("netPill");if(np)np.style.display="inline-flex";
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
+      G.cancelReconnect();
     };
     room.onPeerLeave=()=>{
       connected=false;
@@ -1975,7 +1978,7 @@ function showDisconnectPrompt(lastLoadout){
     // Swap opponent to bot using last known loadout.
     Match.opponentPicks=lastLoadout.length>0
       ?lastLoadout.map(n=>G.base.find(b=>b.n===n)).filter(Boolean)
-      :Bot.draftRound(Match.comebackEligible()?4:3);
+      :Bot.draftRound(Match.history.length>0&&Match.history[Match.history.length-1].winner==="player"?4:3);
     toast("Continuing vs bot");
   };
   overlay.querySelector("#discForfeit").onclick=()=>{
@@ -2001,11 +2004,33 @@ let suppressP2PErrors=false;
 function networkReceive(data){
   try{
     if(data.t==="role"){
-      if(role==="none")role=data.d;
+      if(role==="host"&&data.d==="host"){
+        // Both players tried to host (matchmaking) — use tiebreaker to decide.
+        // Lower peerId becomes host, higher becomes guest.
+        if(!_peerId)_peerId=Math.random().toString(36).slice(2);
+        transmit("role_tiebreak",{id:_peerId});
+      }else if(role==="none")role=data.d;
       // Phase 18: if we're hosting and a guest connects during matchmaking,
       // cancel the bot fallback timer and start a P2P match.
       if(role==="host"&&G.matchmakingTimer){
         G.matchmakingCancelled=true; // prevent bot fallback race
+        clearTimeout(G.matchmakingTimer);
+        G.matchmakingTimer=null;
+        setText("matchmakingStatus","Opponent found! Starting match...");
+        setTimeout(()=>G.start(),300);
+      }
+    }
+    if(data.t==="role_tiebreak"){
+      if(!_peerId)_peerId=Math.random().toString(36).slice(2);
+      const otherId=data.d.id;
+      if(_peerId<otherId){
+        role="host";
+      }else{
+        role="guest";
+      }
+      // Host starts the match; guest waits for round_start.
+      if(role==="host"&&G.matchmakingTimer){
+        G.matchmakingCancelled=true;
         clearTimeout(G.matchmakingTimer);
         G.matchmakingTimer=null;
         setText("matchmakingStatus","Opponent found! Starting match...");
@@ -2096,7 +2121,7 @@ function networkReceive(data){
       }
     }
     // Unknown message type — log for debugging (future version compat).
-    if(!["role","request_deck","deck","snap","cmd","forge",
+    if(!["role","role_tiebreak","request_deck","deck","snap","cmd","forge",
          "match_start","round_start","opponent_picks","round_end",
          "match_end","round_deck"].includes(data.t)){
       console.warn("Unknown network message type:",data.t);
@@ -2223,7 +2248,7 @@ const ABILITY_TRIGGERS={
   when_surrounded:(u,allies,enemies)=>enemies.filter(e=>e.h>0&&dist(u,e)<60).length>=2&&u.abCool<=0,
   on_low_hp:(u,allies,enemies)=>u.h<u.mh*0.3&&u.abCool<=0,
   on_death:(u,allies,enemies)=>false,  // handled in onUnitDeath()
-  on_first_hit:(u,allies,enemies)=>!u.firstHitUsed,
+  on_first_hit:(u,allies,enemies)=>u.hasBeenHit&&!u.firstHitUsed,
   never:(u,allies,enemies)=>false,
 };
 
@@ -3283,6 +3308,7 @@ const Battle={
     u.fxType=u.fxType||deriveFxType(u); // Phase 24e: cached aura type
     u.patrolT=0;       // Phase 10: patrol movement timer
     u.firstHitUsed=false; // Phase 10: on_first_hit flag
+    u.hasBeenHit=false;   // Phase 10: has the unit been attacked?
     u.shieldActive=0;  // Phase 10: shield immunity timer
     u.deathT=undefined;// Phase 10: death animation timer
     u.ttl=u.ttl||0;    // Phase 10: minion time-to-live
@@ -3506,9 +3532,9 @@ const Battle={
   takeDamage(attacker,target,enemies){
     if(target.h<=0)return;
     // dodge: 50% chance to completely avoid (was 20% in v4)
-    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");return;}
+    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");target.hasBeenHit=true;return;}
     // shield: immune if active
-    if(target.shieldActive>0){this.log(target.n+" shielded!");return;}
+    if(target.shieldActive>0){this.log(target.n+" shielded!");target.hasBeenHit=true;return;}
     let dmg=attacker.d;
     // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
     if(attacker.ability==="rage")dmg*=1+(1-attacker.h/attacker.mh);
@@ -3516,6 +3542,7 @@ const Battle={
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
     target.h-=dmg;
+    target.hasBeenHit=true; // Phase 10: for on_first_hit trigger
     // Phase 17: FX on hit.
     if(crit){
       BattleFX.onCrit(target);
@@ -4321,6 +4348,7 @@ const G={
     if(target)target.classList.add("active");
     // Clean up any leftover fixed overlays (forge confirm, disconnect prompt).
     [...document.querySelectorAll("div")].forEach(d=>{
+      if(d.id==="errorPanel")return; // keep error panel
       if(d.style.position==="fixed"&&d.style.zIndex==="9999")d.remove();
     });
   },
@@ -4520,7 +4548,17 @@ const G={
     if(!this._pendingImport)return;
     if(this._pendingImport._isSpell){
       if(!this.save.spellbook)this.save.spellbook=[];
-      this.save.spellbook.push(this._pendingImport);
+      const spell=this._pendingImport;
+      // Sanitize: ensure required fields have valid values.
+      if(!SPELL_ENUM.trigger.includes(spell.trigger))spell.trigger="battle_start";
+      if(!SPELL_ENUM.effect.includes(spell.effect))spell.effect="damage";
+      if(!SPELL_ENUM.shape.includes(spell.shape))spell.shape="circle_aoe";
+      if(!SPELL_ENUM.fxType.includes(spell.fxType))spell.fxType="explosion";
+      if(!SPELL_ENUM.target.includes(spell.target))spell.target="enemy_cluster";
+      spell.magnitude=clamp(Number(spell.magnitude)||30,1,200);
+      spell.radius=clamp(Number(spell.radius)||60,10,200);
+      spell.duration=clamp(Number(spell.duration)||0,0,10);
+      this.save.spellbook.push(spell);
       saveData(this.save);
       toast("✓ Spell added from share link!");
     }else{
@@ -5548,7 +5586,13 @@ const G={
   addSpellToBook(){
     if(!this.pendingForgeSpell)return;
     if(!this.save.spellbook)this.save.spellbook=[];
-    this.save.spellbook.push(this.pendingForgeSpell);
+    const spell=this.pendingForgeSpell;
+    // Safety: ensure required fields have valid values.
+    if(!SPELL_ENUM.trigger.includes(spell.trigger))spell.trigger="battle_start";
+    if(!SPELL_ENUM.effect.includes(spell.effect))spell.effect="damage";
+    if(!SPELL_ENUM.shape.includes(spell.shape))spell.shape="circle_aoe";
+    if(!SPELL_ENUM.fxType.includes(spell.fxType))spell.fxType="explosion";
+    this.save.spellbook.push(spell);
     saveData(this.save);
     toast("Spell added to spellbook!");
     this.pendingForgeSpell=null;
@@ -5708,8 +5752,18 @@ const G={
     const coll=this.collectionUnits();
     const current=this.save.loadout[i];
     const idx=coll.findIndex(u=>u.n===current);
-    const next=coll[(idx+1)%coll.length];
-    this.save.loadout[i]=next.n;
+    // Find next unit not already in another loadout slot.
+    for(let j=1;j<=coll.length;j++){
+      const next=coll[(idx+j)%coll.length];
+      if(!this.save.loadout.includes(next.n)){
+        this.save.loadout[i]=next.n;
+        saveData(this.save);
+        this.deck();
+        return;
+      }
+    }
+    // All units are in loadout — just cycle (edge case with tiny collection).
+    this.save.loadout[i]=coll[(idx+1)%coll.length].n;
     saveData(this.save);
     this.deck();
   },

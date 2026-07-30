@@ -410,3 +410,61 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** `semanticValidateSpell` flagged invalid `trigger`, `effect`, `shape`, and `fxType` values, but the auto-fix only handled `target` and `duration`. Invalid enum values would silently produce spells that do nothing (`SPELL_SHAPE[undefined]?.()` returns `[]`).
 **Fix:** Added auto-fix for invalid `trigger` (→`"battle_start"`), `effect` (→`"damage"`), `shape` (→`"circle_aoe"`), and `fxType` (→`"explosion"`).
+
+---
+
+## Round 6 — 2026-07-31 (P2P matchmaking, triggers, FX, UI, shared spells)
+
+### BUG-056 🟢 `on_first_hit` ability trigger fires at battle start, not on first hit
+**File:** index.html:2250
+**Found:** 2026-07-31
+**Description:** `ABILITY_TRIGGERS.on_first_hit` checked `!u.firstHitUsed`, which is true at battle start (before any attack). The ability fired on frame 1, effectively making it a `battle_start` trigger. The intent is to fire when the unit is first attacked.
+**Fix:** Added `u.hasBeenHit` flag (set in `takeDamage` when the unit is attacked, including dodge/shield blocks). Trigger now checks `u.hasBeenHit && !u.firstHitUsed`.
+
+### BUG-057 🟢 P2P matchmaking: both players become host (dual-host deadlock)
+**File:** index.html:2004-2008
+**Found:** 2026-07-31
+**Description:** `startMatchmaking` calls `G.host(queueRoom,true)` for both players. Both set `role="host"` and send `transmit("role","host")`. When each receives the other's `"role","host"`, the old code just kept `role="host"` for both. Neither acted as guest — the match never started properly.
+**Fix:** When receiving `"role","host"` while already `role="host"`, both players exchange a random tiebreaker ID via `role_tiebreak` message. The player with the lower ID becomes host, the other becomes guest.
+
+### BUG-058 🟢 Reconnect overlay not cancelled when peer rejoins
+**File:** index.html:1927
+**Found:** 2026-07-31
+**Description:** `onPeerJoin` didn't call `cancelReconnect()`. If a peer disconnected and reconnected during the grace period, the reconnect overlay stayed visible and the timer kept counting down. When it expired, `Match.forfeit()` fired even though the peer had reconnected.
+**Fix:** Added `G.cancelReconnect()` call in `onPeerJoin`.
+
+### BUG-059 🟢 Bot comeback in disconnect prompt uses inverted eligibility
+**File:** index.html:1978
+**Found:** 2026-07-31
+**Description:** `showDisconnectPrompt` used `Match.comebackEligible()?4:3` for the replacement bot's draw count. `comebackEligible()` returns true when the player lost, but the bot (replacing the human opponent) should get comeback when the player won (bot lost). Same inversion as BUG-047.
+**Fix:** Replaced with `Match.history.length>0 && last.winner==="player" ? 4 : 3`.
+
+### BUG-060 🟢 `screen()` removes the error panel (z-index 9999 cleanup)
+**File:** index.html:4350-4351
+**Found:** 2026-07-31
+**Description:** `screen()` removes all `div`s with `position:fixed` and `z-index:9999`. The error panel (`#errorPanel`) has both properties. After navigating to any screen, the error panel was removed from the DOM. Subsequent `showError()` calls silently returned (null guard), swallowing all error messages.
+**Fix:** Added `if(d.id==="errorPanel")return;` to exclude the error panel from cleanup.
+
+### BUG-061 🟢 `swapLoadoutSlot` allows duplicate units in loadout
+**File:** index.html:5750-5757
+**Found:** 2026-07-31
+**Description:** `swapLoadoutSlot` cycled to the next collection unit without checking if it was already in another loadout slot. The player could end up with 4 copies of the same unit, which doubled/tripled the roll weight in `rollOne`.
+**Fix:** Now skips units already in the loadout, cycling to the next available unit. Falls back to simple cycle only if all units are in the loadout (tiny collection edge case).
+
+### BUG-062 🟢 Imported shared spells not sanitized
+**File:** index.html:4549
+**Found:** 2026-07-31
+**Description:** `_importSharedUnit` added shared spells to the spellbook without validating enum fields. Malformed share links could inject spells with invalid `trigger`/`effect`/`shape`/`fxType` that silently fail in battle.
+**Fix:** Added sanitization: invalid enums default to `battle_start`/`damage`/`circle_aoe`/`explosion`. Numeric fields (`magnitude`, `radius`, `duration`) are clamped.
+
+### BUG-063 🟢 Forged spells not sanitized before adding to spellbook
+**File:** index.html:5587
+**Found:** 2026-07-31
+**Description:** `addSpellToBook` added `pendingForgeSpell` directly. While `generateSpell` already sanitizes, the safety net was missing for template fallbacks or edge cases.
+**Fix:** Added same sanitization as BUG-062 for consistency.
+
+### BUG-064 🟢 Analytics queue grows unboundedly when endpoint is null
+**File:** index.html:494-497
+**Found:** 2026-07-31
+**Description:** `Analytics.track` always pushed events to the queue, but `_flush` never sent them (endpoint is `null` by default). The queue grew indefinitely — one event per match, forge, ad, etc.
+**Fix:** `track` now returns early if `!this.endpoint`, preventing queue growth when no endpoint is configured.
