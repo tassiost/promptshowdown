@@ -544,7 +544,7 @@ function migrateSave(s){
     // collection = existing AI units (legacy format, no behaviour API fields).
     s.collection=(s.ai||[]).map(u=>({...u,legacy:true}));
     // loadout = first 4 of deck (or first 4 base unit names if deck missing).
-    if(s.loadout){
+    if(s.loadout&&s.loadout.length>0){
       // already has loadout (re-migrating)
     }else if(s.deck&&s.deck.length>0){
       s.loadout=s.deck.slice(0,4).map(u=>u.n||u);
@@ -631,6 +631,15 @@ function unit(x={}){
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
     role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
     weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"].includes(x.weaponType)?x.weaponType:"none",
+    // Phase 25: visual modifier fields (preserved for P2P + share + clone).
+    bodyPlan:x.bodyPlan||null,
+    headFeature:x.headFeature||"none",
+    backFeature:x.backFeature||"none",
+    tailFeature:x.tailFeature||"none",
+    aura:x.aura||"none",
+    eyeStyle:x.eyeStyle||"normal",
+    pattern:x.pattern||"none",
+    weaponStyle:x.weaponStyle||"standard",
     recipe:x.recipe||null // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
@@ -839,10 +848,12 @@ const UNIT_SCHEMA={
 
 // Phase 12: derived fields (not from LLM — deterministic functions).
 function lighten(hex,amt){
-  const n=parseInt(hex.slice(1),16);
-  const r=Math.min(255,((n>>16)&255)+amt*255);
-  const g=Math.min(255,((n>>8)&255)+amt*255);
-  const b=Math.min(255,(n&255)+amt*255);
+  let h=hex.slice(1);
+  if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const n=parseInt(h,16);
+  const r=Math.min(255,Math.round(((n>>16)&255)+amt*255));
+  const g=Math.min(255,Math.round(((n>>8)&255)+amt*255));
+  const b=Math.min(255,Math.round((n&255)+amt*255));
   return"#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
 }
 function deriveAtkSpd(a){
@@ -1418,7 +1429,7 @@ function templateFallback(prompt){
 const RECIPE_MINIFY={
   shapes:"s",animations:"a",attack:"at",idle:"i",move:"m",death:"d",
   circle:"c",rect:"r",line:"l",polygon:"p",arc:"ar",
-  t:"t",cx:"x",cy:"y",r:"r",x:"x",y:"y",w:"w",h:"h",
+  t:"t",cx:"cx",cy:"cy",r:"r",x:"x",y:"y",w:"w",h:"h",
   x1:"x1",y1:"y1",x2:"x2",y2:"y2",c:"c",joint:"j",pts:"p",
   start:"s0",end:"e0",alpha:"al",rot:"ro",bob:"bo",leg_swing:"ls",
   arm_raise:"ar",bow_draw:"bd",tail_wag:"tw"
@@ -2133,19 +2144,17 @@ const TARGETING={
 };
 
 const MOVEMENT={
-  chase:(u,target,dt)=>{if(target)moveToward(u,target,u.s*(u.moveSpeedMod/100)*dt);},
-  flee:(u,target,dt)=>{if(target)moveAway(u,target,u.s*(u.moveSpeedMod/100)*dt);},
+  chase:(u,target,dt)=>{if(target&&target.h>0)moveToward(u,target,u.s*(u.moveSpeedMod/100)*dt);},
+  flee:(u,target,dt)=>{if(target&&target.h>0)moveAway(u,target,u.s*(u.moveSpeedMod/100)*dt);},
   hold:(u,target,dt)=>{/* no movement */},
   hold_midpoint:(u,target,dt)=>{
     const mid=u.team==="player"?Battle.canvasH*0.6:Battle.canvasH*0.4;
     const sp=u.s*(u.moveSpeedMod/100)*dt;
-    if(target){
+    if(target&&target.h>0){
       const d=dist(u,target);
       if(d>u.r){
-        // Out of range — close the distance toward target.
         moveToward(u,target,sp);
       }else{
-        // In range — hold the midpoint y.
         if(Math.abs(u.y-mid)>10)u.y+=Math.sign(mid-u.y)*sp*0.5;
       }
     }else{
@@ -2153,7 +2162,7 @@ const MOVEMENT={
     }
   },
   kite:(u,target,dt)=>{
-    if(!target)return;
+    if(!target||target.h<=0)return;
     const d=dist(u,target);
     const sp=u.s*(u.moveSpeedMod/100)*dt;
     if(d<u.r*0.5)moveAway(u,target,sp);
@@ -2517,8 +2526,8 @@ const SpriteRenderer={
     // Only draw faces for humanoid-like body plans.
     const facedPlans=["humanoid","undead","demon","beast-man","ghost","flying","monopod"];
     if(u.bodyPlan&&!facedPlans.includes(u.bodyPlan))return;
-    // Phase 25: skip face if recipe says face:false (closed eyes).
-    if(u.recipe&&u.recipe.face===false)return;
+    // Phase 25: skip face if recipe says face:false or eyeStyle is closed.
+    if(u.recipe&&(u.recipe.face===false||u.recipe.eyeStyle==="closed"))return;
     // Find head position (top of the unit).
     const hx=u.x;
     const hy=u.y-18;
@@ -3183,11 +3192,15 @@ const Spell={
       if(z.fired>=1){
         z.fired=0;
         const units=battle.units.filter(u=>u.h>0&&Math.hypot(u.x-z.x,u.y-z.y)<z.radius);
-        const affected=units.filter(u=>u.team!==z.team);
+        const tgt=z.spec.target||"enemy";
+        const allyZone=tgt.startsWith("ally");
+        const affected=allyZone?units.filter(u=>u.team===z.team):units.filter(u=>u.team!==z.team);
         if(z.spec.effect==="damage_over_time"){
           affected.forEach(u=>{u.h-=z.spec.magnitude||10;});
         }else if(z.spec.effect==="slow"){
           affected.forEach(u=>{u.slow=Math.max(u.slow,1);});
+        }else if(z.spec.effect==="heal_over_time"){
+          affected.forEach(u=>{u.h=Math.min(u.mh||u.h,u.h+(z.spec.magnitude||10));});
         }
         // FX particles for zone.
         BattleFX.spellZone(z);
@@ -4168,7 +4181,7 @@ const G={
     // Phase 8: match/loadout/collection fields (defined in migrateSave v6).
     if(!this.save.matchWins)this.save.matchWins=0;
     if(!this.save.arena)this.save.arena=0;
-    if(!this.save.loadout)this.save.loadout=["Knight","Archer","Slash","Wizard"];
+    if(!this.save.loadout||!this.save.loadout.length)this.save.loadout=["Knight","Archer","Slash","Wizard"];
     if(!this.save.collection)this.save.collection=[];
     saveData(this.save);
     this.wins();
@@ -4204,6 +4217,7 @@ const G={
   screen(id){
     document.querySelectorAll(".screen").forEach(x=>x.classList.remove("active"));
     let target=$(id);
+    if(!target)target=$("menu");
     if(target)target.classList.add("active");
     // Clean up any leftover fixed overlays (forge confirm, disconnect prompt).
     [...document.querySelectorAll("div")].forEach(d=>{
@@ -4356,7 +4370,7 @@ const G={
   // Phase 37: share forged unit via URL.
   shareUnit(u){
     try{
-      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,role:u.role,ability:u.ability,weaponType:u.weaponType,bodyPlan:u.bodyPlan,primaryColor:u.c,recipe:u.recipe});
+      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,role:u.role,ability:u.ability,weaponType:u.weaponType,bodyPlan:u.bodyPlan,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
       const compressed=LZString?LZString.compressToEncodedURIComponent(data):encodeURIComponent(data);
       const url=location.origin+location.pathname+"?unit="+compressed;
       if(navigator.share){
@@ -4852,6 +4866,14 @@ const G={
         out.push({...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
+    // Safety: if all picks were spells, add a default unit so the army isn't empty.
+    if(out.length===0){
+      const fallback=cloneUnit(this.base[0]);
+      const [yMin,yMax]=this._formationY(fallback.role,isPlayer);
+      for(let i=0;i<3;i++){
+        out.push({...fallback,x:isPlayer?Q(40,160):400-Q(40,160),y:Q(yMin,yMax),h:fallback.h,mh:fallback.h});
+      }
+    }
     return {units:out,spells};
   },
 
@@ -5302,6 +5324,8 @@ const G={
   // Core forge logic — runs ad (if watchAd) + generation in parallel.
   // Phase 23: supports spell forge mode.
   async _doForge(prompt,watchAd){
+    if(this._forgeRunning)return;
+    this._forgeRunning=true;
     GameAudio.sfx("forge_whoosh"); // Phase 30
     const btn=$("forgeGenBtn");
     const skipBtn=$("forgeSkipBtn");
@@ -5329,6 +5353,7 @@ const G={
       this.pendingForgeSpell=spell;
       this.showSpellForgePreview(spell);
       GameAudio.sfx("forge_reveal");
+      this._forgeRunning=false;
       return;
     }
     // Phase 12: model cache check — if LLM not ready and no WebGPU, skip LLM.
@@ -5360,6 +5385,7 @@ const G={
     this.pendingForgeUnit=unit;
     this.showForgePreview(unit);
     GameAudio.sfx("forge_reveal"); // Phase 30
+    this._forgeRunning=false;
   },
   // Phase 23: show spell forge preview with effect description + add button.
   showSpellForgePreview(spell){
