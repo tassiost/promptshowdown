@@ -40,7 +40,7 @@ Research findings (real Draft Showdown):
 
 ---
 
-## Phase 20 — Ramp Carry + Wizard Starter ✅ PLANNED
+## Phase 20 — Ramp Carry + Wizard Starter ✅ DONE
 
 **Why:** Deliver the "protect your scaling carry" fantasy that the real game's meta is built around. Without a ramp unit, the frontline/protect synergy has no payoff — tanks protect nothing.
 

@@ -388,7 +388,7 @@ function migrateSave(s){
     }else if(s.deck&&s.deck.length>0){
       s.loadout=s.deck.slice(0,4).map(u=>u.n||u);
     }else{
-      s.loadout=["Knight","Archer","Slash","Priest"];
+      s.loadout=["Knight","Archer","Slash","Wizard"];
     }
     // Drop old forge5 achievement (replaced by new forge achievements in Phase 19).
     if(s.achievements)delete s.achievements.forge5;
@@ -624,7 +624,7 @@ const UNIT_SCHEMA={
     dmg:{type:"integer",minimum:5,maximum:50},
     range:{type:"integer",minimum:30,maximum:250},
     speed:{type:"integer",minimum:30,maximum:120},
-    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"]},
+    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"]},
     bodyPlan:{type:"string",enum:["humanoid","quadruped","blob","flying","mechanical","structure"]},
     weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"]},
     primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
@@ -662,7 +662,7 @@ const CONSISTENCY_RULES=[
   {if:a=>a.ability==="none"&&a.abilityTrigger!=="never",flag:"abilityTrigger"},
   {if:a=>a.ability==="heal"&&!["when_ally_hurt","on_cooldown"].includes(a.abilityTrigger),flag:"abilityTrigger"},
   {if:a=>a.ability==="spawn"&&a.abilityTrigger!=="on_cooldown",flag:"abilityTrigger"},
-  {if:a=>["lifesteal","rage","slow","splash","dodge","poison"].includes(a.ability)&&a.abilityTrigger!=="never",flag:"abilityTrigger"},
+  {if:a=>["lifesteal","rage","slow","splash","dodge","poison","ramp"].includes(a.ability)&&a.abilityTrigger!=="never",flag:"abilityTrigger"},
   {if:a=>["heal","spawn","explode","heal_burst","shield"].includes(a.ability)&&a.abilityTrigger==="never",flag:"abilityTrigger"},
   {if:a=>a.ability==="explode"&&!["on_death","on_cooldown"].includes(a.abilityTrigger),flag:"abilityTrigger"},
   {if:a=>a.ability==="heal_burst"&&!["on_death","on_cooldown","when_ally_hurt"].includes(a.abilityTrigger),flag:"abilityTrigger"},
@@ -1080,7 +1080,7 @@ const ENUM_FIELDS={
   movement:["chase","flee","hold","hold_midpoint","kite","patrol"],
   attackCondition:["always","only_if_healthy","only_if_target_low","never"],
   abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
-  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"],
+  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"],
   bodyPlan:["humanoid","quadruped","blob","flying","mechanical","structure"],
   weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"],
   primaryColor:Object.keys(COLOR_MAP),
@@ -1468,9 +1468,9 @@ const TARGETING_OPTS=["closest","lowest_hp","highest_hp","enemy_carry","enemy_su
 const MOVEMENT_OPTS=["chase","flee","hold","hold_midpoint","kite","patrol"];
 const ATTACK_CONDITION_OPTS=["always","only_if_healthy","only_if_target_low","never"];
 const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"];
-const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow"];
+const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"];
 const ROLE_OPTS=["frontline","carry","support","counter","utility"];
-const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow"]);
+const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp"]);
 const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield"]);
 
 // Phase 10: lookup tables — each enum maps to a pure function.
@@ -1672,6 +1672,7 @@ const SpriteRenderer={
     c.fillStyle=shape.c||"#888";
     c.strokeStyle=shape.c||"#888";
     c.lineWidth=shape.w||1;
+    if(shape.glow){c.shadowBlur=shape.glow;c.shadowColor=shape.c||"#fff";}
     switch(shape.t){
       case "circle":
         c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.fill();break;
@@ -1689,6 +1690,7 @@ const SpriteRenderer={
       case "arc":
         c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,shape.start,shape.end);c.stroke();break;
     }
+    if(shape.glow)c.shadowBlur=0;
   },
 
   // Main entry: draw a unit using its recipe, or fallback to role-coded shape.
@@ -1802,6 +1804,11 @@ const BattleFX={
   onDeath(u){
     this.burst(u.x,u.y,u.c,8,60);
     if(u.role==="carry")this.shake(4); // carry death = bigger shake
+  },
+  // Phase 20: ramp kill — golden particle burst + brief size pulse.
+  onKill(u){
+    this.burst(u.x,u.y,"#fd4",5,70);
+    u.hitFlash=0.08;
   },
   // Spawn pop-in: scale 0->1 ease-out-back.
   onSpawn(u){
@@ -1943,6 +1950,7 @@ const Battle={
     u.slow=0;          // slow remaining seconds
     u.stun=0;          // stun remaining seconds
     u.mh=u.mh||u.h;    // max hp
+    u.baseD=u.baseD||u.d; // Phase 20: base damage for ramp cap
     u.patrolT=0;       // Phase 10: patrol movement timer
     u.firstHitUsed=false; // Phase 10: on_first_hit flag
     u.shieldActive=0;  // Phase 10: shield immunity timer
@@ -2113,6 +2121,7 @@ const Battle={
         x:attacker.x,y:attacker.y,
         tx:target.x,ty:target.y,
         d:attacker.d,team:attacker.team,owner:attacker.id,
+        n:attacker.n,baseD:attacker.baseD,
         c:attacker.c,ability:attacker.ability,crit:attacker.crit,
         role:attacker.role,moveSpeedMod:100,
         life:2,dead:false
@@ -2161,6 +2170,8 @@ const Battle={
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
     if(attacker.ability==="poison"){target.poison=3.0;target.poisonTick=0;}
+    // Phase 20: track last attacker for ramp-on-kill.
+    if(attacker.ability==="ramp")target.lastAttacker=attacker;
   },
 
   // Phase 10: triggered abilities (heal, spawn, explode, heal_burst, shield).
@@ -2215,6 +2226,16 @@ const Battle={
       const enemies=this.units.filter(x=>x.team!==u.team&&x.h>0);
       this.triggerAbility(u,allies,enemies);
     }
+    // Phase 20: ramp — attacker gains +15% dmg on kill (cap 3× base).
+    const killer=u.lastAttacker;
+    if(killer&&killer.ability==="ramp"&&killer.h>0&&killer.baseD){
+      const cap=killer.baseD*3;
+      if(killer.d<cap){
+        killer.d=Math.min(cap,Math.round(killer.d*1.15));
+        BattleFX.onKill(killer);
+        this.log(killer.n+" ramps up! DMG → "+killer.d);
+      }
+    }
     u.deathT=0;
     BattleFX.onDeath(u); // Phase 17: death burst FX
     // Phase 16: track death order for post-match hint.
@@ -2234,8 +2255,8 @@ const Battle={
         for(let f of foes){
           if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22){
             // Synthetic attacker carrying projectile properties.
-            const synth={d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
-              c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role};
+            const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
+              c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD};
             this.takeDamage(synth,f,foes);
             hit=true;break;
           }
@@ -2601,6 +2622,22 @@ const SPRITE_RECIPES={
       death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
     }
   },
+  Wizard:{
+    shapes:[
+      {t:"polygon",pts:[[-4,-24],[4,-24],[7,-18],[-7,-18]],c:"#6633aa"}, // hat
+      {t:"circle",cx:0,cy:-15,r:5,c:"#fdc"},          // face
+      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#bb44ff"}, // robe
+      {t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#fb0",w:2,joint:"arm_raise"}, // staff
+      {t:"circle",cx:8,cy:-26,r:3,c:"#ddf",glow:6},   // staff orb (glow)
+      {t:"rect",x:-9,y:-10,w:4,h:8,c:"#933",joint:"arm_raise"}, // left arm
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:0.6,arm_raise:0.3},{t:1,arm_raise:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
+    }
+  },
 };
 
 const G={
@@ -2609,7 +2646,7 @@ const G={
   // botPool = unit names the bot drafts from (themed per arena).
   arenas:[
     {n:"Training Yard",c:"#4a4",lives:3,unlock:0,maxHp:100,maxDmg:30,
-     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer"]},
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Wizard"]},
     {n:"District Z",c:"#8a4",lives:3,unlock:3,maxHp:130,maxDmg:35,
      botPool:["Plague","Cultist","Berserker","Knight","Archer","Assassin"]},
     {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,maxHp:160,maxDmg:45,
@@ -2638,6 +2675,10 @@ const G={
     {n:"Engineer",h:60,d:8,r:90,s:45,a:1.3,c:"#ff8844",ability:"spawn",rar:"rare",cost:3,crit:0.05,
      targeting:"closest",movement:"flee",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"utility",weaponType:"hammer",
      recipe:SPRITE_RECIPES.Engineer},
+    // Phase 20: ramp carry — fragile scaling backline DPS.
+    {n:"Wizard",h:50,d:14,r:160,s:55,a:1.3,c:"#bb44ff",ability:"ramp",rar:"legendary",cost:4,crit:0.10,
+     targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,role:"carry",weaponType:"staff",
+     recipe:SPRITE_RECIPES.Wizard},
     // Phase 15: arena-themed units (used by bots in higher arenas).
     {n:"Plague",h:60,d:12,r:90,s:55,a:1.3,c:"#88ff44",ability:"poison",rar:"rare",cost:3,crit:0.1,
      targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry"},
@@ -2676,7 +2717,7 @@ const G={
     // Phase 8: match/loadout/collection fields (defined in migrateSave v6).
     if(!this.save.matchWins)this.save.matchWins=0;
     if(!this.save.arena)this.save.arena=0;
-    if(!this.save.loadout)this.save.loadout=["Knight","Archer","Slash","Priest"];
+    if(!this.save.loadout)this.save.loadout=["Knight","Archer","Slash","Wizard"];
     if(!this.save.collection)this.save.collection=[];
     saveData(this.save);
     this.wins();
@@ -2720,7 +2761,7 @@ const G={
   // Phase 13: deckUnits returns the loadout (4 cards) resolved to unit objects.
   // This is the draft pool per match.
   loadoutUnits(){
-    const loadout=this.save.loadout||["Knight","Archer","Slash","Priest"];
+    const loadout=this.save.loadout||["Knight","Archer","Slash","Wizard"];
     const coll=this.save.collection||[];
     return loadout.map(name=>{
       // Find in collection first, then base roster.
