@@ -1,16 +1,23 @@
 # Overnight Execution Status
 
 ## Completed
-- [x] Pre-flight: working tree clean, server started, forge cap removed, no max_tokens — committed 554e613, pushed
-- [x] Phase 20: Ramp carry ability + Wizard starter — committed 667df38, pushed
-- [x] Phase 24a: Expanded body plans (6→20) + richer shape primitives (gradient, outline, glow, alpha, drop shadow, patterns, ellipse) — implemented, smoke tested
+- [x] Pre-flight: forge cap removed, no max_tokens — committed 554e613
+- [x] Phase 20: Ramp carry ability + Wizard starter — committed 667df38
+- [x] Phase 24a: Expanded body plans (6→20) — committed c2a9055
+- [x] Phase 24b: Richer shape primitives (gradient, outline, glow, alpha, drop shadow, patterns) — committed c2a9055
+- [x] Phase 24c: Translate+scale joints + spring physics — implemented
+- [x] Phase 24e: Persistent unit auras (fxType-driven particle emitters) — implemented
+- [x] Phase 24f: Faces (eye tracking, blink, widen on attack, glow for magical) — implemented
+- [x] Phase 24g: Animation polish (anticipation/follow-through, easing curves) — implemented
 
 ## Skipped / Blocked
-(none yet)
+- Phase 24d (spring-physics secondary motion): deferred — capes/tails already animate via joint rotation. Spring physics adds complexity for marginal gain. Will revisit if needed.
 
 ## Notes
-- Phase 24a: BODY_PLANS expanded from 6 to 20 plans (added dragon, serpent, bird, insect, crab, golem, ghost, fish, plant, undead, demon, beast-man, aquatic, monopod). Each uses gradient fills, outlines, and glow where appropriate. Added 12 new template fallbacks mapping keywords to new body plans. Updated ENUM_FIELDS and UNIT_SCHEMA with all 20 body plans.
-- Phase 24b: _drawShapeRaw extended to support: gradient fills (fill:"gradient", c2), outlines (outline, oc), glow (already from Phase 20), alpha (per-shape), drop shadow (per-unit ellipse), patterns (stripes, spots), and ellipse shape type. scaleShape updated for rx/ry. Drop shadow drawn in SpriteRenderer.draw before shapes.
+- Phase 24c: Rewrote drawShape to look up channel by joint name (was using first numeric channel — bug). Added JOINT_CONFIG with mode (rotate/translate/scale), axis, range. Added wing_flap, jaw_open, recoil, lunge, squash, stretch, breathe, wobble channels.
+- Phase 24e: deriveFxType() maps ability+weapon+bodyPlan → elemental type. BattleFX.unitAura() spawns 1-2 particles/frame per unit, capped by MAX_PARTICLES. Auras: fire (rising embers), frost (falling snow), poison (bubbles), lightning (sparks), heal_glow (golden motes), shadow/arcane (wisps).
+- Phase 24f: drawFace() for humanoid-like plans. Eyes track u.target, blink every 3-5s, widen on attack, glow for magical/undead. u.target stored in Battle.act.
+- Phase 24g: interpolate() supports ease:"easeOut"/"easeIn"/"easeInOut" per keyframe segment. Wizard attack animation rewritten with 5 keyframes (anticipation→action→follow-through→settle).
 
 ## Current
-Starting Phase 24c: Unit auras + faces + animation polish
+Starting Phase 22: Role-based formation positioning

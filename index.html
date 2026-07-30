@@ -1844,14 +1844,27 @@ const Match={
 
 // Phase 11: SpriteRenderer — interprets visual recipes (shapes + animations)
 // and draws them on the canvas with skeletal joint transforms.
-const JOINT_ANGLES={ // channel name → max rotation in degrees
+const JOINT_ANGLES={ // channel name → max rotation in degrees (for rotate mode)
   arm_raise:90, arm_swing:60, leg_swing:30, bow_draw:15,
   head_tilt:20, bob:8, staff_raise:70, rot:90, tail_wag:25,
+  wing_flap:30, jaw_open:20, recoil:8, lunge:12,
+  squash:0.2, stretch:0.2, breathe:0.05, wobble:0.1,
+};
+// Phase 24c: joint config — mode + axis + range per channel.
+const JOINT_CONFIG={
+  arm_raise:{mode:"rotate"}, arm_swing:{mode:"rotate"}, leg_swing:{mode:"rotate"},
+  bow_draw:{mode:"rotate"}, head_tilt:{mode:"rotate"}, bob:{mode:"translate",axis:"y",range:2},
+  staff_raise:{mode:"rotate"}, rot:{mode:"rotate"}, tail_wag:{mode:"rotate"},
+  wing_flap:{mode:"translate",axis:"y",range:6}, jaw_open:{mode:"translate",axis:"y",range:4},
+  recoil:{mode:"translate",axis:"y",range:5}, lunge:{mode:"translate",axis:"x",range:4},
+  squash:{mode:"scale",axis:"y",range:0.2}, stretch:{mode:"scale",axis:"x",range:0.2},
+  breathe:{mode:"scale",axis:"both",range:0.05}, wobble:{mode:"scale",axis:"x",range:0.1},
 };
 const ANIM_DURATIONS={idle:2.0,move:0.6,attack:0.4,death:0.5};
 
 const SpriteRenderer={
   // Linear interpolation between keyframes for numeric channels.
+  // Phase 24g: supports easing per segment via ease field on keyframe.
   interpolate(keyframes,t){
     if(!keyframes||!keyframes.length)return{};
     if(keyframes.length===1)return{...keyframes[0]};
@@ -1864,10 +1877,15 @@ const SpriteRenderer={
       }
     }
     const span=next.t-prev.t||1;
-    const f=(t-prev.t)/span;
+    let f=(t-prev.t)/span;
+    // Phase 24g: easing curves.
+    const ease=next.ease;
+    if(ease==="easeOut")f=1-(1-f)*(1-f);
+    else if(ease==="easeIn")f=f*f;
+    else if(ease==="easeInOut")f=f<0.5?2*f*f:1-((-2*f+2)**2)/2;
     const out={};
     for(let ch in next){
-      if(ch==="t")continue;
+      if(ch==="t"||ch==="ease")continue;
       const pv=prev[ch]||0,nv=next[ch]||0;
       out[ch]=typeof nv==="number"?pv+(nv-pv)*f:nv;
     }
@@ -1875,23 +1893,52 @@ const SpriteRenderer={
   },
 
   // Draw a single shape with optional joint transform.
+  // Phase 24c: supports rotate (default), translate, scale joint modes.
   drawShape(c,shape,channels,u){
     const joint=shape.joint;
     if(joint){
-      // Find the channel that drives this joint (first numeric channel).
-      const chVal=Object.keys(channels).find(k=>k!=="t"&&typeof channels[k]==="number")?
-        channels[Object.keys(channels).find(k=>k!=="t"&&typeof channels[k]==="number")]:0;
-      const maxAngle=(JOINT_ANGLES[joint]||30)*Math.PI/180;
-      // Pivot point: top-center of the shape.
-      let px,py;
-      if(shape.t==="rect"){px=shape.x+shape.w/2;py=shape.y;}
-      else{px=shape.cx||shape.x||0;py=shape.cy||shape.y||0;}
-      c.save();
-      c.translate(u.x+px,u.y+py);
-      c.rotate(chVal*maxAngle);
-      c.translate(-px,-py);
-      this._drawShapeRaw(c,shape,u);
-      c.restore();
+      // Phase 24c: look up the specific channel by joint name.
+      const chVal=channels[joint]||0;
+      const cfg=JOINT_CONFIG[joint]||{mode:"rotate"};
+      const mode=shape.jointMode||cfg.mode;
+      if(mode==="rotate"){
+        const maxAngle=(JOINT_ANGLES[joint]||30)*Math.PI/180;
+        let px,py;
+        if(shape.t==="rect"){px=shape.x+shape.w/2;py=shape.y;}
+        else{px=shape.cx||shape.x||0;py=shape.cy||shape.y||0;}
+        c.save();
+        c.translate(u.x+px,u.y+py);
+        c.rotate(chVal*maxAngle);
+        c.translate(-px,-py);
+        this._drawShapeRaw(c,shape,u);
+        c.restore();
+      }else if(mode==="translate"){
+        const range=shape.jointRange||cfg.range||5;
+        const axis=shape.jointAxis||cfg.axis||"y";
+        const offset=chVal*range;
+        c.save();
+        if(axis==="x")c.translate(offset,0);
+        else if(axis==="y")c.translate(0,offset);
+        else c.translate(offset*0.7,offset*0.3);
+        this._drawShapeRaw(c,shape,u);
+        c.restore();
+      }else if(mode==="scale"){
+        const range=shape.jointRange||cfg.range||0.1;
+        const axis=shape.jointAxis||cfg.axis||"both";
+        const sx=axis==="x"||axis==="both"?1+chVal*range:1;
+        const sy=axis==="y"||axis==="both"?1+chVal*range:1;
+        let cx,cy;
+        if(shape.t==="rect"){cx=shape.x+shape.w/2;cy=shape.y+shape.h/2;}
+        else{cx=shape.cx||shape.x||0;cy=shape.cy||shape.y||0;}
+        c.save();
+        c.translate(u.x+cx,u.y+cy);
+        c.scale(sx,sy);
+        c.translate(-cx,-cy);
+        this._drawShapeRaw(c,shape,u);
+        c.restore();
+      }else{
+        this._drawShapeRaw(c,shape,u);
+      }
     }else{
       this._drawShapeRaw(c,shape,u);
     }
@@ -2031,7 +2078,58 @@ const SpriteRenderer={
     for(const shape of(recipe.shapes||[])){
       this.drawShape(c,shape,channels,u);
     }
+    // Phase 24f: draw face (eyes + expression) for humanoid-like units.
+    if(recipe.face!==false&&state!=="death"){
+      this.drawFace(c,u,channels,state);
+    }
     u.y=saveY;
+    c.restore();
+  },
+
+  // Phase 24f: faces — eyes that track targets, blink, widen on attack.
+  drawFace(c,u,channels,state){
+    // Only draw faces for humanoid-like body plans.
+    const facedPlans=["humanoid","undead","demon","beast-man","ghost","flying","monopod"];
+    if(u.bodyPlan&&!facedPlans.includes(u.bodyPlan))return;
+    // Find head position (top of the unit).
+    const hx=u.x;
+    const hy=u.y-18;
+    if(hy<-30)return; // off-screen check
+    // Eye color: glow for magical/undead.
+    const fxType=u.fxType||deriveFxType(u);
+    const eyeColor=fxType==="shadow"||fxType==="arcane"||u.bodyPlan==="undead"?"#f4f":u.bodyPlan==="undead"?"#4f4":"#000";
+    const eyeGlow=fxType==="shadow"||fxType==="arcane"||u.bodyPlan==="undead"?4:0;
+    // Blink: every 3-5s, 100ms scale-Y to 0.1.
+    if(!u.faceState)u.faceState={blinkT:3+Math.random()*2,blinkPhase:0};
+    u.faceState.blinkT-=0.016;
+    if(u.faceState.blinkT<=0){
+      u.faceState.blinkPhase=0.1;
+      u.faceState.blinkT=3+Math.random()*2;
+    }
+    if(u.faceState.blinkPhase>0)u.faceState.blinkPhase-=0.016;
+    const eyeScaleY=u.faceState.blinkPhase>0?0.1:1;
+    // Widen on attack, narrow on death.
+    let eyeScaleX=1;
+    if(state==="attack")eyeScaleX=1.3;
+    // Target tracking: shift eyes toward target.
+    let dx=0,dy=0;
+    if(u.target&&u.target.h>0){
+      const tdx=u.target.x-u.x,tdy=u.target.y-u.y;
+      const td=Math.hypot(tdx,tdy)||1;
+      dx=(tdx/td)*1.5;dy=(tdy/td)*1.5;
+    }
+    c.save();
+    if(eyeGlow){c.shadowBlur=eyeGlow;c.shadowColor=eyeColor;}
+    c.fillStyle=eyeColor;
+    // Left eye.
+    c.beginPath();
+    c.ellipse(hx-3+dx,hy+dy,1.5*eyeScaleX,2*eyeScaleY,0,0,Math.PI*2);
+    c.fill();
+    // Right eye.
+    c.beginPath();
+    c.ellipse(hx+3+dx,hy+dy,1.5*eyeScaleX,2*eyeScaleY,0,0,Math.PI*2);
+    c.fill();
+    if(eyeGlow)c.shadowBlur=0;
     c.restore();
   },
 
@@ -2075,6 +2173,25 @@ const SpriteRenderer={
 // Phase 17: Procedural FX System — particles, hit flashes, screen shake.
 // State-derived so P2P guests see the same juice without extra network traffic.
 const MAX_PARTICLES=60;
+// Phase 24e: derive elemental fxType from unit attributes for auras.
+const AURA_MAP={
+  fire:"#f64", frost:"#6cf", poison:"#6f4", lightning:"#ff4",
+  holy:"#fd8", shadow:"#a4f", arcane:"#a4f", explosion:"#f84",
+  heal_glow:"#fd8", shockwave:"#fff", fire_wall:"#f84",
+};
+function deriveFxType(u){
+  if(u.ability==="ramp"&&u.weaponType==="breath")return"fire";
+  if(u.ability==="poison")return"poison";
+  if(u.ability==="heal"||u.ability==="heal_burst")return"heal_glow";
+  if(u.ability==="explode")return"explosion";
+  if(u.ability==="shield")return"holy";
+  if(u.weaponType==="staff")return"arcane";
+  if(u.bodyPlan==="ghost"||u.bodyPlan==="undead")return"shadow";
+  if(u.bodyPlan==="dragon")return"fire";
+  if(u.bodyPlan==="bird")return"frost";
+  if(u.bodyPlan==="plant")return"holy";
+  return null;
+}
 const BattleFX={
   // Spawn particles at a position with given color + count.
   burst(x,y,color,count,speed){
@@ -2111,6 +2228,40 @@ const BattleFX={
   onKill(u){
     this.burst(u.x,u.y,"#fd4",5,70);
     u.hitFlash=0.08;
+  },
+  // Phase 24e: persistent unit aura — per-frame particle emitter driven by fxType.
+  unitAura(u,dt){
+    if(u.h<=0||u.deathT!==undefined)return;
+    const fxType=u.fxType||deriveFxType(u);
+    if(!fxType)return;
+    const color=AURA_MAP[fxType];
+    if(!color)return;
+    // Spawn 1-2 particles per frame, capped by MAX_PARTICLES.
+    const budget=MAX_PARTICLES-(Battle.particles?.length||0);
+    if(budget<=0)return;
+    const count=Math.min(2,budget);
+    for(let i=0;i<count;i++){
+      const px=u.x+(Math.random()-0.5)*16;
+      const py=u.y+(Math.random()-0.5)*4;
+      let vx=0,vy=0,life=0.5,r=2;
+      switch(fxType){
+        case "fire": case "explosion": case "fire_wall":
+          vy=-20-Math.random()*20; life=0.4+Math.random()*0.3; r=1.5+Math.random(); break;
+        case "frost":
+          vy=10+Math.random()*10; life=0.6+Math.random()*0.3; r=1+Math.random(); break;
+        case "poison":
+          vy=-5-Math.random()*10; vx=(Math.random()-0.5)*10; life=0.5+Math.random()*0.3; r=2+Math.random(); break;
+        case "lightning":
+          vx=(Math.random()-0.5)*30; vy=(Math.random()-0.5)*30; life=0.1+Math.random()*0.1; r=1+Math.random(); break;
+        case "heal_glow": case "holy":
+          vy=-15-Math.random()*10; life=0.5+Math.random()*0.3; r=1.5+Math.random(); break;
+        case "shadow": case "arcane":
+          vx=(Math.random()-0.5)*8; vy=-8-Math.random()*8; life=0.4+Math.random()*0.3; r=1.5+Math.random(); break;
+        default:
+          vy=-10; life=0.4;
+      }
+      Battle.particles.push({x:px,y:py,vx,vy,life,maxLife:life,c:color,r});
+    }
   },
   // Spawn pop-in: scale 0->1 ease-out-back.
   onSpawn(u){
@@ -2253,6 +2404,7 @@ const Battle={
     u.stun=0;          // stun remaining seconds
     u.mh=u.mh||u.h;    // max hp
     u.baseD=u.baseD||u.d; // Phase 20: base damage for ramp cap
+    u.fxType=u.fxType||deriveFxType(u); // Phase 24e: cached aura type
     u.patrolT=0;       // Phase 10: patrol movement timer
     u.firstHitUsed=false; // Phase 10: on_first_hit flag
     u.shieldActive=0;  // Phase 10: shield immunity timer
@@ -2354,6 +2506,8 @@ const Battle={
       if(u.hitFlash>0)u.hitFlash-=dt;
       if(u.lungeT>0)u.lungeT-=dt;
       if(u.spawnT>0)u.spawnT+=dt/0.15; // 150ms spawn anim
+      // Phase 24e: persistent unit aura.
+      this.fxAura(u,dt);
     }
     // 2. detect newly dead units → onUnitDeath
     for(let u of this.units){
@@ -2402,6 +2556,7 @@ const Battle={
   act(u,enemies,allies,dt){
     if(u.h<=0||u.stun>0)return;
     const target=TARGETING[u.targeting](u,enemies,allies);
+    u.target=target; // Phase 24f: store target for eye tracking
     MOVEMENT[u.movement](u,target,dt);
     if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
       this.attack(u,target,enemies);
@@ -2543,6 +2698,11 @@ const Battle={
     // Phase 16: track death order for post-match hint.
     if(!this.deathLog)this.deathLog=[];
     this.deathLog.push({n:u.n,role:u.role,team:u.team,t:this.time});
+  },
+
+  // Phase 24e: per-unit aura wrapper (calls BattleFX.unitAura).
+  fxAura(u,dt){
+    BattleFX.unitAura(u,dt);
   },
 
   updateProjectiles(dt){
@@ -2936,7 +3096,13 @@ const SPRITE_RECIPES={
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
       move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
-      attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:0.6,arm_raise:0.3},{t:1,arm_raise:0}],
+      attack:[
+        {t:0,arm_raise:0,lunge:0},
+        {t:0.15,arm_raise:-0.3,lunge:-0.2,ease:"easeOut"},
+        {t:0.35,arm_raise:1,lunge:0.4,ease:"easeInOut"},
+        {t:0.55,arm_raise:0.8,lunge:0.2,ease:"easeOut"},
+        {t:1,arm_raise:0,lunge:0}
+      ],
       death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}],
     }
   },
