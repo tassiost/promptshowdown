@@ -120,7 +120,45 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
+<button class="btn" onclick="G.showSettings()" style="font-size:.78rem;opacity:0.7;">⚙️ Settings</button>
 </div>
+</div>
+
+<div class="screen" id="settings">
+<h2>⚙️ Settings</h2>
+<div class="group" style="max-width:300px;margin:0 auto;">
+<h3 style="font-size:.9rem;margin-bottom:8px;">Audio</h3>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>Master Mute</span><input type="checkbox" id="setAudioEnabled" onchange="G.saveSetting('audioEnabled',this.checked)">
+</label>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>SFX Volume</span><input type="range" id="setSfxVol" min="0" max="100" value="70" onchange="G.saveSetting('sfxVol',this.value/100)" style="width:120px;">
+</label>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>Music Volume</span><input type="range" id="setMusicVol" min="0" max="100" value="40" onchange="G.saveSetting('musicVol',this.value/100)" style="width:120px;">
+</label>
+<h3 style="font-size:.9rem;margin:12px 0 8px;">Graphics</h3>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>Quality</span>
+<select id="setQuality" onchange="G.saveSetting('quality',this.value)" style="padding:4px;font-size:.8rem;">
+<option value="auto">Auto</option><option value="high">High</option><option value="low">Low</option><option value="minimal">Minimal</option>
+</select>
+</label>
+<h3 style="font-size:.9rem;margin:12px 0 8px;">Accessibility</h3>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>Reduced Motion</span><input type="checkbox" id="setReducedMotion" onchange="G.saveSetting('reducedMotion',this.checked)">
+</label>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>Colorblind Mode</span>
+<select id="setColorblind" onchange="G.saveSetting('colorblind',this.value)" style="padding:4px;font-size:.8rem;">
+<option value="off">Off</option><option value="deuteranopia">Deuteranopia</option><option value="protanopia">Protanopia</option><option value="tritanopia">Tritanopia</option>
+</select>
+</label>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>High Contrast</span><input type="checkbox" id="setHighContrast" onchange="G.saveSetting('highContrast',this.checked)">
+</label>
+</div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="matchmaking">
@@ -2176,6 +2214,13 @@ const SpriteRenderer={
   // Draw a shape without joint transform (absolute coords relative to unit center).
   _drawShapeRaw(c,shape,u){
     const ox=u.x,oy=u.y;
+    // Phase 32: apply colorblind filter to shape color (in-place remap).
+    if(G.save?.settings?.colorblind&&G.save.settings.colorblind!=="off"&&shape.c){
+      shape={...shape,c:G.applyColorblind(shape.c)};
+      if(shape.c2)shape={...shape,c2:G.applyColorblind(shape.c2)};
+    }
+    // Phase 32: high contrast — thicker outlines.
+    if(G.save?.settings?.highContrast&&shape.outline)shape={...shape,outline:shape.outline+1};
     // Phase 24b: per-shape alpha.
     const prevAlpha=c.globalAlpha;
     if(shape.alpha!==undefined)c.globalAlpha=shape.alpha;
@@ -2617,6 +2662,10 @@ const BattleFX={
   // Phase 24e: persistent unit aura — per-frame particle emitter driven by fxType.
   unitAura(u,dt){
     if(u.h<=0||u.deathT!==undefined)return;
+    // Phase 32: skip auras in low/minimal quality or reduced motion.
+    const q=G.qualityTier?.()||"high";
+    if(q==="low"||q==="minimal")return;
+    if(G.save?.settings?.reducedMotion)return;
     // Phase 25: prefer recipe.auraColor, then deriveFxType.
     let fxType=u.fxType||deriveFxType(u);
     let color=u.recipe&&u.recipe.auraColor?u.recipe.auraColor:AURA_MAP[fxType];
@@ -2667,6 +2716,8 @@ const BattleFX={
   },
   // Screen shake: ±px transform with decay.
   shake(amount){
+    // Phase 32: skip shake if reduced motion.
+    if(G.save?.settings?.reducedMotion)return;
     Battle.shakeAmount=Math.max(Battle.shakeAmount||0,amount);
   },
   // Round-end flash: full-canvas color wash.
@@ -3860,7 +3911,7 @@ const G={
     // Phase 7: migrate older saves forward, then fill any missing defaults.
     this.save=migrateSave(this.save);
     // Phase 30: init audio on first user gesture (mobile autoplay policy).
-    const audioInit=()=>{GameAudio.init();GameAudio.resume();document.removeEventListener("pointerdown",audioInit);document.removeEventListener("keydown",audioInit);};
+    const audioInit=()=>{GameAudio.init();GameAudio.resume();this.applyAudioSettings();document.removeEventListener("pointerdown",audioInit);document.removeEventListener("keydown",audioInit);};
     document.addEventListener("pointerdown",audioInit);
     document.addEventListener("keydown",audioInit);
     if(!this.save.version)this.save.version=CURRENT_VERSION;
@@ -4013,6 +4064,55 @@ const G={
       this._onboardTarget.style.outlineOffset="";
       this._onboardTarget=null;
     }
+  },
+
+  // Phase 32: Settings & accessibility.
+  showSettings(){
+    this.screen("settings");
+    const s=this.save.settings||{};
+    const set=(id,val)=>{const el=$(id);if(el&&val!==undefined){if(el.type==="checkbox")el.checked=val;else el.value=val;}};
+    set("setAudioEnabled",s.audioEnabled!==false);
+    set("setSfxVol",Math.round((s.sfxVol??0.7)*100));
+    set("setMusicVol",Math.round((s.musicVol??0.4)*100));
+    set("setQuality",s.quality||"auto");
+    set("setReducedMotion",s.reducedMotion||false);
+    set("setColorblind",s.colorblind||"off");
+    set("setHighContrast",s.highContrast||false);
+  },
+  saveSetting(key,val){
+    if(!this.save.settings)this.save.settings={};
+    this.save.settings[key]=val;
+    saveData(this.save);
+    // Apply immediately.
+    if(key==="audioEnabled"||key==="sfxVol"||key==="musicVol")this.applyAudioSettings();
+  },
+  applyAudioSettings(){
+    const s=this.save.settings||{};
+    GameAudio.enabled=s.audioEnabled!==false;
+    GameAudio.sfxVol=s.sfxVol??0.7;
+    GameAudio.musicVol=s.musicVol??0.4;
+    GameAudio.applyVolumes();
+  },
+  // Phase 32: colorblind color remap.
+  applyColorblind(hex){
+    const cb=this.save.settings?.colorblind||"off";
+    if(cb==="off"||!hex||!hex.startsWith("#"))return hex;
+    const n=parseInt(hex.slice(1),16);
+    let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+    if(cb==="deuteranopia"){// red→orange, green→yellow
+      r=Math.min(255,r+30);g=Math.min(255,g+30);
+    }else if(cb==="protanopia"){// red→darker, green→brighter
+      r=Math.max(0,r-30);g=Math.min(255,g+20);
+    }else if(cb==="tritanopia"){// blue→cyan, yellow→red
+      b=Math.min(255,b+20);r=Math.min(255,r+10);
+    }
+    return"#"+((r<<16)|(g<<8)|b).toString(16).padStart(6,"0");
+  },
+  // Phase 32: quality tier.
+  qualityTier(){
+    const q=this.save.settings?.quality||"auto";
+    if(q==="auto")return this._fpsTier||"high";
+    return q;
   },
 
   menu(){

@@ -183,7 +183,7 @@ Single-file architecture means no `.wav`/`.mp3` files. All SFX are synthesized a
 
 ---
 
-## Phase 32 — Settings & Accessibility ✅ PLANNED
+## Phase 32 — Settings & Accessibility ✅ DONE
 
 **Why:** Baseline shippable UX. No volume control, no quality toggle (FPS degradation is automatic but not user-controllable), no reduced-motion, no colorblind mode. Accessibility is also a store-listing requirement (App Store/Play Store reject games without basic accessibility toggles).
 
