@@ -1433,7 +1433,7 @@ const RECIPE_MINIFY={
   t:"t",cx:"cx",cy:"cy",r:"r",x:"x",y:"y",w:"w",h:"h",
   x1:"x1",y1:"y1",x2:"x2",y2:"y2",c:"c",joint:"j",pts:"p",
   start:"s0",end:"e0",alpha:"al",rot:"ro",bob:"bo",leg_swing:"ls",
-  arm_raise:"ar",bow_draw:"bd",tail_wag:"tw"
+  arm_raise:"am",bow_draw:"bd",tail_wag:"tw"
 };
 const RECIPE_EXPAND=Object.fromEntries(
   Object.entries(RECIPE_MINIFY).map(([k,v])=>[v,k])
@@ -2089,13 +2089,23 @@ function networkReceive(data){
     if(data.t==="match_start"){
       if(role==="guest"){
         const d=data.d;
-        Match.start(d.lives||3,winner=>G.onMatchEnd(winner));
+        // Initialize match state without calling startRound — the host's
+        // round_start message will handle round increment + draft UI.
+        Match.livesPlayer=d.lives||3;
+        Match.livesEnemy=d.lives||3;
+        Match.round=0;
+        Match.history=[];
+        Match.onMatchEnd=winner=>G.onMatchEnd(winner);
+        Match.active=true;
+        Match.deathLog=[];
         G.save.arena=d.arena||0;
       }
     }
     if(data.t==="round_start"){
       if(role==="guest"){
         const d=data.d;
+        // Increment round to match host (host increments in Match.startRound).
+        Match.round++;
         // Store host-sent draw count before startRoundDraft overwrites roundDraftState.
         G._hostDrawCount=d.drawIndex||3;
         // Store opponent picks (serialized) for scout screen.
@@ -2112,11 +2122,12 @@ function networkReceive(data){
     if(data.t==="round_end"){
       if(role==="guest"){
         const d=data.d;
+        // Translate winner to guest perspective and record in history.
+        const w=d.winner==="player"?"enemy":d.winner==="enemy"?"player":"draw";
+        Match.history.push({round:Match.round,winner:w});
         // Swap lives: host's player lives = guest's enemy lives.
         Match.livesPlayer=d.livesEnemy;
         Match.livesEnemy=d.livesPlayer;
-        // Translate host perspective to guest perspective.
-        const w=d.winner==="player"?"enemy":d.winner==="enemy"?"player":"draw";
         G.roundResult(w,d.livesEnemy,d.livesPlayer);
       }
     }
@@ -2125,6 +2136,11 @@ function networkReceive(data){
         Match.active=false;
         // Translate host perspective to guest perspective.
         const w=data.d.winner==="player"?"enemy":data.d.winner==="enemy"?"player":"draw";
+        // Push final round to history (host sends match_end instead of round_end
+        // for the final round, so guest would otherwise be missing this entry).
+        if(Match.round>0&&!Match.history.some(h=>h.round===Match.round)){
+          Match.history.push({round:Match.round,winner:w});
+        }
         G.onMatchEnd(w);
       }
     }
@@ -3282,8 +3298,16 @@ const Spell={
           affected.forEach(u=>{u.h-=z.spec.magnitude||10;});
         }else if(z.spec.effect==="slow"){
           affected.forEach(u=>{u.slow=Math.max(u.slow,1);});
-        }else if(z.spec.effect==="heal_over_time"){
+        }else if(z.spec.effect==="heal_allies"||z.spec.effect==="heal_over_time"){
           affected.forEach(u=>{u.h=Math.min(u.mh||u.h,u.h+(z.spec.magnitude||10));});
+        }else if(z.spec.effect==="shield_allies"){
+          affected.forEach(u=>{u.shieldActive=Math.max(u.shieldActive,1);});
+        }else if(z.spec.effect==="stun"){
+          affected.forEach(u=>{u.stun=Math.max(u.stun,1);});
+        }else if(z.spec.effect==="buff_dmg"){
+          affected.forEach(u=>{u.d=Math.round(u.d*(1+(z.spec.magnitude||20)/100));});
+        }else if(z.spec.effect==="buff_speed"){
+          affected.forEach(u=>{u.moveSpeedMod=(u.moveSpeedMod||100)+(z.spec.magnitude||20);});
         }
         // FX particles for zone.
         BattleFX.spellZone(z);
@@ -3978,7 +4002,7 @@ const QUEST_POOL=[
   {id:"spell1",desc:"Use a spell in battle",type:"spell_use",target:1,reward:{coins:25,xp:10}},
   {id:"scout3",desc:"Scout 3 times",type:"scout",target:3,reward:{coins:15,xp:5}},
 ];
-const STREAK_REWARDS={1:0,3:50,7:100,14:200,30:500};
+const STREAK_REWARDS={1:10,3:50,7:100,14:200,30:500};
 const Quests={
   todayStr(){return new Date().toISOString().slice(0,10);},
   yesterdayStr(){
@@ -3995,7 +4019,7 @@ const Quests={
     saveData(G.save);
     // Streak reward.
     const reward=STREAK_REWARDS[q.streak.count];
-    if(reward){
+    if(reward!=null){
       G.save.coins=(G.save.coins||0)+reward;
       saveData(G.save);
       toast(`🔥 ${q.streak.count}-day streak! +${reward} coins`);
@@ -5094,7 +5118,8 @@ const G={
       if(role==="host"){
         const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
         this.opponentPicks=Bot.draftRound(botComeback?4:3,this.prevPlayerPicks||null);
-        transmit("opponent_picks",{picks:serializeUnitsForPeer(this.opponentPicks)});
+        // Don't send bot picks to guest — guest already has host's real
+        // previous-round picks from the round_start message.
       }
       // Guest: keep opponentPicks from round_start/opponent_picks message.
       return;

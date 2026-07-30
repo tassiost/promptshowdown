@@ -566,3 +566,49 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** The checkbox labeled "Master Mute" actually enables audio when checked (`audioEnabled=true`). The label contradicts the behavior — users would expect checking "Mute" to silence audio, but it does the opposite.
 **Fix:** Changed label to "Audio Enabled" to match the actual behavior.
+
+---
+
+## Round 9 — 2026-07-31
+
+### BUG-080 🔴 P2P guest Match.round never increments past 1
+**File:** index.html:2089-2102
+**Found:** 2026-07-31
+**Description:** The guest's `Match.round` was only incremented once by `Match.start` (via `match_start` handler). For subsequent rounds, the host calls `Match.startRound` (incrementing round and sending `round_start`), but the guest's `round_start` handler only called `G.startRoundDraft()` without incrementing `Match.round`. This caused quest tracking (`round_reach` for 5 rounds), comeback checks, and replay data to be incorrect for the guest.
+**Fix:** Refactored `match_start` handler to initialize match state without calling `Match.start` (avoiding the premature `startRound` call). The `round_start` handler now increments `Match.round` for every round, matching the host's increment.
+
+### BUG-081 🔴 P2P guest Match.history never populated
+**File:** index.html:2112-2121
+**Found:** 2026-07-31
+**Description:** The `round_end` handler for the guest set lives and showed the result screen but never pushed to `Match.history`. The `match_end` handler also didn't push the final round. This meant `Match.history` was always empty for the guest, breaking quest tracking (`round_reach`), comeback achievement checks, replay data, and bot comeback logic on disconnect.
+**Fix:** `round_end` handler now pushes `{round, winner}` to `Match.history` (with translated winner). `match_end` handler also pushes the final round if not already recorded.
+
+### BUG-082 🟡 P2P host sends bot opponent_picks, overwriting guest's real picks
+**File:** index.html:5097
+**Found:** 2026-07-31
+**Description:** `generateScoutPicks` for the host generated bot picks and sent them via `transmit("opponent_picks", ...)`. This overwrote the guest's `opponentPicks` that were correctly set from the `round_start` message (host's actual previous-round picks). The guest's scout screen would show random bot picks instead of the host's real picks.
+**Fix:** Removed the `transmit("opponent_picks", ...)` call from the host's `generateScoutPicks`. The host's bot picks are only used locally as placeholders for the scout screen. The guest already has the correct opponent picks from `round_start`.
+
+### BUG-083 🟡 Persistent zones with heal_allies effect do nothing
+**File:** index.html:3285
+**Found:** 2026-07-31
+**Description:** `tickZones` checked for `"heal_over_time"` effect, which doesn't exist in `SPELL_ENUM.effect`. The actual enum value is `"heal_allies"`. A persistent zone with `heal_allies` effect would silently do nothing — no healing applied.
+**Fix:** Changed the check to `"heal_allies"||"heal_over_time"` to handle both the real enum value and the hypothetical one.
+
+### BUG-084 🟡 Persistent zones missing shield_allies, stun, buff_dmg, buff_speed handling
+**File:** index.html:3285-3294
+**Found:** 2026-07-31
+**Description:** `tickZones` only handled `damage`, `damage_over_time`, `slow`, and `heal_allies`/`heal_over_time`. Persistent zones with `shield_allies`, `stun`, `buff_dmg`, or `buff_speed` effects would silently do nothing.
+**Fix:** Added handling for `shield_allies`, `stun`, `buff_dmg`, and `buff_speed` in `tickZones`, applying the effect once per second to affected units in the zone.
+
+### BUG-085 🟢 Streak day 1 reward is 0 (falsy), toast never shows
+**File:** index.html:3981,3997
+**Found:** 2026-07-31
+**Description:** `STREAK_REWARDS` had `{1:0,...}` — day 1 gives 0 coins. The `checkStreak` function used `if(reward)` to show the toast, but `0` is falsy, so the toast never appeared for day 1. Players got no feedback for starting a streak.
+**Fix:** Changed `if(reward)` to `if(reward!=null)` and changed day 1 reward from 0 to 10 coins.
+
+### BUG-086 🟢 RECIPE_MINIFY key collision: "arc" and "arm_raise" both map to "ar"
+**File:** index.html:1432,1436
+**Found:** 2026-07-31
+**Description:** `RECIPE_MINIFY` mapped both `"arc"` and `"arm_raise"` to `"ar"`. `RECIPE_EXPAND` (the reverse map) would have `"ar"` map to `"arm_raise"` (last entry wins), losing the `"arc"` mapping. This is currently dead code (both are values, not keys, in recipe shapes), but could cause issues if the minify function were ever extended to map values.
+**Fix:** Changed `"arm_raise"` mapping from `"ar"` to `"am"`.
