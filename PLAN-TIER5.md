@@ -272,7 +272,7 @@ Single-file architecture means no `.wav`/`.mp3` files. All SFX are synthesized a
 
 ---
 
-## Phase 34 — Multiplayer Reconnect + AFK ✅ PLANNED
+## Phase 34 — Multiplayer Reconnect + AFK ✅ DONE
 
 **Why:** P2P disconnect mid-match = instant forfeit (`Match.forfeit()`, line 1549). No grace period, no rejoin, no AFK detection. Real players on mobile networks will rage-quit over this — losing a winning match because the subway dropped signal for 5 seconds is unacceptable.
 
@@ -421,7 +421,7 @@ A static endpoint (Render) stores `{installId, name, rating, wins, losses, seaso
 
 ---
 
-## Phase 37 — Replays + Share ✅ PLANNED
+## Phase 37 — Replays + Share ✅ DONE
 
 **Why:** Viral acquisition loop. Can't watch a past match back, can't share a cool forged unit to social. The LLM forge produces shareable content (unique units with names + visuals) but there's no share button. Replays also let players learn from losses.
 
@@ -461,7 +461,7 @@ A static endpoint (Render) stores `{installId, name, rating, wins, losses, seaso
 
 ---
 
-## Phase 38 — Real Ad SDK Integration ✅ PLANNED
+## Phase 38 — Real Ad SDK Integration ✅ DONE
 
 **Why:** Monetization goes live. The entire Tier 2 premise (LLM forge gated behind rewarded ads) is unvalidated — still the 15s `showAdStub` (line 1180). Real ad revenue funds the game.
 
@@ -504,7 +504,7 @@ A static endpoint (Render) stores `{installId, name, rating, wins, losses, seaso
 
 ---
 
-## Phase 39 — i18n (Internationalization) ✅ PLANNED
+## Phase 39 — i18n (Internationalization) ✅ DONE
 
 **Why:** International reach. English-only limits the audience. Hybrid-casual games derive most revenue from non-English markets (LATAM, SEA, Europe).
 

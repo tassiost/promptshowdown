@@ -164,6 +164,13 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <span>Opt out of anonymous telemetry</span><input type="checkbox" id="setAnalyticsOptOut" onchange="G.saveSetting('analyticsOptOut',this.checked)">
 </label>
 <div style="font-size:.72rem;color:var(--muted);margin:4px 0;">Anonymous usage stats help improve the game. No personal data collected.</div>
+<h3 style="font-size:.9rem;margin:12px 0 8px;">Language</h3>
+<label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
+<span>Language</span>
+<select id="setLang" onchange="G.saveSetting('lang',this.value)" style="padding:4px;font-size:.8rem;">
+<option value="en">English</option><option value="es">Español</option><option value="pt">Português</option>
+</select>
+</label>
 </div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
@@ -216,6 +223,7 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <canvas id="cv"></canvas>
 <div id="battleLog"></div>
 <div id="networkBadge">🌐 ONLINE</div>
+<button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
 <div class="group">
 <button class="btn primary" onclick="G.tick()" style="width:auto;padding:12px 18px;">⏵</button>
 <button class="btn" onclick="G.auto()" style="width:auto;padding:12px 18px;">⏩</button>
@@ -260,6 +268,7 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <div id="forgeActions" style="display:none;flex-direction:column;gap:6px;width:100%;max-width:280px;">
 <button class="btn primary" onclick="G.keepForge()">✓ KEEP</button>
 <button class="btn" onclick="G.forgeWithAd()">🎲 REROLL (Watch Ad)</button>
+<button class="btn" id="shareUnitBtn" onclick="G.shareForgeUnit()" style="display:none;">📤 Share Unit</button>
 </div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← BACK</button>
 </div>
@@ -388,7 +397,7 @@ const Q=(a,b)=>a+R()*(b-a);
 const SAVE_KEY="promptShowdownV4";
 
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
-const CURRENT_VERSION=11; // Phase 35: bumped for analytics + ranked.
+const CURRENT_VERSION=12; // Phase 37: bumped for replays.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
 function saveData(data){
   try{
@@ -397,6 +406,80 @@ function saveData(data){
     localStorage.setItem(SAVE_KEY,JSON.stringify(data));
   }catch(e){showError("Save failed: "+(e&&e.message||e));}
 }
+// Phase 39: i18n — string table + t() helper.
+const STRINGS={
+  en:{
+    title:"PROMPT SHOWDOWN",fight:"⚔️ FIGHT",forge:"🔮 FORGE",deck:"📋 DECK",upgrade:"⬆ UPGRADE",
+    reset:"↺ RESET",howto:"❓ How to Play",settings:"⚙️ Settings",quests:"📋 Quests",ranked:"🏆 Ranked",
+    welcome:"Welcome! Your 4-card loadout is your army. Tap DECK to see it.",
+    fight_tut:"Tap FIGHT to start a match. You'll draft 3 units per round.",
+    draft_tut:"Pick 1 card from each draw. Reroll if you don't like them.",
+    scout_tut:"Scout! Tap to reveal what your opponent picked.",
+    battle_tut:"FIGHT! Units auto-battle. Watch and adapt for round 2.",
+    result_tut:"Win 3 rounds to take the match. Good luck!",
+    round_won:"ROUND WON",round_lost:"ROUND LOST",next_round:"NEXT ROUND",
+    win:"VICTORY",lose:"DEFEAT",menu:"← Back",
+  },
+  es:{
+    title:"PROMPT SHOWDOWN",fight:"⚔️ LUCHAR",forge:"🔮 FORJAR",deck:"📋 MAZO",upgrade:"⬆ MEJORAR",
+    reset:"↺ REINICIAR",howto:"❓ Cómo Jugar",settings:"⚙️ Ajustes",quests:"📋 Misiones",ranked:"🏆 Ranking",
+    welcome:"¡Bienvenido! Tu mazo de 4 cartas es tu ejército. Toca MAZO para verlo.",
+    fight_tut:"Toca LUCHAR para iniciar una partida. Draftearás 3 unidades por ronda.",
+    draft_tut:"Elige 1 carta de cada tirada. Re-lanza si no te gustan.",
+    scout_tut:"¡Explora! Toca para revelar lo que eligió tu oponente.",
+    battle_tut:"¡PELEA! Las unidades luchan solas. Observa y adapta para la ronda 2.",
+    result_tut:"Gana 3 rondas para llevar el partido. ¡Buena suerte!",
+    round_won:"RONDA GANADA",round_lost:"RONDA PERDIDA",next_round:"SIGUIENTE RONDA",
+    win:"VICTORIA",lose:"DERROTA",menu:"← Volver",
+  },
+  pt:{
+    title:"PROMPT SHOWDOWN",fight:"⚔️ LUTAR",forge:"🔮 FORJAR",deck:"📋 BARALHO",upgrade:"⬆ MELHORAR",
+    reset:"↺ REINICIAR",howto:"❓ Como Jogar",settings:"⚙️ Ajustes",quests:"📋 Missões",ranked:"🏆 Ranking",
+    welcome:"Bem-vindo! Seu baralho de 4 cartas é seu exército. Toque BARALHO para vê-lo.",
+    fight_tut:"Toque LUTAR para iniciar uma partida. Você draftará 3 unidades por rodada.",
+    draft_tut:"Escolha 1 carta de cada sorteio. Re-role se não gostar.",
+    scout_tut:"Reconheça! Toque para revelar o que seu oponente escolheu.",
+    battle_tut:"LUTE! As unidades lutam sozinhas. Observe e adapte para a rodada 2.",
+    result_tut:"Vença 3 rodadas para vencer a partida. Boa sorte!",
+    round_won:"RODADA VENCIDA",round_lost:"RODADA PERDIDA",next_round:"PRÓXIMA RODADA",
+    win:"VITÓRIA",lose:"DERROTA",menu:"← Voltar",
+  },
+};
+function t(key){
+  const lang=G.save?.settings?.lang||"en";
+  return(STRINGS[lang]&&STRINGS[lang][key])||STRINGS.en[key]||key;
+}
+
+// Phase 38: Ad SDK abstraction — falls back to stub when no real SDK is loaded.
+const AdSDK={
+  loaded:false,
+  sdk:null,
+  async load(){
+    // Real SDK would be loaded here (AdMob, ironSource, etc).
+    // For now, stub is always used.
+    this.loaded=true;
+  },
+  showRewarded(duration,onComplete){
+    Analytics.track("ad_loaded",{type:"rewarded"});
+    // Try real SDK if available (future: window.googleAdMob?.showRewarded).
+    if(this.sdk&&this.sdk.showRewarded){
+      this.sdk.showRewarded().then(()=>{
+        Analytics.track("ad_complete",{type:"rewarded"});
+        onComplete();
+      }).catch(()=>{Analytics.track("ad_skip",{type:"rewarded"});showAdStub(duration,onComplete);});
+    }else{
+      showAdStub(duration,onComplete);
+    }
+  },
+  showInterstitial(){
+    Analytics.track("ad_loaded",{type:"interstitial"});
+    if(this.sdk&&this.sdk.showInterstitial){
+      this.sdk.showInterstitial().catch(()=>{});
+    }
+    // No stub for interstitial — just skip silently.
+  },
+};
+
 // Phase 35: Analytics — anonymous, opt-out, local-first. No endpoint by default.
 const Analytics={
   endpoint:null,
@@ -507,6 +590,11 @@ function migrateSave(s){
     s.analyticsOptOut=s.analyticsOptOut||false;
     s.ranked=s.ranked||{name:"",rating:1000,wins:0,losses:0,season:0,peakRating:1000};
     s.version=11;
+  }
+  if(s.version<12){
+    // v11 -> v12 (Phase 37): replays.
+    s.replays=s.replays||[];
+    s.version=12;
   }
   return s;
 }
@@ -2152,7 +2240,13 @@ const Match={
   forfeit(){
     this.active=false;
     if(this.onMatchEnd)try{this.onMatchEnd("enemy");}catch(e){showError("Match forfeit handler failed: "+(e&&e.message||e));}
-  }
+  },
+  // Phase 34: graceful disconnect with reconnect grace period.
+  gracefulDisconnect(){
+    if(!this.active)return;
+    Battle.running=false;
+    G.showReconnect(30,()=>Match.forfeit());
+  },
 };
 
 // Phase 11: SpriteRenderer — interprets visual recipes (shapes + animations)
@@ -4064,6 +4158,8 @@ const G={
     // Phase 35: analytics.
     Analytics.init();
     Analytics.track("game_start",{arena:this.save.arena||0,wins:this.save.matchWins||0});
+    // Phase 37: check for shared unit in URL.
+    this.importUnitFromURL();
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
@@ -4234,6 +4330,91 @@ const G={
     document.body.appendChild(overlay);
   },
 
+  // Phase 37: share forged unit via URL.
+  shareUnit(u){
+    try{
+      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,role:u.role,ability:u.ability,weaponType:u.weaponType,bodyPlan:u.bodyPlan,primaryColor:u.c,recipe:u.recipe});
+      const compressed=LZString?LZString.compressToEncodedURIComponent(data):encodeURIComponent(data);
+      const url=location.origin+location.pathname+"?unit="+compressed;
+      if(navigator.share){
+        navigator.share({title:"Prompt Showdown: "+u.n,url}).catch(()=>this._copyShare(url));
+      }else{
+        this._copyShare(url);
+      }
+    }catch(e){toast("Share failed");}
+  },
+  _copyShare(url){
+    if(navigator.clipboard){
+      navigator.clipboard.writeText(url).then(()=>toast("📋 Share link copied!")).catch(()=>toast(url));
+    }else{toast(url);}
+  },
+  // Phase 37: save replay on match end.
+  saveReplay(winner){
+    try{
+      const replay={date:new Date().toISOString().slice(0,10),winner,rounds:Match.history.length,units:(this.selected||[]).map(u=>u.n)};
+      if(!this.save.replays)this.save.replays=[];
+      this.save.replays.unshift(replay);
+      if(this.save.replays.length>5)this.save.replays=this.save.replays.slice(0,5);
+      saveData(this.save);
+    }catch(e){}
+  },
+  // Phase 37: import shared unit from URL.
+  importUnitFromURL(){
+    const params=new URLSearchParams(location.search);
+    const unitParam=params.get("unit");
+    if(!unitParam)return;
+    try{
+      const data=LZString?LZString.decompressFromEncodedURIComponent(unitParam):decodeURIComponent(unitParam);
+      const u=JSON.parse(data);
+      // Show preview.
+      this.screen("forge");
+      const preview=$("forgePreview");
+      if(preview){
+        preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${u.primaryColor||'#4a7'}">${u.n}</div><div class="detail">${u.h} HP · ${u.d} DMG · ${u.r} range<br>${u.role||''} · ${u.ability||'none'}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
+      }
+      this._pendingImport=u;
+    }catch(e){toast("Invalid share link");}
+  },
+  _importSharedUnit(){
+    if(!this._pendingImport)return;
+    this.addForge(this._pendingImport);
+    saveData(this.save);
+    toast("✓ Unit added from share link!");
+    this._pendingImport=null;
+    this.menu();
+  },
+
+  // Phase 34: reconnect grace period overlay.
+  showReconnect(secondsLeft,onTimeout){
+    const overlay=document.createElement("div");
+    overlay.id="reconnectOverlay";
+    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
+    overlay.innerHTML=`<div style="font-size:1.3rem;margin-bottom:10px;">🔄 Reconnecting...</div><div id="reconnectTimer" style="font-size:2rem;">${secondsLeft}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Opponent disconnected. Waiting for reconnect.</div>`;
+    document.body.appendChild(overlay);
+    let remaining=secondsLeft;
+    const interval=setInterval(()=>{
+      remaining--;
+      const t=overlay.querySelector("#reconnectTimer");
+      if(t)t.innerText=remaining+"s";
+      if(remaining<=0){
+        clearInterval(interval);
+        overlay.remove();
+        if(onTimeout)onTimeout();
+      }
+    },1000);
+    this._reconnectInterval=interval;
+  },
+  cancelReconnect(){
+    if(this._reconnectInterval)clearInterval(this._reconnectInterval);
+    const ov=document.getElementById("reconnectOverlay");
+    if(ov)ov.remove();
+  },
+  // Phase 34: voluntary forfeit from battle.
+  forfeitMatch(){
+    if(!confirm("Forfeit this match? It counts as a loss."))return;
+    Match.forfeit();
+  },
+
   // Phase 33: Quests UI.
   showQuests(){
     const q=this.save.quests;
@@ -4291,6 +4472,7 @@ const G={
     set("setColorblind",s.colorblind||"off");
     set("setHighContrast",s.highContrast||false);
     set("setAnalyticsOptOut",this.save.analyticsOptOut||false);
+    set("setLang",this.save.settings?.lang||"en");
   },
   saveSetting(key,val){
     if(!this.save.settings)this.save.settings={};
@@ -4855,6 +5037,11 @@ const G={
     if(Match.history.length>=5)Quests.track("round_reach",5);
     // Phase 35: analytics.
     Analytics.track("match_end",{winner,rounds:Match.history.length});
+    // Phase 37: save replay.
+    this.saveReplay(winner);
+    // Phase 38: interstitial ad every 3 matches.
+    this.save.matchCount=(this.save.matchCount||0)+1;
+    if(this.save.matchCount%3===0)AdSDK.showInterstitial();
     let xpGain=0,coinGain=0,arenaAdvanced=false;
     // Phase 36: update Elo rating.
     const r=this.save.ranked;
@@ -5103,7 +5290,7 @@ const G={
     // Phase 23: spell forge path.
     if(this.forgeMode==="spell"){
       const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
-      const adPromise=watchAd?new Promise(res=>showAdStub(15000,res)):Promise.resolve();
+      const adPromise=watchAd?new Promise(res=>AdSDK.showRewarded(15000,res)):Promise.resolve();
       let genPromise;
       if(canUseLLM){
         if(llmLoading&&!llmReady)this._showModelProgress();
@@ -5124,7 +5311,7 @@ const G={
     // Phase 12: model cache check — if LLM not ready and no WebGPU, skip LLM.
     const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
     // Start ad + generation in parallel (if watching ad).
-    const adPromise=watchAd?new Promise(res=>showAdStub(15000,res)):Promise.resolve();
+    const adPromise=watchAd?new Promise(res=>AdSDK.showRewarded(15000,res)):Promise.resolve();
     let genPromise;
     if(canUseLLM){
       // Phase 12: if LLM is still loading, show model download progress + Cancel.
@@ -5220,6 +5407,9 @@ const G={
     SpriteRenderer.renderPreview(preview.querySelector("canvas"),u);
     const actions=$("forgeActions");
     if(actions)actions.style.display="flex";
+    // Phase 37: show share button.
+    const shareBtn=$("shareUnitBtn");
+    if(shareBtn)shareBtn.style.display="inline-block";
   },
 
   // Phase 12: keep the forged unit — add to collection.
@@ -5231,6 +5421,10 @@ const G={
     toast("✓ Unit added to collection");
     Quests.track("forge"); // Phase 33
     this.menu();
+  },
+  // Phase 37: share the currently previewed forge unit.
+  shareForgeUnit(){
+    if(this.pendingForgeUnit)this.shareUnit(this.pendingForgeUnit);
   },
 
   addForge(u){
@@ -5447,6 +5641,9 @@ window.Battle=Battle;
 window.Bot=Bot;
 window.Quests=Quests;
 window.Analytics=Analytics;
+window.AdSDK=AdSDK;
+window.STRINGS=STRINGS;
+window.t=t;
 window.unit=unit;
 window.attrsToUnit=attrsToUnit;
 window.validateUnit=validateUnit;
