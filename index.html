@@ -625,7 +625,7 @@ const UNIT_SCHEMA={
     range:{type:"integer",minimum:30,maximum:250},
     speed:{type:"integer",minimum:30,maximum:120},
     ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"]},
-    bodyPlan:{type:"string",enum:["humanoid","quadruped","blob","flying","mechanical","structure"]},
+    bodyPlan:{type:"string",enum:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod"]},
     weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"]},
     primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
     accentColor:{type:"string",enum:Object.keys(COLOR_MAP)},
@@ -724,12 +724,13 @@ function autoFixFields(a,flagged){
   return a;
 }
 
-// Phase 12: RecipeAssembler — builds visual recipe from LLM attributes.
+// Phase 12/24a: RecipeAssembler — builds visual recipe from LLM attributes.
+// Phase 24a: expanded from 6 to 20 body plans with richer shapes.
 const BODY_PLANS={
   humanoid:c=>({
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:c.head},
-      {t:"rect",x:-5,y:-12,w:10,h:14,c:c.primary},
+      {t:"circle",cx:0,cy:-18,r:6,c:c.head,fill:"gradient",c2:c.primary},
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
       {t:"rect",x:-9,y:-10,w:4,h:10,c:c.primary,joint:"arm_raise"},
       {t:"rect",x:5,y:-10,w:4,h:10,c:c.primary,joint:"arm_raise"},
       {t:"rect",x:-5,y:2,w:4,h:10,c:c.primary,joint:"leg_swing"},
@@ -743,8 +744,8 @@ const BODY_PLANS={
   }),
   quadruped:c=>({
     shapes:[
-      {t:"rect",x:-10,y:-8,w:20,h:10,c:c.primary},
-      {t:"circle",cx:10,cy:-10,r:5,c:c.head},
+      {t:"rect",x:-10,y:-8,w:20,h:10,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:10,cy:-10,r:5,c:c.head,outline:1,oc:c.accent},
       {t:"rect",x:-8,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
       {t:"rect",x:-2,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
       {t:"rect",x:4,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
@@ -757,9 +758,125 @@ const BODY_PLANS={
       death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
     }
   }),
+  dragon:c=>({
+    shapes:[
+      {t:"rect",x:-8,y:-8,w:18,h:10,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[10,-10],[16,-14],[14,-6]],c:c.head,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-6,-6],[-14,-12],[-12,-2]],c:c.accent,joint:"arm_raise"},
+      {t:"polygon",pts:[[6,-6],[14,-12],[12,-2]],c:c.accent,joint:"arm_raise"},
+      {t:"rect",x:-6,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:2,y:2,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"line",x1:-8,y1:-4,x2:-14,y2:2,c:c.accent,w:3,joint:"tail_wag"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0,arm_raise:0},{t:0.5,bob:1,tail_wag:0.5,arm_raise:0.2},{t:1,bob:0,tail_wag:0,arm_raise:0}],
+      move:[{t:0,leg_swing:0,bob:0,arm_raise:0.3},{t:0.5,leg_swing:1,bob:1,arm_raise:0.8},{t:1,leg_swing:0,bob:0,arm_raise:0.3}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  serpent:c=>({
+    shapes:[
+      {t:"circle",cx:12,cy:-4,r:6,c:c.head,outline:1,oc:c.accent},
+      {t:"arc",cx:4,cy:0,r:8,start:0,end:Math.PI,c:c.primary,w:8},
+      {t:"arc",cx:-8,cy:0,r:8,start:0,end:Math.PI,c:c.primary,w:8},
+      {t:"arc",cx:-18,cy:0,r:6,start:0,end:Math.PI,c:c.accent,w:6,joint:"tail_wag"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      move:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  bird:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-6,rx:7,ry:6,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:0,cy:-14,r:4,c:c.head,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[2,-15],[6,-13],[2,-12]],c:c.accent},
+      {t:"polygon",pts:[[-4,-8],[-12,-12],[-10,-4]],c:c.accent,joint:"arm_raise"},
+      {t:"polygon",pts:[[4,-8],[12,-12],[10,-4]],c:c.accent,joint:"arm_raise"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,arm_raise:0},{t:0.5,bob:1,arm_raise:0.3},{t:1,bob:0,arm_raise:0}],
+      move:[{t:0,arm_raise:0,bob:0},{t:0.5,arm_raise:1,bob:1},{t:1,arm_raise:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  insect:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-6,rx:6,ry:5,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"ellipse",cx:0,cy:4,rx:7,ry:6,c:c.accent,outline:1,oc:c.primary},
+      {t:"line",x1:-6,y1:0,x2:-12,y2:4,c:c.accent,w:1,joint:"leg_swing"},
+      {t:"line",x1:-6,y1:2,x2:-12,y2:8,c:c.accent,w:1,joint:"leg_swing"},
+      {t:"line",x1:6,y1:0,x2:12,y2:4,c:c.accent,w:1,joint:"leg_swing"},
+      {t:"line",x1:6,y1:2,x2:12,y2:8,c:c.accent,w:1,joint:"leg_swing"},
+      {t:"line",x1:-4,y1:-8,x2:-8,y2:-14,c:c.accent,w:1,joint:"arm_raise"},
+      {t:"line",x1:4,y1:-8,x2:8,y2:-14,c:c.accent,w:1,joint:"arm_raise"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,leg_swing:0},{t:0.5,bob:0.5,leg_swing:0.5},{t:1,bob:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  crab:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-4,rx:10,ry:7,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:-4,cy:-8,r:2,c:"#000"},
+      {t:"circle",cx:4,cy:-8,r:2,c:"#000"},
+      {t:"polygon",pts:[[-10,-6],[-16,-10],[-14,-2]],c:c.accent,joint:"arm_raise"},
+      {t:"polygon",pts:[[10,-6],[16,-10],[14,-2]],c:c.accent,joint:"arm_raise"},
+      {t:"line",x1:-6,y1:3,x2:-10,y2:8,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:6,y1:3,x2:10,y2:8,c:c.accent,w:2,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  golem:c=>({
+    shapes:[
+      {t:"rect",x:-9,y:-14,w:18,h:18,c:c.primary,fill:"gradient",c2:c.accent,outline:2,oc:c.accent},
+      {t:"rect",x:-5,y:-20,w:10,h:6,c:c.head,outline:1,oc:c.accent},
+      {t:"rect",x:-14,y:-12,w:5,h:14,c:c.accent,joint:"arm_raise"},
+      {t:"rect",x:9,y:-12,w:5,h:14,c:c.accent,joint:"arm_raise"},
+      {t:"circle",cx:0,cy:-5,r:3,c:c.accent,glow:6}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.3},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:0.5,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  ghost:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-10,r:8,c:c.primary,fill:"gradient",c2:c.accent,alpha:0.7},
+      {t:"polygon",pts:[[-8,-4],[8,-4],[6,8],[3,4],[0,8],[-3,4],[-6,8]],c:c.primary,alpha:0.7},
+      {t:"circle",cx:-3,cy:-12,r:2,c:"#000"},
+      {t:"circle",cx:3,cy:-12,r:2,c:"#000"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      death:[{t:0,alpha:0.7,rot:0},{t:1,alpha:0,rot:0}]
+    }
+  }),
+  fish:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-4,rx:10,ry:6,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-10,-4],[-16,-8],[-16,0]],c:c.accent,joint:"tail_wag"},
+      {t:"polygon",pts:[[-2,-10],[2,-10],[0,-6]],c:c.accent},
+      {t:"circle",cx:6,cy:-6,r:2,c:"#000"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      move:[{t:0,tail_wag:0,bob:0},{t:0.5,tail_wag:1,bob:0.5},{t:1,tail_wag:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
   blob:c=>({
     shapes:[
-      {t:"circle",cx:0,cy:0,r:12,c:c.primary},
+      {t:"circle",cx:0,cy:0,r:12,c:c.primary,fill:"gradient",c2:c.accent},
       {t:"circle",cx:-4,cy:-2,r:2,c:"#000"},
       {t:"circle",cx:4,cy:-2,r:2,c:"#000"}
     ],
@@ -771,7 +888,7 @@ const BODY_PLANS={
   }),
   flying:c=>({
     shapes:[
-      {t:"circle",cx:0,cy:-8,r:6,c:c.primary},
+      {t:"circle",cx:0,cy:-8,r:6,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
       {t:"circle",cx:0,cy:-14,r:4,c:c.head},
       {t:"arc",cx:-10,cy:-8,r:8,start:0,end:2,c:c.accent,w:2,joint:"arm_raise"},
       {t:"arc",cx:10,cy:-8,r:8,start:Math.PI,end:3,c:c.accent,w:2,joint:"arm_raise"}
@@ -784,11 +901,13 @@ const BODY_PLANS={
   }),
   mechanical:c=>({
     shapes:[
-      {t:"rect",x:-8,y:-12,w:16,h:14,c:c.primary},
-      {t:"rect",x:-4,y:-18,w:8,h:6,c:c.head},
+      {t:"rect",x:-8,y:-12,w:16,h:14,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"rect",x:-4,y:-18,w:8,h:6,c:c.head,outline:1,oc:c.accent},
       {t:"circle",cx:-8,cy:4,r:4,c:"#333"},
       {t:"circle",cx:8,cy:4,r:4,c:"#333"},
-      {t:"rect",x:8,y:-10,w:4,h:10,c:c.accent,joint:"arm_raise"}
+      {t:"rect",x:8,y:-10,w:4,h:10,c:c.accent,joint:"arm_raise"},
+      {t:"line",x1:0,y1:-18,x2:0,y2:-22,c:c.accent,w:1},
+      {t:"circle",cx:0,cy:-23,r:1.5,c:c.accent,glow:4}
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
@@ -798,12 +917,110 @@ const BODY_PLANS={
   }),
   structure:c=>({
     shapes:[
-      {t:"rect",x:-10,y:-10,w:20,h:20,c:c.primary},
-      {t:"circle",cx:0,cy:-12,r:4,c:c.accent}
+      {t:"rect",x:-10,y:-10,w:20,h:20,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:0,cy:-12,r:4,c:c.accent,glow:6}
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:0.3},{t:1,bob:0}],
       move:[{t:0,bob:0},{t:1,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  plant:c=>({
+    shapes:[
+      {t:"rect",x:-3,y:-4,w:6,h:12,c:"#6a4",outline:1,oc:"#482"},
+      {t:"circle",cx:0,cy:-12,r:8,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"line",x1:-6,y1:8,x2:-10,y2:12,c:"#6a4",w:3,joint:"leg_swing"},
+      {t:"line",x1:6,y1:8,x2:10,y2:12,c:"#6a4",w:3,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:0.5,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  undead:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:"#ddd"},
+      {t:"rect",x:-4,y:-12,w:8,h:14,c:"#ddd",outline:1,oc:"#888"},
+      {t:"line",x1:-3,y1:-8,x2:3,y2:-8,c:"#888",w:1},
+      {t:"line",x1:-3,y1:-4,x2:3,y2:-4,c:"#888",w:1},
+      {t:"rect",x:-8,y:-10,w:3,h:8,c:"#ddd",joint:"arm_raise"},
+      {t:"rect",x:5,y:-10,w:3,h:8,c:"#ddd",joint:"arm_raise"},
+      {t:"rect",x:-4,y:2,w:3,h:8,c:"#ddd",joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:3,h:8,c:"#ddd",joint:"leg_swing"},
+      {t:"circle",cx:-2,cy:-19,r:1.5,c:c.accent,glow:4},
+      {t:"circle",cx:2,cy:-19,r:1.5,c:c.accent,glow:4}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  demon:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:6,c:c.head,fill:"gradient",c2:c.accent},
+      {t:"polygon",pts:[[-4,-22],[-2,-26],[0,-22]],c:c.accent},
+      {t:"polygon",pts:[[4,-22],[2,-26],[0,-22]],c:c.accent},
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:c.primary,joint:"arm_raise"},
+      {t:"rect",x:5,y:-10,w:4,h:10,c:c.primary,joint:"arm_raise"},
+      {t:"rect",x:-5,y:2,w:4,h:10,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:c.primary,joint:"leg_swing"},
+      {t:"line",x1:0,y1:4,x2:-4,y2:10,c:c.accent,w:2,joint:"tail_wag"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:1,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      move:[{t:0,leg_swing:0,bob:0,tail_wag:0},{t:0.5,leg_swing:1,bob:1,tail_wag:1},{t:1,leg_swing:0,bob:0,tail_wag:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  "beast-man":c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-18,r:7,c:c.head,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-6,-20],[-9,-24],[-5,-22]],c:c.accent},
+      {t:"polygon",pts:[[6,-20],[9,-24],[5,-22]],c:c.accent},
+      {t:"rect",x:-6,y:-11,w:12,h:14,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"rect",x:-10,y:-9,w:4,h:10,c:c.primary,joint:"arm_raise"},
+      {t:"rect",x:6,y:-9,w:4,h:10,c:c.primary,joint:"arm_raise"},
+      {t:"rect",x:-5,y:3,w:4,h:9,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:1,y:3,w:4,h:9,c:c.primary,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  aquatic:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-6,rx:8,ry:7,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:5,cy:-8,r:2,c:"#000"},
+      {t:"line",x1:-6,y1:0,x2:-12,y2:6,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:-4,y1:2,x2:-10,y2:10,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:0,y1:4,x2:-4,y2:12,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:4,y1:4,x2:8,y2:12,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:6,y1:2,x2:12,y2:10,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:8,y1:0,x2:14,y2:6,c:c.accent,w:2,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,leg_swing:0},{t:0.5,bob:0.5,leg_swing:0.5},{t:1,bob:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  monopod:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-6,r:14,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:-5,cy:-8,r:2,c:"#000"},
+      {t:"circle",cx:5,cy:-8,r:2,c:"#000"},
+      {t:"rect",x:-4,y:6,w:3,h:6,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:1,y:6,w:3,h:6,c:c.accent,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
       death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
     }
   })
@@ -839,6 +1056,8 @@ function scaleShape(s,scale){
   if(out.y1!==undefined)out.y1*=scale;
   if(out.x2!==undefined)out.x2*=scale;
   if(out.y2!==undefined)out.y2*=scale;
+  if(out.rx!==undefined)out.rx*=scale;
+  if(out.ry!==undefined)out.ry*=scale;
   if(out.pts)out.pts=out.pts.map(p=>[p[0]*scale,p[1]*scale]);
   return out;
 }
@@ -882,6 +1101,18 @@ const TEMPLATES=[
   {kw:["bomber","grenadier","suicide","explosive"],a:{role:"counter",targeting:"enemy_cluster",movement:"chase",attackCondition:"never",abilityTrigger:"on_death",moveSpeedMod:130,hp:50,dmg:30,range:40,speed:100,ability:"explode",bodyPlan:"mechanical",weaponType:"none",primaryColor:"gray",accentColor:"orange",sizeMod:"small"}},
   {kw:["turtle","shell","crab","tortoise"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:50,hp:150,dmg:8,range:30,speed:30,ability:"shield",bodyPlan:"quadruped",weaponType:"claws",primaryColor:"green",accentColor:"brown",sizeMod:"large"}},
   {kw:["wall","tower","turret","crystal","fortress"],a:{role:"frontline",targeting:"closest",movement:"hold",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:50,hp:200,dmg:15,range:120,speed:30,ability:"slow",bodyPlan:"structure",weaponType:"none",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
+  {kw:["dragon","wyvern","drake"],a:{role:"carry",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:90,dmg:20,range:60,speed:70,ability:"ramp",bodyPlan:"dragon",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large"}},
+  {kw:["snake","serpent","naga","eel"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:110,hp:60,dmg:16,range:40,speed:80,ability:"poison",bodyPlan:"serpent",weaponType:"claws",primaryColor:"green",accentColor:"yellow",sizeMod:"medium"}},
+  {kw:["phoenix","eagle","harpy","bird"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:130,hp:55,dmg:16,range:120,speed:90,ability:"dodge",bodyPlan:"bird",weaponType:"claws",primaryColor:"orange",accentColor:"yellow",sizeMod:"small"}},
+  {kw:["spider","mantis","insect","centipede"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
+  {kw:["ant ","antman","formic"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
+  {kw:["golem","construct","elemental"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:60,hp:160,dmg:16,range:40,speed:35,ability:"shield",bodyPlan:"golem",weaponType:"hammer",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
+  {kw:["ghost","wraith","specter","spirit"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,hp:50,dmg:14,range:50,speed:70,ability:"dodge",bodyPlan:"ghost",weaponType:"none",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
+  {kw:["fish","mermaid","kraken","octopus","squid"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:70,dmg:14,range:60,speed:60,ability:"slow",bodyPlan:"aquatic",weaponType:"claws",primaryColor:"blue",accentColor:"purple",sizeMod:"medium"}},
+  {kw:["skeleton","zombie","lich","undead"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_death",moveSpeedMod:70,hp:60,dmg:12,range:35,speed:50,ability:"spawn",bodyPlan:"undead",weaponType:"sword",primaryColor:"gray",accentColor:"green",sizeMod:"medium"}},
+  {kw:["demon","devil","imp"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:65,dmg:18,range:35,speed:90,ability:"rage",bodyPlan:"demon",weaponType:"claws",primaryColor:"red",accentColor:"black",sizeMod:"medium"}},
+  {kw:["minotaur","centaur","werewolf","beast-man"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:130,hp:100,dmg:18,range:35,speed:85,ability:"rage",bodyPlan:"beast-man",weaponType:"hammer",primaryColor:"brown",accentColor:"red",sizeMod:"large"}},
+  {kw:["treant","flower","mushroom","plant"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"when_ally_hurt",moveSpeedMod:50,hp:120,dmg:10,range:80,speed:35,ability:"heal_burst",bodyPlan:"plant",weaponType:"none",primaryColor:"green",accentColor:"yellow",sizeMod:"large"}},
 ];
 function templateFallback(prompt){
   const p=(prompt||"").toLowerCase();
@@ -1081,7 +1312,7 @@ const ENUM_FIELDS={
   attackCondition:["always","only_if_healthy","only_if_target_low","never"],
   abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
   ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"],
-  bodyPlan:["humanoid","quadruped","blob","flying","mechanical","structure"],
+  bodyPlan:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod"],
   weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"],
   primaryColor:Object.keys(COLOR_MAP),
   accentColor:Object.keys(COLOR_MAP),
@@ -1669,15 +1900,40 @@ const SpriteRenderer={
   // Draw a shape without joint transform (absolute coords relative to unit center).
   _drawShapeRaw(c,shape,u){
     const ox=u.x,oy=u.y;
-    c.fillStyle=shape.c||"#888";
-    c.strokeStyle=shape.c||"#888";
-    c.lineWidth=shape.w||1;
+    // Phase 24b: per-shape alpha.
+    const prevAlpha=c.globalAlpha;
+    if(shape.alpha!==undefined)c.globalAlpha=shape.alpha;
+    // Phase 24b: gradient fill support.
+    if(shape.fill==="gradient"&&shape.c2){
+      let g;
+      if(shape.t==="circle"){
+        g=c.createRadialGradient(ox+shape.cx-(shape.r||4)*0.3,oy+shape.cy-(shape.r||4)*0.3,1,
+          ox+shape.cx,oy+shape.cy,shape.r||4);
+      }else{
+        const x=shape.x!==undefined?shape.x:shape.cx-10;
+        const y=shape.y!==undefined?shape.y:shape.cy-10;
+        const w=shape.w!==undefined?shape.w:20;
+        const h=shape.h!==undefined?shape.h:20;
+        g=c.createLinearGradient(ox+x,oy+y,ox+x+w,oy+y+h);
+      }
+      g.addColorStop(0,shape.c||"#888");
+      g.addColorStop(1,shape.c2);
+      c.fillStyle=g;
+    }else{
+      c.fillStyle=shape.c||"#888";
+    }
+    c.strokeStyle=shape.oc||shape.c||"#888";
+    c.lineWidth=shape.outline||shape.w||1;
     if(shape.glow){c.shadowBlur=shape.glow;c.shadowColor=shape.c||"#fff";}
     switch(shape.t){
       case "circle":
-        c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.fill();break;
+        c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.fill();
+        if(shape.outline)c.stroke();
+        break;
       case "rect":
-        c.fillRect(ox+shape.x,oy+shape.y,shape.w,shape.h);break;
+        c.fillRect(ox+shape.x,oy+shape.y,shape.w,shape.h);
+        if(shape.outline)c.strokeRect(ox+shape.x,oy+shape.y,shape.w,shape.h);
+        break;
       case "line":
         c.beginPath();c.moveTo(ox+shape.x1,oy+shape.y1);c.lineTo(ox+shape.x2,oy+shape.y2);c.stroke();break;
       case "polygon":
@@ -1686,11 +1942,47 @@ const SpriteRenderer={
           const px=ox+shape.pts[i][0],py=oy+shape.pts[i][1];
           if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
         }
-        c.closePath();c.fill();break;
+        c.closePath();c.fill();
+        if(shape.outline)c.stroke();
+        break;
       case "arc":
         c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,shape.start,shape.end);c.stroke();break;
+      case "ellipse":
+        c.beginPath();c.ellipse(ox+shape.cx,oy+shape.cy,shape.rx,shape.ry,0,0,Math.PI*2);c.fill();
+        if(shape.outline)c.stroke();
+        break;
+    }
+    // Phase 24b: surface patterns (stripes, spots, scales).
+    if(shape.pattern&&shape.c2){
+      c.save();
+      c.fillStyle=shape.c2;
+      c.globalAlpha=(shape.alpha!==undefined?shape.alpha:1)*0.5;
+      if(shape.t==="rect"||shape.t==="circle"||shape.t==="polygon"||shape.t==="ellipse"){
+        // Clip to shape bounds.
+        if(shape.t==="rect"){
+          c.beginPath();c.rect(ox+shape.x,oy+shape.y,shape.w,shape.h);c.clip();
+          const spacing=4;
+          for(let py=oy+shape.y;py<oy+shape.y+shape.h;py+=spacing){
+            c.fillRect(ox+shape.x,py,shape.w,1.5);
+          }
+        }else if(shape.t==="circle"){
+          c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.clip();
+          if(shape.pattern==="spots"){
+            for(let i=0;i<4;i++){
+              const a=i*Math.PI/2;
+              c.beginPath();c.arc(ox+shape.cx+Math.cos(a)*shape.r*0.4,oy+shape.cy+Math.sin(a)*shape.r*0.4,1.5,0,Math.PI*2);c.fill();
+            }
+          }else{
+            for(let py=oy+shape.cy-shape.r;py<oy+shape.cy+shape.r;py+=3){
+              c.fillRect(ox+shape.cx-shape.r,py,shape.r*2,1);
+            }
+          }
+        }
+      }
+      c.restore();
     }
     if(shape.glow)c.shadowBlur=0;
+    c.globalAlpha=prevAlpha;
   },
 
   // Main entry: draw a unit using its recipe, or fallback to role-coded shape.
@@ -1726,6 +2018,16 @@ const SpriteRenderer={
     // Draw shapes (with bob offset applied via temporary y adjustment).
     const saveY=u.y;
     u.y=saveY+bobY;
+    // Phase 24b: drop shadow — soft ellipse under the unit.
+    if(!recipe.noShadow&&state!=="death"){
+      c.save();
+      c.globalAlpha=0.25*alpha;
+      c.fillStyle="#000";
+      c.beginPath();
+      c.ellipse(u.x,u.y+(u.z||10)*0.8,(u.z||10)*0.9,(u.z||10)*0.3,0,0,Math.PI*2);
+      c.fill();
+      c.restore();
+    }
     for(const shape of(recipe.shapes||[])){
       this.drawShape(c,shape,channels,u);
     }

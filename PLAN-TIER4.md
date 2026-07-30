@@ -57,7 +57,7 @@ Phase 24 is pure rendering quality — it lifts everything (starter units AND fo
 
 ---
 
-## Phase 24 — Richer Procedural Rendering ✅ PLANNED
+## Phase 24 — Richer Procedural Rendering ✅ PARTIAL (24a+24b done)
 
 **Why:** The cheapest 10x visual win. No LLM change, no schema change, no balance risk. Every unit in the game (starters, forged, future spell-summons) gets dramatically better look + feel. This is the foundation Phase 25 builds on.
 
