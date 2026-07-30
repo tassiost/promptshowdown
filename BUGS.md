@@ -468,3 +468,55 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** `Analytics.track` always pushed events to the queue, but `_flush` never sent them (endpoint is `null` by default). The queue grew indefinitely — one event per match, forge, ad, etc.
 **Fix:** `track` now returns early if `!this.endpoint`, preventing queue growth when no endpoint is configured.
+
+---
+
+## Round 7 — 2026-07-31
+
+### BUG-065 🔴 P2P race condition: host receives guest deck before host army is ready
+**File:** index.html:2059-2065, 5056-5066
+**Found:** 2026-07-31
+**Description:** In P2P, if the guest finished drafting before the host, the guest's `deck` message arrived while `G.pendingHostArmy` was still stale from the previous round (or undefined for round 1). The host would call `startHostBattle` with the wrong army, causing an incorrect battle.
+**Fix:** Store the guest's deck in `_pendingGuestDeck` and only call `startHostBattle` when both `pendingHostArmy` and `_pendingGuestDeck` are ready. Clear both at the start of each draft round.
+
+### BUG-066 🔴 P2P guest loses when host disconnects (should win)
+**File:** index.html:1960
+**Found:** 2026-07-31
+**Description:** When the host disconnected mid-match, `onPeerLeave` called `G.onMatchEnd("enemy")` for the guest. From the guest's perspective, "enemy" = host, so `winner==="player"` was false → guest loses. This is wrong — the guest should win by default when the host disconnects.
+**Fix:** Changed to `G.onMatchEnd("player")` so the guest wins on host disconnect.
+
+### BUG-067 🔴 Host forfeit doesn't notify guest
+**File:** index.html:2337-2340
+**Found:** 2026-07-31
+**Description:** `Match.forfeit()` didn't send `match_end` to the guest. The guest would be stuck waiting indefinitely after the host forfeited.
+**Fix:** Added `transmit("match_end",{winner:"enemy"})` in `forfeit()` when the host forfeits, so the guest receives the match end notification.
+
+### BUG-068 🟡 Persistent zones with "damage" effect do nothing
+**File:** index.html:3273
+**Found:** 2026-07-31
+**Description:** `tickZones` only handled `damage_over_time`, `slow`, and `heal_over_time` effects. A persistent zone with `effect:"damage"` (e.g., a fire wall) would never deal damage — the initial `Spell.fire` skips effect application for persistent zones, and `tickZones` didn't handle the `damage` effect.
+**Fix:** `tickZones` now treats `"damage"` the same as `"damage_over_time"` — applies `magnitude` damage to affected units once per tick.
+
+### BUG-069 🟡 P2P scout screen shows bot picks instead of real opponent picks
+**File:** index.html:5085-5103, 2297-2300
+**Found:** 2026-07-31
+**Description:** `generateScoutPicks` always generated bot picks for both host and guest in P2P, overwriting any real opponent picks. The guest's `opponent_picks` message handler would set the correct picks, but `generateScoutPicks` in `battle()` would overwrite them. Additionally, `Match.startRound` sent bot placeholder picks to the guest instead of the host's actual previous-round picks.
+**Fix:** `generateScoutPicks` now skips bot generation for P2P guests (keeps picks from `round_start`/`opponent_picks` messages). `Match.startRound` now sends the host's actual previous-round picks (`G.prevPlayerPicks`) instead of bot placeholder picks.
+
+### BUG-070 🟡 Disconnect "Continue vs Bot" loses custom opponent units
+**File:** index.html:1953, 1977-1992
+**Found:** 2026-07-31
+**Description:** `showDisconnectPrompt` received only opponent pick names (strings), then resolved them via `G.base.find(b=>b.n===n)`. Custom (LLM-forged) units aren't in `G.base`, so they'd be filtered out with `.filter(Boolean)`, leaving the bot with fewer units than expected.
+**Fix:** Pass full `opponentPicks` objects (not just names) to `showDisconnectPrompt`, preserving custom units when converting to bot.
+
+### BUG-071 🟢 Rage ability division by zero when attacker.mh is 0
+**File:** index.html:3555
+**Found:** 2026-07-31
+**Description:** `dmg*=1+(1-attacker.h/attacker.mh)` divides by `attacker.mh`. If a malformed unit has `mh=0`, this produces `NaN` damage, making the target's HP `NaN` and preventing it from ever dying.
+**Fix:** Added `attacker.mh>0` guard to the rage ability condition.
+
+### BUG-072 🟢 Polygon shape with missing pts crashes renderer
+**File:** index.html:2497-2499
+**Found:** 2026-07-31
+**Description:** `_drawShapeRaw` for polygon shapes iterates `shape.pts` without checking if it exists. A malformed recipe with a polygon shape but no `pts` array would throw a TypeError, crashing the render loop.
+**Fix:** Added `if(!shape.pts||!shape.pts.length)break;` guard before iterating polygon points.

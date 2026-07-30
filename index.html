@@ -1478,7 +1478,7 @@ function serializeUnitsForPeer(units){
     // Starter unit: send name only, receiver resolves from G.base.
     // A unit is a starter if its name matches a base unit with the same recipe.
     const starter=G.base.find(b=>b.n===u.n);
-    if(starter&&starter.recipe===u.recipe)return u.n;
+    if(starter&&JSON.stringify(starter.recipe)===JSON.stringify(u.recipe))return u.n;
     // Custom unit (LLM-forged or modified): send full data with minified recipe.
     const recipe=minifyRecipe(u.recipe);
     return{...u,recipe};
@@ -1505,7 +1505,18 @@ function deserializeUnitsFromPeer(data){
     }
     // Custom unit: expand recipe.
     if(d.recipe)d.recipe=expandRecipe(d.recipe);
-    if(d._isSpell)return d; // spells are passed through as-is
+    if(d._isSpell){
+      // Sanitize spell from P2P to ensure valid enum values.
+      if(!SPELL_ENUM.trigger.includes(d.trigger))d.trigger="battle_start";
+      if(!SPELL_ENUM.effect.includes(d.effect))d.effect="damage";
+      if(!SPELL_ENUM.shape.includes(d.shape))d.shape="circle_aoe";
+      if(!SPELL_ENUM.fxType.includes(d.fxType))d.fxType="explosion";
+      if(!SPELL_ENUM.target.includes(d.target))d.target="enemy_cluster";
+      d.magnitude=clamp(Number(d.magnitude)||30,1,200);
+      d.radius=clamp(Number(d.radius)||60,10,200);
+      d.duration=clamp(Number(d.duration)||0,0,10);
+      return d;
+    }
     return unit(d);
   }).filter(Boolean);
 }
@@ -1939,14 +1950,13 @@ function setupNetwork(id){
       setText("connection","Status: disconnected");
       // Phase 18: mid-match disconnect — offer "Continue vs Bot" (host) or return to menu (guest).
       if(Match.active&&role==="host"){
-        const lastLoadout=Match.opponentPicks?.map(u=>u.n)||[];
-        showDisconnectPrompt(lastLoadout);
+        showDisconnectPrompt(Match.opponentPicks||[]);
       }else if(Match.active&&role==="guest"){
         Match.active=false;
         Battle.stop();
         G.stopSnapshots();
         toast("Host disconnected.");
-        G.onMatchEnd("enemy");
+        G.onMatchEnd("player");
       }
     };
     return true;
@@ -1964,7 +1974,7 @@ function transmit(type,data){
 }
 
 // Phase 18: mid-match disconnect prompt — "Continue vs Bot" or "Forfeit".
-function showDisconnectPrompt(lastLoadout){
+function showDisconnectPrompt(opponentPicks){
   const overlay=document.createElement("div");
   overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
   overlay.innerHTML=`<div style="text-align:center;padding:20px;">
@@ -1975,9 +1985,9 @@ function showDisconnectPrompt(lastLoadout){
   document.body.appendChild(overlay);
   overlay.querySelector("#discBot").onclick=()=>{
     overlay.remove();
-    // Swap opponent to bot using last known loadout.
-    Match.opponentPicks=lastLoadout.length>0
-      ?lastLoadout.map(n=>G.base.find(b=>b.n===n)).filter(Boolean)
+    // Swap opponent to bot using last known picks (preserves custom units).
+    Match.opponentPicks=opponentPicks.length>0
+      ?opponentPicks
       :Bot.draftRound(Match.history.length>0&&Match.history[Match.history.length-1].winner==="player"?4:3);
     toast("Continuing vs bot");
   };
@@ -2047,7 +2057,11 @@ function networkReceive(data){
     }
     if(data.t==="deck"){
       // Host receives the guest's deck and starts the authoritative battle.
-      if(role==="host")G.startHostBattle(data.d.selected,data.d.upgrades);
+      if(role==="host"){
+        G._pendingGuestDeck={selected:data.d.selected,upgrades:data.d.upgrades};
+        // If host army is ready, start the battle now.
+        if(G.pendingHostArmy)G.startHostBattle(G._pendingGuestDeck.selected,G._pendingGuestDeck.upgrades);
+      }
     }
     if(data.t==="snap"){
       // Guest renders the host's authoritative snapshot.
@@ -2280,7 +2294,9 @@ const Match={
     // Phase 18: send round_start to guest with draw index + opponent picks.
     if(connected&&role==="host"){
       const drawCount=this.comebackEligible()?4:3;
-      const opponentPicks=serializeUnitsForPeer(G.opponentPicks||[]);
+      // Send host's actual picks from previous round (or empty for round 1).
+      const hostPicks=this.round>1&&G.prevPlayerPicks?G.prevPlayerPicks:[];
+      const opponentPicks=serializeUnitsForPeer(hostPicks);
       transmit("round_start",{drawIndex:drawCount,opponentPicks});
     }
     // G.start handles the draft UI; Match just tracks state.
@@ -2321,6 +2337,7 @@ const Match={
   // Phase 18: forfeit the current match (used on disconnect).
   forfeit(){
     this.active=false;
+    if(connected&&role==="host")transmit("match_end",{winner:"enemy"});
     if(this.onMatchEnd)try{this.onMatchEnd("enemy");}catch(e){showError("Match forfeit handler failed: "+(e&&e.message||e));}
   },
   // Phase 34: graceful disconnect with reconnect grace period.
@@ -2480,6 +2497,7 @@ const SpriteRenderer={
       case "line":
         c.beginPath();c.moveTo(ox+shape.x1,oy+shape.y1);c.lineTo(ox+shape.x2,oy+shape.y2);c.stroke();break;
       case "polygon":
+        if(!shape.pts||!shape.pts.length)break;
         c.beginPath();
         for(let i=0;i<shape.pts.length;i++){
           const px=ox+shape.pts[i][0],py=oy+shape.pts[i][1];
@@ -3259,7 +3277,7 @@ const Spell={
         const tgt=z.spec.target||"enemy";
         const allyZone=tgt.startsWith("ally");
         const affected=allyZone?units.filter(u=>u.team===z.team):units.filter(u=>u.team!==z.team);
-        if(z.spec.effect==="damage_over_time"){
+        if(z.spec.effect==="damage"||z.spec.effect==="damage_over_time"){
           affected.forEach(u=>{u.h-=z.spec.magnitude||10;});
         }else if(z.spec.effect==="slow"){
           affected.forEach(u=>{u.slow=Math.max(u.slow,1);});
@@ -3537,7 +3555,7 @@ const Battle={
     if(target.shieldActive>0){this.log(target.n+" shielded!");target.hasBeenHit=true;return;}
     let dmg=attacker.d;
     // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
-    if(attacker.ability==="rage")dmg*=1+(1-attacker.h/attacker.mh);
+    if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+(1-attacker.h/attacker.mh);
     // crit
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
@@ -3708,10 +3726,11 @@ const Battle={
         const dx=b.x-a.x, dy=b.y-a.y;
         const d=Math.hypot(dx,dy);
         const minD=Math.max(a.z,b.z);
-        if(d>0&&d<minD){
-          const push=(minD-d)/2;
-          const dd=Math.max(d,0.001); // guard against floating-point zero
-          const nx=dx/dd, ny=dy/dd;
+        if(d<minD){
+          let nx,ny;
+          if(d>0.001){nx=dx/d;ny=dy/d;}
+          else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
+          const push=(minD-Math.max(d,0.001))/2;
           a.x-=nx*push;a.y-=ny*push;
           b.x+=nx*push;b.y+=ny*push;
         }
@@ -4811,6 +4830,8 @@ const G={
     // Guest uses host-sent draw count (comeback is from host's perspective).
     const drawCount=(connected&&role==="guest")?(this._hostDrawCount||3):(Match.comebackEligible()?4:3);
     this.roundDraftState={drawIndex:0,picks:[],drawCount};
+    this._pendingGuestDeck=null; // clear stale guest deck from previous round
+    this.pendingHostArmy=null;   // clear stale host army from previous round
     this.selected=[];
     this.screen("draft");
     this.updateLivesHUD();
@@ -5043,6 +5064,10 @@ const G={
       this.generateScoutPicks();
       this.showScout();
       transmit("request_deck",{});
+      // If guest deck already arrived (guest finished drafting first), start now.
+      if(this._pendingGuestDeck){
+        this.startHostBattle(this._pendingGuestDeck.selected,this._pendingGuestDeck.upgrades);
+      }
       return;
     }
     if(connected&&role==="guest"){
@@ -5061,18 +5086,23 @@ const G={
 
   // Phase 14/21: generate opponent picks for the scout screen.
   generateScoutPicks(){
-    // Bot gets comeback when it lost (player won last round).
+    // In P2P, opponent picks are sent by the host — don't generate bot picks.
+    if(connected&&(role==="host"||role==="guest")){
+      // Host: generate placeholder bot picks for scout (guest's real picks arrive via deck).
+      // Guest: opponent picks arrive via opponent_picks message.
+      if(role==="host"){
+        const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
+        this.opponentPicks=Bot.draftRound(botComeback?4:3,this.prevPlayerPicks||null);
+        transmit("opponent_picks",{picks:serializeUnitsForPeer(this.opponentPicks)});
+      }
+      // Guest: keep opponentPicks from round_start/opponent_picks message.
+      return;
+    }
+    // Bot match: generate bot picks for scout.
     const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
     const drawCount=botComeback?4:3;
-    // Phase 21: pass player's previous-round picks for counter-picking.
     const scoutIntel=this.prevPlayerPicks||null;
-    // For bot matches, the bot's picks are its round draft.
-    // For multiplayer, this is overwritten when opponent_picks arrives.
     this.opponentPicks=Bot.draftRound(drawCount,scoutIntel);
-    // Phase 18: host sends opponent_picks to guest.
-    if(connected&&role==="host"){
-      transmit("opponent_picks",{picks:serializeUnitsForPeer(this.opponentPicks)});
-    }
   },
 
   // Phase 14: render the scout screen with opponent's picks + sprite previews.
@@ -5136,6 +5166,7 @@ const G={
 
   // Phase 5: host assembles the full battle once the guest's deck arrives.
   startHostBattle(guestSelected,guestUpgrades){
+    this._pendingGuestDeck=null; // consume pending deck
     const guestArmy=this.buildArmyFromSelected(guestSelected,guestUpgrades);
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
