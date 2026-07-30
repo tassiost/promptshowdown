@@ -192,7 +192,11 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 </div>
 
 <div class="screen" id="forge">
-<h2>🔮 Forge Custom Unit</h2>
+<h2>🔮 Forge <span id="forgeModeLabel">Custom Unit</span></h2>
+<div style="margin-bottom:8px;">
+<button class="btn" id="forgeModeUnit" onclick="G.setForgeMode('unit')" style="font-size:.78rem;padding:4px 10px;">⚔️ Unit</button>
+<button class="btn" id="forgeModeSpell" onclick="G.setForgeMode('spell')" style="font-size:.78rem;padding:4px 10px;">✨ Spell</button>
+</div>
 <div class="detail" id="aiStatus" style="margin-bottom:8px;">AI: idle</div>
 <input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja...">
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;">
@@ -338,7 +342,7 @@ const Q=(a,b)=>a+R()*(b-a);
 const SAVE_KEY="promptShowdownV4";
 
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
-const CURRENT_VERSION=7; // Phase 19b: bumped for daily forge cap + roleWins tracking.
+const CURRENT_VERSION=8; // Phase 23: bumped for spellbook.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
 function saveData(data){
   try{
@@ -400,6 +404,18 @@ function migrateSave(s){
     s.forgeCount=s.forgeCount||0;
     s.roleWins=s.roleWins||{};
     s.version=7;
+  }
+  if(s.version<8){
+    // v7 -> v8 (Phase 23): spellbook for forged spells.
+    s.spellbook=s.spellbook||[];
+    // Starter spells: TNT + Heal Rain.
+    if(!s.spellbook.length){
+      s.spellbook=[
+        {name:"TNT",trigger:"battle_start",target:"enemy_cluster",effect:"damage",shape:"circle_aoe",fxType:"explosion",magnitude:40,radius:60,duration:0,_isSpell:true},
+        {name:"Heal Rain",trigger:"when_ally_hurt",target:"ally_cluster",effect:"heal_allies",shape:"circle_aoe",fxType:"heal_glow",magnitude:30,radius:60,duration:0,_isSpell:true},
+      ];
+    }
+    s.version=8;
   }
   return s;
 }
@@ -1363,26 +1379,32 @@ const FIELD_PROMPTS={
 // The accumulating unit JSON is sent as system context so the LLM sees the
 // unit's identity building up and can make coherent choices. Returns the
 // parsed value or null if the call failed / answer was invalid.
-async function askField(field,name,attrs){
+async function askField(field,name,attrs,customPrompts,customParsers){
   if(!llmReady)return null;
   try{
+    const prompts=customPrompts||FIELD_PROMPTS;
+    const parsers=customParsers||FIELD_PARSERS;
+    const order=customPrompts?Object.keys(customPrompts):FIELD_ORDER;
     // Build the context JSON from fields decided so far (skip undefined/empty).
     const ctx={};
-    for(const f of FIELD_ORDER){
+    for(const f of order){
       if(attrs[f]!==undefined&&attrs[f]!==null&&attrs[f]!=="")
         ctx[f]=attrs[f];
     }
-    const sys=`You are designing a game unit for a top-down auto-battler. So far the unit is:\n${JSON.stringify(ctx)}\nAnswer the next question with a single word or number only.`;
-    const user=FIELD_PROMPTS[field](name,attrs);
+    const sys=customPrompts
+      ?`You are designing a spell for a top-down auto-battler. So far the spell is:\n${JSON.stringify(ctx)}\nAnswer the next question with a single word or number only.`
+      :`You are designing a game unit for a top-down auto-battler. So far the unit is:\n${JSON.stringify(ctx)}\nAnswer the next question with a single word or number only.`;
+    const user=prompts[field](name,attrs);
     const reply=await llm.chat.completions.create({
       messages:[{role:"system",content:sys},{role:"user",content:user}],
       temperature:0.7,stream:false
     });
     const answer=(reply.choices[0].message.content||"").trim();
-    const parsed=INT_FIELDS[field]?parseStat(field,answer):FIELD_PARSERS[field](answer);
+    const parsed=parsers[field](answer);
     // Check if the parser returned the default (first enum value) because the
     // answer wasn't recognised — that counts as a miss so we can retry.
-    if(ENUM_FIELDS[field]&&answer.toLowerCase()!==parsed&&answer.toLowerCase()!==parsed.replace(/_/g," "))
+    const enumCheck=customPrompts?SPELL_ENUM:ENUM_FIELDS;
+    if(enumCheck[field]&&answer.toLowerCase()!==parsed&&answer.toLowerCase()!==parsed.replace(/_/g," "))
       return null; // answer wasn't a valid enum value
     return parsed;
   }catch(e){
@@ -1463,7 +1485,97 @@ async function generateUnit(rawPrompt,arenaIndex){
   return u;
 }
 
-// Phase 12: ad stub — simulates a rewarded ad with a countdown overlay.
+// Phase 23: LLM spell forge — mirrors generateUnit but with spell schema.
+const SPELL_FIELD_ORDER=["name","trigger","target","effect","shape","fxType","magnitude","radius","duration"];
+const SPELL_FIELD_PROMPTS={
+  name:(ctx)=>`Invent a short fantasy spell name (max 20 chars) for: "${ctx}". Reply with just the name.`,
+  trigger:()=>`When should this spell fire: ${opts(SPELL_ENUM.trigger)}? Answer with one phrase.`,
+  target:()=>`Where should this spell target: ${opts(SPELL_ENUM.target)}? Answer with one phrase.`,
+  effect:()=>`What effect does this spell have: ${opts(SPELL_ENUM.effect)}? Answer with one phrase.`,
+  shape:()=>`What AoE shape: ${opts(SPELL_ENUM.shape)}? Answer with one word.`,
+  fxType:()=>`What visual effect: ${opts(SPELL_ENUM.fxType)}? Answer with one word.`,
+  magnitude:()=>`How strong is the effect (10-80)? Answer with a number.`,
+  radius:()=>`What area radius (30-120)? Answer with a number.`,
+  duration:()=>`How long in seconds (0-6)? Answer with a number.`,
+};
+const SPELL_FIELD_PARSERS={
+  name:(a)=>(a||"").slice(0,20),
+  trigger:(a)=>parseEnum(a,SPELL_ENUM.trigger,"battle_start"),
+  target:(a)=>parseEnum(a,SPELL_ENUM.target,"enemy_cluster"),
+  effect:(a)=>parseEnum(a,SPELL_ENUM.effect,"damage"),
+  shape:(a)=>parseEnum(a,SPELL_ENUM.shape,"circle_aoe"),
+  fxType:(a)=>parseEnum(a,SPELL_ENUM.fxType,"explosion"),
+  magnitude:(a)=>clamp(parseInt(a)||30,10,80),
+  radius:(a)=>clamp(parseInt(a)||60,30,120),
+  duration:(a)=>clamp(parseInt(a)||0,0,6),
+};
+// Phase 23: hand-authored spell templates for fallback.
+const SPELL_TEMPLATES=[
+  {kw:["tnt","bomb","explosion","blast"],a:{name:"TNT",trigger:"battle_start",target:"enemy_cluster",effect:"damage",shape:"circle_aoe",fxType:"explosion",magnitude:40,radius:60,duration:0}},
+  {kw:["fire","wall","burn","waste"],a:{name:"Fire Wall",trigger:"battle_start",target:"enemy_frontline",effect:"damage_over_time",shape:"persistent_zone",fxType:"fire_wall",magnitude:10,radius:50,duration:5}},
+  {kw:["heal","rain","mend","restore"],a:{name:"Heal Rain",trigger:"when_ally_hurt",target:"ally_cluster",effect:"heal_allies",shape:"circle_aoe",fxType:"heal_glow",magnitude:30,radius:60,duration:0}},
+  {kw:["frost","ice","freeze","nova"],a:{name:"Frost Nova",trigger:"on_first_contact",target:"enemy_cluster",effect:"stun",shape:"circle_aoe",fxType:"frost",magnitude:20,radius:70,duration:1}},
+  {kw:["lightning","bolt","zap","thunder"],a:{name:"Lightning Bolt",trigger:"delayed_3s",target:"lowest_hp_enemy",effect:"damage",shape:"point",fxType:"lightning",magnitude:50,radius:40,duration:0}},
+  {kw:["poison","cloud","plague","toxic"],a:{name:"Poison Cloud",trigger:"battle_start",target:"enemy_frontline",effect:"damage_over_time",shape:"persistent_zone",fxType:"poison_cloud",magnitude:8,radius:60,duration:5}},
+  {kw:["shield","protect","barrier","ward"],a:{name:"Shield Ward",trigger:"when_ally_hurt",target:"ally_cluster",effect:"shield_allies",shape:"circle_aoe",fxType:"shockwave",magnitude:20,radius:60,duration:2}},
+  {kw:["slow","snare","web","root"],a:{name:"Snare",trigger:"on_first_contact",target:"enemy_frontline",effect:"slow",shape:"circle_aoe",fxType:"frost",magnitude:20,radius:70,duration:3}},
+  {kw:["summon","spawn","call","reinforce"],a:{name:"Reinforce",trigger:"delayed_3s",target:"ally_cluster",effect:"summon",shape:"circle_aoe",fxType:"heal_glow",magnitude:40,radius:50,duration:0}},
+  {kw:["buff","rage","frenzy","empower"],a:{name:"Rage",trigger:"battle_start",target:"ally_cluster",effect:"buff_dmg",shape:"circle_aoe",fxType:"shockwave",magnitude:30,radius:60,duration:0}},
+];
+function templateSpellFallback(prompt){
+  const p=(prompt||"").toLowerCase();
+  let match=SPELL_TEMPLATES.find(t=>t.kw.some(k=>p.includes(k)));
+  let attrs;
+  if(match){attrs={...match.a};}
+  else{attrs={...SPELL_TEMPLATES[0].a};}
+  // Customize name from prompt if no keyword match.
+  if(!match&&prompt){attrs.name=prompt.slice(0,18);}
+  return attrs;
+}
+// Phase 23: semantic validation for spells.
+const SPELL_ALLY_EFFECTS=["heal_allies","shield_allies","buff_dmg","buff_speed"];
+const SPELL_ALLY_TARGETS=["ally_cluster","lowest_ally"];
+function semanticValidateSpell(a){
+  const flagged=[];
+  if(SPELL_ALLY_EFFECTS.includes(a.effect)&&!SPELL_ALLY_TARGETS.includes(a.target))flagged.push("target");
+  if((a.effect==="damage_over_time"||a.shape==="persistent_zone")&&a.duration<=0)flagged.push("duration");
+  for(const f of ["trigger","target","effect","shape","fxType"]){
+    if(SPELL_ENUM[f]&&!SPELL_ENUM[f].includes(a[f]))flagged.push(f);
+  }
+  return flagged;
+}
+async function generateSpell(rawPrompt,arenaIndex){
+  const prompt=normalizePrompt(rawPrompt);
+  const key="spell:"+cacheKey(prompt,MODEL);
+  const cached=await cacheGet(key);
+  if(cached)return cached;
+  if(llmLoading&&!llmReady&&!llmCancelled&&llmLoadPromise){
+    try{await Promise.race([llmLoadPromise,llmCancelPromise]);}catch(e){/* */}
+  }
+  if(!llmReady){
+    const s={...templateSpellFallback(prompt),_isSpell:true};
+    await cachePut(key,prompt,MODEL,s);
+    return s;
+  }
+  let attrs={};
+  for(const field of SPELL_FIELD_ORDER){
+    let val=null;
+    for(let attempt=0;attempt<2&&val===null;attempt++){
+      val=await askField(field,prompt,attrs,SPELL_FIELD_PROMPTS,SPELL_FIELD_PARSERS);
+    }
+    attrs[field]=val!==null?val:SPELL_FIELD_PARSERS[field]("");
+  }
+  const flagged=semanticValidateSpell(attrs);
+  if(flagged.length>0){
+    // Auto-fix: set ally target for ally effects, duration=3 for DoT.
+    if(flagged.includes("target")&&SPELL_ALLY_EFFECTS.includes(attrs.effect))attrs.target="ally_cluster";
+    if(flagged.includes("duration")&&(attrs.effect==="damage_over_time"||attrs.shape==="persistent_zone"))attrs.duration=3;
+  }
+  const spell={...attrs,_isSpell:true};
+  await cachePut(key,prompt,MODEL,spell);
+  return spell;
+}
+
 function showAdStub(duration,onComplete){
   const overlay=document.createElement("div");
   overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
@@ -2349,6 +2461,34 @@ const BattleFX={
     u.hitFlash=0.08;
     GameAudio.sfx("ramp_up"); // Phase 30
   },
+  // Phase 23: spell cast FX — big burst at anchor + screen shake.
+  onSpell(spec,anchor,affected,team){
+    if(!anchor)return;
+    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    const colorMap={explosion:"#f84",frost:"#6cf",lightning:"#ff4",poison_cloud:"#6f4",heal_glow:"#fd8",shockwave:"#fff",fire_wall:"#f84"};
+    const color=colorMap[spec.fxType]||"#fff";
+    const count=spec.shape==="persistent_zone"?8:spec.shape==="circle_aoe"?12:6;
+    this.burst(ax,ay,color,count,100);
+    this.shake(spec.fxType==="explosion"?6:3);
+    // Mark affected units with hit flash.
+    affected.forEach(u=>{u.hitFlash=0.1;});
+  },
+  // Phase 23: persistent zone FX — particles at zone perimeter.
+  spellZone(z){
+    const colorMap={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
+    const color=colorMap[z.spec.fxType]||"#fa4";
+    const n=3;
+    for(let i=0;i<n;i++){
+      const a=Math.random()*Math.PI*2;
+      const r=z.radius*(0.7+Math.random()*0.3);
+      Battle.particles.push({
+        x:z.x+Math.cos(a)*r,y:z.y+Math.sin(a)*r,
+        vx:0,vy:-10-Math.random()*10,
+        life:0.4+Math.random()*0.2,maxLife:0.6,
+        c:color,r:2+Math.random()*2
+      });
+    }
+  },
   // Phase 24e: persistent unit aura — per-frame particle emitter driven by fxType.
   unitAura(u,dt){
     if(u.h<=0||u.deathT!==undefined)return;
@@ -2499,6 +2639,233 @@ const BattleFX={
 // Phase 3 adds: projectiles (ranged), collision separation, crits,
 // status effects (poison/slow/stun), and abilities (splash/heal/dodge/poison).
 const RANGED_THRESHOLD=80;
+// Phase 23: Spell system — one-shot battlefield effects.
+const SPELL_ENUM={
+  trigger:["battle_start","on_first_contact","delayed_3s","when_ally_hurt","periodic_5s"],
+  target:["enemy_cluster","enemy_frontline","enemy_backline","enemy_carry","lowest_hp_enemy","highest_hp_enemy","random_enemy","center","ally_cluster","lowest_ally"],
+  effect:["damage","damage_over_time","slow","stun","heal_allies","shield_allies","summon","knockback","buff_dmg","buff_speed"],
+  shape:["point","circle_aoe","line","cone","persistent_zone"],
+  fxType:["explosion","frost","lightning","poison_cloud","heal_glow","shockwave","fire_wall"],
+};
+// Phase 23: spell target resolution — returns {x,y} anchor point.
+const SPELL_TARGET={
+  enemy_cluster(team,b){
+    const enemies=b.units.filter(u=>u.h>0&&u.team!==team);
+    if(!enemies.length)return null;
+    let best=null,bestCount=0;
+    for(const e of enemies){
+      const c=enemies.filter(o=>dist(e,o)<80).length;
+      if(c>bestCount){bestCount=c;best=e;}
+    }
+    return best||enemies[0];
+  },
+  enemy_frontline(team,b){
+    const es=b.units.filter(u=>u.h>0&&u.team!==team);
+    if(!es.length)return null;
+    return team==="player"?es.reduce((a,c)=>c.y<a.y?c:a,es[0]):es.reduce((a,c)=>c.y>a.y?c:a,es[0]);
+  },
+  enemy_backline(team,b){
+    const es=b.units.filter(u=>u.h>0&&u.team!==team);
+    if(!es.length)return null;
+    return team==="player"?es.reduce((a,c)=>c.y>a.y?c:a,es[0]):es.reduce((a,c)=>c.y<a.y?c:a,es[0]);
+  },
+  enemy_carry(team,b){
+    const es=b.units.filter(u=>u.h>0&&u.team!==team&&u.role==="carry");
+    const pool=es.length?es:b.units.filter(u=>u.h>0&&u.team!==team);
+    return pool[0]||null;
+  },
+  lowest_hp_enemy(team,b){
+    const es=b.units.filter(u=>u.h>0&&u.team!==team);
+    return es.length?es.reduce((a,c)=>c.h<a.h?c:a,es[0]):null;
+  },
+  highest_hp_enemy(team,b){
+    const es=b.units.filter(u=>u.h>0&&u.team!==team);
+    return es.length?es.reduce((a,c)=>c.h>a.h?c:a,es[0]):null;
+  },
+  random_enemy(team,b){
+    const es=b.units.filter(u=>u.h>0&&u.team!==team);
+    return es.length?es[F(R()*es.length)]:null;
+  },
+  center(team,b){return{x:200,y:275};},
+  ally_cluster(team,b){
+    const allies=b.units.filter(u=>u.h>0&&u.team===team);
+    if(!allies.length)return null;
+    let best=null,bestCount=0;
+    for(const a of allies){
+      const c=allies.filter(o=>dist(a,o)<80).length;
+      if(c>bestCount){bestCount=c;best=a;}
+    }
+    return best||allies[0];
+  },
+  lowest_ally(team,b){
+    const allies=b.units.filter(u=>u.h>0&&u.team===team);
+    return allies.length?allies.reduce((a,c)=>c.h<a.h?c:a,allies[0]):null;
+  },
+};
+// Phase 23: spell shape — returns list of affected units given anchor + spec.
+const SPELL_SHAPE={
+  point(anchor){return anchor?[anchor]:[];},
+  circle_aoe(anchor,spec,b){
+    if(!anchor)return[];
+    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    return b.units.filter(u=>u.h>0&&Math.hypot(u.x-ax,u.y-ay)<(spec.radius||60));
+  },
+  line(anchor,spec,b,team){
+    if(!anchor)return[];
+    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    // Line from caster side to target.
+    const sx=team==="player"?40:360;
+    const sy=ay;
+    return b.units.filter(u=>{
+      if(u.h<=0)return false;
+      // Distance from point to line segment.
+      const dx=ax-sx,dy=ay-sy;
+      const len=Math.hypot(dx,dy)||1;
+      const t=Math.max(0,Math.min(1,((u.x-sx)*dx+(u.y-sy)*dy)/(len*len)));
+      const px=sx+t*dx,py=sy+t*dy;
+      return Math.hypot(u.x-px,u.y-py)<(spec.radius||40);
+    });
+  },
+  cone(anchor,spec,b,team){
+    if(!anchor)return[];
+    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    const sx=team==="player"?40:360;
+    const dirX=ax-sx,dirY=ay-sy;
+    const dirLen=Math.hypot(dirX,dirY)||1;
+    const ux=dirX/dirLen,uy=dirY/dirLen;
+    return b.units.filter(u=>{
+      if(u.h<=0)return false;
+      const dx=u.x-sx,dy=u.y-sy;
+      const d=Math.hypot(dx,dy);
+      if(d>(spec.radius||80))return false;
+      const dot=(dx*ux+dy*uy)/(d||1);
+      return dot>0.5; // ~60-degree cone
+    });
+  },
+  persistent_zone(anchor,spec,b,team){
+    // Register a zone — returns [] (effect applied via zone ticking).
+    if(!anchor)return[];
+    b.zones.push({
+      x:anchor.x??anchor.x,y:anchor.y??anchor.y,
+      radius:spec.radius||60,duration:spec.duration||3,
+      maxDuration:spec.duration||3,spec,team,fired:0
+    });
+    return [];
+  },
+};
+// Phase 23: spell effect — applies the effect to affected units.
+const SPELL_EFFECT={
+  damage(units,spec){units.forEach(u=>{u.h-=spec.magnitude||30;});},
+  damage_over_time(units,spec){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=spec.magnitude||10;u.poisonTick=0;});},
+  slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
+  stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
+  heal_allies(units,spec){units.forEach(u=>{u.h=Math.min(u.mh,u.h+(spec.magnitude||30));});},
+  shield_allies(units,spec){units.forEach(u=>{u.shieldActive=Math.max(u.shieldActive,spec.duration||2);});},
+  summon(units,spec,team,b){
+    const count=Math.min(spec.magnitude>40?3:spec.magnitude>20?2:1,3);
+    const anchor=units[0]||{x:team==="player"?100:300,y:300};
+    for(let i=0;i<count;i++){
+      const minion=unit({n:"Spell Minion",h:30,d:8,r:25,s:60,a:1,c:"#fa4",
+        targeting:"closest",movement:"chase",attackCondition:"always",
+        abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
+      minion.team=team;
+      minion.x=anchor.x+Q(-20,20);
+      minion.y=anchor.y+Q(-20,20);
+      minion.ttl=8;
+      b.units.push(b.initRuntime(minion));
+      BattleFX.onSpawn(minion);
+    }
+  },
+  knockback(units,spec,team,b){
+    const anchor=units[0];
+    if(!anchor)return;
+    const ax=anchor.x,ay=anchor.y;
+    units.forEach(u=>{
+      const dx=u.x-ax,dy=u.y-ay;
+      const d=Math.hypot(dx,dy)||1;
+      const force=spec.magnitude||30;
+      u.x+=dx/d*force;u.y+=dy/d*force;
+    });
+  },
+  buff_dmg(units,spec){units.forEach(u=>{u.d=Math.round(u.d*(1+(spec.magnitude||20)/100));});},
+  buff_speed(units,spec){units.forEach(u=>{u.moveSpeedMod=(u.moveSpeedMod||100)+(spec.magnitude||20);});},
+};
+// Phase 23: Spell object — resolves a spell spec into an effect at battle time.
+const Spell={
+  fire(spec,team,battle){
+    const anchor=SPELL_TARGET[spec.target]?.(team,battle);
+    if(!anchor&&spec.shape!=="persistent_zone")return;
+    let affected=[];
+    if(spec.shape==="line"||spec.shape==="cone"){
+      affected=SPELL_SHAPE[spec.shape](anchor,spec,battle,team);
+    }else if(spec.shape==="persistent_zone"){
+      affected=SPELL_SHAPE.persistent_zone(anchor||{x:200,y:275},spec,battle,team);
+    }else{
+      affected=SPELL_SHAPE[spec.shape]?.(anchor,spec,battle)||[];
+    }
+    // For ally-targeting effects, filter to allies only.
+    if(spec.target.startsWith("ally")||spec.target==="lowest_ally"){
+      affected=affected.filter(u=>u.team===team);
+    }else if(spec.target.startsWith("enemy")||spec.target==="lowest_hp_enemy"||spec.target==="highest_hp_enemy"||spec.target==="random_enemy"){
+      affected=affected.filter(u=>u.team!==team);
+    }
+    if(spec.shape!=="persistent_zone"){
+      SPELL_EFFECT[spec.effect]?.(affected,spec,team,battle);
+    }
+    BattleFX.onSpell(spec,anchor,affected,team);
+    GameAudio.sfx("spell_"+spec.fxType==="explosion"?"fire":spec.fxType==="frost"?"frost":spec.fxType==="lightning"?"lightning":"fire");
+  },
+  // Phase 23: check trigger conditions each frame.
+  checkTriggers(battle,dt){
+    if(!battle.spells)return;
+    for(const entry of battle.spells){
+      if(entry.fired&&entry.spec.trigger!=="periodic_5s")continue;
+      const team=entry.team;
+      const allies=battle.units.filter(u=>u.h>0&&u.team===team);
+      const enemies=battle.units.filter(u=>u.h>0&&u.team!==team);
+      let fire=false;
+      switch(entry.spec.trigger){
+        case "battle_start":fire=battle.time<0.1;break;
+        case "on_first_contact":
+          fire=allies.some(a=>enemies.some(e=>dist(a,e)<80));break;
+        case "delayed_3s":fire=battle.time>=3;break;
+        case "when_ally_hurt":fire=allies.some(a=>a.h<a.mh*0.5);break;
+        case "periodic_5s":
+          if(battle.time-entry.lastFire>=5){fire=true;entry.lastFire=battle.time;}
+          break;
+      }
+      if(fire){
+        this.fire(entry.spec,team,battle);
+        entry.fired=true;
+        if(entry.spec.trigger==="periodic_5s"){entry.fired=false;}
+      }
+    }
+  },
+  // Phase 23: tick persistent zones each frame.
+  tickZones(battle,dt){
+    if(!battle.zones)return;
+    for(const z of battle.zones){
+      z.duration-=dt;
+      z.fired=(z.fired||0)+dt;
+      // Apply effect once per second.
+      if(z.fired>=1){
+        z.fired=0;
+        const units=battle.units.filter(u=>u.h>0&&Math.hypot(u.x-z.x,u.y-z.y)<z.radius);
+        const affected=units.filter(u=>u.team!==z.team);
+        if(z.spec.effect==="damage_over_time"){
+          affected.forEach(u=>{u.h-=z.spec.magnitude||10;});
+        }else if(z.spec.effect==="slow"){
+          affected.forEach(u=>{u.slow=Math.max(u.slow,1);});
+        }
+        // FX particles for zone.
+        BattleFX.spellZone(z);
+      }
+      if(z.duration<=0)z._remove=true;
+    }
+    battle.zones=battle.zones.filter(z=>!z._remove);
+  },
+};
+
 const Battle={
   units:[],          // Phase 10: single array (was units + enemies)
   projectiles:[],
@@ -2514,6 +2881,8 @@ const Battle={
   canvasH:550,       // Phase 10: for hold_midpoint movement
   onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
   autoTimer:null,
+  spells:[],         // Phase 23: active spell entries {spec,team,fired,lastFire}
+  zones:[],          // Phase 23: persistent spell zones
 
   // Attach runtime-only combat fields to a unit (not persisted).
   initRuntime(u){
@@ -2549,7 +2918,8 @@ const Battle={
   },
 
   // Phase 10: single units array; team set on each unit.
-  start(units,enemies,onEnd){
+  // Phase 23: accept spells arg {player:[],enemy:[]}.
+  start(units,enemies,onEnd,spells){
     // Set team strings before initRuntime so hold_midpoint etc. work.
     this.units=[
       ...units.map(u=>({...u,team:"player"})),
@@ -2564,6 +2934,13 @@ const Battle={
     this.recentCrits=[];   // Phase 17: clear crit tracking
     this._prevSnapshot=null; // Phase 17: clear snapshot diff state
     this.deathLog=[];      // Phase 16: clear death order log
+    // Phase 23: init spells + zones.
+    this.spells=[];
+    this.zones=[];
+    if(spells){
+      for(const s of (spells.player||[]))this.spells.push({spec:s,team:"player",fired:false,lastFire:0});
+      for(const s of (spells.enemy||[]))this.spells.push({spec:s,team:"enemy",fired:false,lastFire:0});
+    }
     this.time=0;
     this.running=true;
     this.winner=null;
@@ -2598,6 +2975,9 @@ const Battle={
   // Phase 10: single units array, split by team each frame.
   update(dt){
     this.time+=dt;
+    // Phase 23: spell trigger checks + zone ticking.
+    Spell.checkTriggers(this,dt);
+    Spell.tickZones(this,dt);
     // 1. status ticks + death animation + minion TTL
     for(let u of this.units){
       if(u.h<=0){
@@ -2949,6 +3329,23 @@ const Battle={
       c.beginPath();
       c.arc(p.x,p.y,3,0,Math.PI*2);
       c.fill();
+    }
+    // Phase 23: draw persistent spell zones.
+    for(let z of this.zones){
+      const alpha=0.2+0.1*Math.sin(this.time*4);
+      const colorMap={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
+      const color=colorMap[z.spec.fxType]||"#fa4";
+      c.save();
+      c.globalAlpha=alpha;
+      c.fillStyle=color;
+      c.beginPath();
+      c.arc(z.x,z.y,z.radius,0,Math.PI*2);
+      c.fill();
+      c.globalAlpha=0.5;
+      c.strokeStyle=color;
+      c.lineWidth=2;
+      c.stroke();
+      c.restore();
     }
     // Phase 17: draw particles on top.
     BattleFX.drawParticles(c);
@@ -3596,6 +3993,33 @@ const G={
   // Phase 16: highlights picks that fill missing roles in current round army.
   draftCard(u){
     const card=document.createElement("div");
+    // Phase 23: spell card rendering.
+    if(u._isSpell){
+      card.className="card rar-rare";
+      const effectDesc=u.effect.replace(/_/g," ");
+      const triggerDesc=u.trigger.replace(/_/g," ");
+      card.innerHTML=
+        `<div class="rarityTag rare">SPELL</div>`+
+        `<div class="title" style="color:#fa4">✨ ${u.name}</div>`+
+        `<div class="detail">${effectDesc}<br><span style="color:var(--accent2)">${triggerDesc}</span><br><span style="color:var(--muted)">${u.fxType}</span></div>`;
+      card.style.borderColor="#fa4";
+      card.onclick=()=>{
+        const st=this.roundDraftState;
+        if(!st)return;
+        st.picks.push(u);
+        st.drawIndex++;
+        if(st.drawIndex>=st.drawCount){
+          this.selected=st.picks;
+          if(connected&&role==="guest"){
+            transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
+          }
+          this.battle();
+        }else{
+          this.drawOne();
+        }
+      };
+      return card;
+    }
     card.className="card rar-"+u.rar;
     // Phase 16: check if this unit fills a missing role (only after first pick).
     const pickedRoles=this.roundDraftState.picks.map(p=>p.role);
@@ -3644,6 +4068,12 @@ const G={
   // Phase 13: rarity-weighted draw from the loadout (4 cards).
   // Excludes names already used in this draw (no dupes within a draw).
   rollOne(usedNames){
+    // Phase 23: 20% chance to roll a spell from spellbook (if any).
+    const spellbook=this.save.spellbook||[];
+    if(spellbook.length&&R()<0.2){
+      const spell=spellbook[F(R()*spellbook.length)];
+      return {...spell,_isSpell:true};
+    }
     const pool=this.loadoutUnits();
     if(pool.length===0)return null;
     const roll=R();
@@ -3656,15 +4086,19 @@ const G={
   },
 
   // Phase 10: build an army (3 copies of each picked unit).
-  // Team is now a string ("player"/"enemy"); Battle.start() sets it.
+  // Phase 23: spells are separated from units.
   buildArmy(){
-    return this._buildArmyFromPicks(this.selected,true,true);
+    const result=this._buildArmyFromPicks(this.selected,true,true);
+    this.playerSpells=result.spells;
+    return result.units;
   },
 
   // Phase 9/14: build a bot army from opponent picks (3 copies each).
   buildBotArmy(){
     const botPicks=this.opponentPicks||Bot.draftRound(Match.comebackEligible()?4:3);
-    return this._buildArmyFromPicks(botPicks,false,false);
+    const result=this._buildArmyFromPicks(botPicks,false,false);
+    this.enemySpells=result.spells;
+    return result.units;
   },
 
   // Phase 22: role-based formation y-bands.
@@ -3682,10 +4116,13 @@ const G={
   },
 
   // Helper: build an army from picks (3 copies each, positioned by role).
+  // Phase 23: separates spells from units, returns {units, spells}.
   _buildArmyFromPicks(picks,applyUpg,isPlayer){
     const out=[];
+    const spells=[];
     for(const pick of picks||[]){
       if(!pick)continue;
+      if(pick._isSpell){spells.push(pick);continue;} // Phase 23: skip spells
       const [yMin,yMax]=this._formationY(pick.role,isPlayer);
       for(let i=0;i<3;i++){
         const u=applyUpg?this.applyUpgrades(cloneUnit(pick)):cloneUnit(pick);
@@ -3694,7 +4131,7 @@ const G={
         out.push({...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
-    return out;
+    return {units:out,spells};
   },
 
   // Phase 14: show scout screen before battle. Generates opponent picks.
@@ -3788,21 +4225,27 @@ const G={
     const enemies=this.buildBotArmy();
     this.screen("battle");
     this.updateLivesHUD();
-    Battle.start(myArmy,enemies,winner=>this.onBattleEnd(winner));
+    // Phase 23: pass spells to Battle.start.
+    const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
+    Battle.start(myArmy,enemies,winner=>this.onBattleEnd(winner),spells);
   },
 
   // Phase 5: host assembles the full battle once the guest's deck arrives.
   startHostBattle(guestSelected){
     const guestArmy=this.buildArmyFromSelected(guestSelected);
-    Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner));
+    // Phase 23: pass spells (host = player, guest = enemy).
+    const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
+    Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
     this.updateLivesHUD();
     this.startSnapshots();
   },
 
   buildArmyFromSelected(selected){
     const out=[];
+    const spells=[];
     for(const pick of selected){
       if(!pick)continue;
+      if(pick._isSpell){spells.push(pick);continue;} // Phase 23
       const [yMin,yMax]=this._formationY(pick.role,false);
       for(let i=0;i<3;i++){
         const u=this.applyUpgrades(cloneUnit(pick));
@@ -3810,6 +4253,7 @@ const G={
         out.push({...u,x:400-xSpread,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
+    this.enemySpells=spells; // Phase 23: store guest spells
     return out;
   },
 
@@ -4080,6 +4524,17 @@ const G={
   pendingForgeUnit:null,
   _forgeConfirmOverlay:null,
   // Show "Watch Ad / Skip" confirmation prompt before starting the forge.
+  // Phase 23: forge mode toggle (unit vs spell).
+  forgeMode:"unit",
+  setForgeMode(mode){
+    this.forgeMode=mode;
+    setText("forgeModeLabel",mode==="spell"?"Spell":"Custom Unit");
+    const promptEl=$("forgePrompt");
+    if(promptEl)promptEl.placeholder=mode==="spell"?"e.g. fireball, heal rain, frost nova...":"e.g. ice mage, fire dragon, ninja...";
+    const uBtn=$("forgeModeUnit"),sBtn=$("forgeModeSpell");
+    if(uBtn)uBtn.style.opacity=mode==="unit"?"1":"0.5";
+    if(sBtn)sBtn.style.opacity=mode==="spell"?"1":"0.5";
+  },
   forgeWithAd(){
     const promptEl=$("forgePrompt");
     const prompt=promptEl?promptEl.value.trim():"";
@@ -4105,6 +4560,7 @@ const G={
     this._doForge(prompt,false);
   },
   // Core forge logic — runs ad (if watchAd) + generation in parallel.
+  // Phase 23: supports spell forge mode.
   async _doForge(prompt,watchAd){
     GameAudio.sfx("forge_whoosh"); // Phase 30
     const btn=$("forgeGenBtn");
@@ -4114,6 +4570,27 @@ const G={
     const preview=$("forgePreview");
     if(preview)preview.innerHTML='<div class="detail">Generating...</div>';
     const arenaIdx=this.save.arena||0;
+    // Phase 23: spell forge path.
+    if(this.forgeMode==="spell"){
+      const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
+      const adPromise=watchAd?new Promise(res=>showAdStub(15000,res)):Promise.resolve();
+      let genPromise;
+      if(canUseLLM){
+        if(llmLoading&&!llmReady)this._showModelProgress();
+        genPromise=generateSpell(prompt,arenaIdx);
+      }else{
+        genPromise=Promise.resolve({...templateSpellFallback(prompt),_isSpell:true});
+      }
+      await adPromise;
+      let spell;
+      try{spell=await genPromise;}catch(e){spell={...templateSpellFallback(prompt),_isSpell:true};}
+      if(!spell)spell={...templateSpellFallback(prompt),_isSpell:true};
+      this._hideModelProgress();
+      this.pendingForgeSpell=spell;
+      this.showSpellForgePreview(spell);
+      GameAudio.sfx("forge_reveal");
+      return;
+    }
     // Phase 12: model cache check — if LLM not ready and no WebGPU, skip LLM.
     const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
     // Start ad + generation in parallel (if watching ad).
@@ -4130,8 +4607,6 @@ const G={
       genPromise=Promise.resolve(attrsToUnit(templateFallback(prompt),arenaIdx));
     }
     await adPromise;
-    // Keep model progress + Cancel visible while the LLM finishes downloading.
-    // Only swap to "Finishing up..." once generation is actually near done.
     let unit;
     try{unit=await genPromise;}
     catch(e){
@@ -4145,6 +4620,35 @@ const G={
     this.pendingForgeUnit=unit;
     this.showForgePreview(unit);
     GameAudio.sfx("forge_reveal"); // Phase 30
+  },
+  // Phase 23: show spell forge preview with effect description + add button.
+  showSpellForgePreview(spell){
+    const preview=$("forgePreview");
+    if(!preview)return;
+    const effectDesc=spell.effect.replace(/_/g," ");
+    const triggerDesc=spell.trigger.replace(/_/g," ");
+    const targetDesc=spell.target.replace(/_/g," ");
+    preview.innerHTML=
+      `<div class="card rar-rare" style="border-color:#fa4;max-width:280px;margin:0 auto;">`+
+      `<div class="rarityTag rare">SPELL</div>`+
+      `<div class="title" style="color:#fa4">✨ ${spell.name}</div>`+
+      `<div class="detail">${effectDesc} · ${targetDesc}<br>${triggerDesc} · ${spell.fxType}<br>Magnitude: ${spell.magnitude} · Radius: ${spell.radius} · Duration: ${spell.duration}s</div>`+
+      `</div>`+
+      `<button class="btn primary" onclick="G.addSpellToBook()" style="margin-top:10px;">➕ Add to Spellbook</button>`;
+    if(btn)$("forgeGenBtn").style.display="inline-block";
+  },
+  // Phase 23: add forged spell to spellbook.
+  addSpellToBook(){
+    if(!this.pendingForgeSpell)return;
+    if(!this.save.spellbook)this.save.spellbook=[];
+    this.save.spellbook.push(this.pendingForgeSpell);
+    saveData(this.save);
+    toast("Spell added to spellbook!");
+    this.pendingForgeSpell=null;
+    const preview=$("forgePreview");
+    if(preview)preview.innerHTML="";
+    const btn=$("forgeGenBtn");
+    if(btn)btn.style.display="inline-block";
   },
   // Phase 12: show model download progress bar + Cancel button while LLM loads.
   _showModelProgress(){

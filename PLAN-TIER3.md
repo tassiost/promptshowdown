@@ -181,7 +181,7 @@ Start a match with loadout [Knight, Wizard, Assassin, Priest]. Verify on the bat
 
 ---
 
-## Phase 23 — Spell System + LLM Spell Forge (Infinite Spells) ✅ PLANNED
+## Phase 23 — Spell System + LLM Spell Forge (Infinite Spells) ✅ DONE
 
 **Why:** The headline. Draft Showdown's signature cards (TNT, Waster) are spells, not units — and a spell spec is *smaller* than a unit spec (no body plan, no weapon, no movement), so the existing 0.5B + grammar-sampler pipeline can produce infinite spell variety even more reliably than units. This is the differentiator that turns the LLM forge from "custom units" into "custom *content*."
 
