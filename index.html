@@ -119,6 +119,7 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
+<button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
 </div>
 </div>
 
@@ -342,7 +343,7 @@ const Q=(a,b)=>a+R()*(b-a);
 const SAVE_KEY="promptShowdownV4";
 
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
-const CURRENT_VERSION=8; // Phase 23: bumped for spellbook.
+const CURRENT_VERSION=9; // Phase 31: bumped for onboarding + settings.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
 function saveData(data){
   try{
@@ -416,6 +417,12 @@ function migrateSave(s){
       ];
     }
     s.version=8;
+  }
+  if(s.version<9){
+    // v8 -> v9 (Phase 31): onboarding flag + settings.
+    s.onboarded=s.onboarded||false;
+    s.settings=s.settings||{audio:true,reducedMotion:false,quality:"auto"};
+    s.version=9;
   }
   return s;
 }
@@ -3872,7 +3879,9 @@ const G={
     if(!this.save.collection)this.save.collection=[];
     saveData(this.save);
     this.wins();
-    this.menu();
+    // Phase 31: show onboarding for first-time players.
+    if(!this.save.onboarded){this.showOnboarding();}
+    else{this.menu();}
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
@@ -3935,6 +3944,77 @@ const G={
   },
   // Phase 13: kept for backward compat (achievements HUD).
   deckUnits(){return this.loadoutUnits();},
+  // Phase 31: First-time onboarding — 6-step interactive tutorial.
+  onboardStep:0,
+  showOnboarding(){
+    this.onboardStep=0;
+    this._onboardNext();
+  },
+  _onboardNext(){
+    const steps=[
+      {text:"Welcome! Your 4-card loadout is your army. Tap DECK to see it.",target:"deck",screen:"menu"},
+      {text:"Tap FIGHT to start a match. You'll draft 3 units per round.",target:"matchmaking",screen:"menu"},
+      {text:"Pick 1 card from each draw. Reroll if you don't like them.",target:"draft",screen:"draft"},
+      {text:"Scout! Tap to reveal what your opponent picked.",target:"scout",screen:"scout"},
+      {text:"FIGHT! Units auto-battle. Watch and adapt for round 2.",target:"battle",screen:"battle"},
+      {text:"Win 3 rounds to take the match. Good luck!",target:"result",screen:"result"},
+    ];
+    if(this.onboardStep>=steps.length){
+      this.save.onboarded=true;
+      saveData(this.save);
+      this._closeCoachmark();
+      this.menu();
+      return;
+    }
+    const step=steps[this.onboardStep];
+    this._showCoachmark(step.text,step.target,()=>{
+      this.onboardStep++;
+      this._onboardNext();
+    });
+  },
+  _showCoachmark(text,targetId,onNext){
+    this._closeCoachmark();
+    const overlay=document.createElement("div");
+    overlay.id="coachmark";
+    overlay.style.cssText="position:fixed;inset:0;z-index:9999;pointer-events:auto;background:rgba(0,0,0,0.7);display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:40px;";
+    const tooltip=document.createElement("div");
+    tooltip.style.cssText="background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:16px 20px;max-width:300px;text-align:center;color:var(--text);font-size:.9rem;box-shadow:0 4px 20px rgba(0,0,0,0.5);";
+    tooltip.innerHTML=`<div style="margin-bottom:12px;">${text}</div>`+
+      `<div style="display:flex;gap:8px;justify-content:center;">`+
+      `<button class="btn" onclick="G._onboardSkip()" style="font-size:.78rem;padding:6px 12px;">Skip</button>`+
+      `<button class="btn primary" onclick="G._onboardAdvance()" style="font-size:.78rem;padding:6px 12px;">Next →</button>`+
+      `</div>`;
+    overlay.appendChild(tooltip);
+    document.body.appendChild(overlay);
+    this._onboardOnNext=onNext;
+    // Highlight target if found.
+    const target=document.getElementById(targetId)||document.querySelector(`[onclick*="${targetId}"]`);
+    if(target){
+      target.style.outline="3px solid var(--accent)";
+      target.style.outlineOffset="2px";
+      this._onboardTarget=target;
+    }
+  },
+  _onboardAdvance(){
+    this._closeCoachmark();
+    if(this._onboardOnNext)this._onboardOnNext();
+  },
+  _onboardSkip(){
+    this.save.onboarded=true;
+    saveData(this.save);
+    this._closeCoachmark();
+    this.menu();
+  },
+  _closeCoachmark(){
+    const cm=document.getElementById("coachmark");
+    if(cm)cm.remove();
+    if(this._onboardTarget){
+      this._onboardTarget.style.outline="";
+      this._onboardTarget.style.outlineOffset="";
+      this._onboardTarget=null;
+    }
+  },
+
   menu(){
     this.screen("menu");
     this.wins();

@@ -140,7 +140,7 @@ Single-file architecture means no `.wav`/`.mp3` files. All SFX are synthesized a
 
 ---
 
-## Phase 31 — First-Time Onboarding ✅ PLANNED
+## Phase 31 — First-Time Onboarding ✅ DONE
 
 **Why:** A new player lands in the menu with no guidance — no "draft 3 cards," no "this is your loadout," no "scout reveals the enemy." Only post-match strategy hints exist (Phase 16). Hybrid-casual games live or die on the first 60 seconds; D1 retention is the metric that decides soft-launch success.
 
