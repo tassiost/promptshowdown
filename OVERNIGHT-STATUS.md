@@ -7,27 +7,31 @@
 - [x] Phase 22: Role-based formation positioning — committed 68df200
 - [x] Phase 21: Bot role-fill strategy — committed 6a5f739
 - [x] Phase 30: Audio system (procedural SFX + generative music) — committed 33b2df8
-- [x] Phase 23: Spell system + LLM spell forge — implemented
+- [x] Phase 23: Spell system + LLM spell forge — committed 9953e80
+- [x] Phase 25: LLM visual modifiers (7 enum fields, ~21M variants) — committed ec4e8a4
+- [x] Phase 31: First-time onboarding (6-step tutorial) — committed aabcd3f
+- [x] Phase 32: Settings & accessibility (audio, graphics, colorblind, reduced motion) — committed 6105875
+- [x] Phase 33: Daily quests + login streaks — committed 8151d91
+- [x] Phase 35: Analytics/telemetry (anonymous, opt-out) — committed a600f9f
+- [x] Phase 36: Ranked leaderboard + Elo (local, server-ready) — committed a600f9f
+- [x] Phase 34: Multiplayer reconnect + AFK (grace period, forfeit button) — committed 2baeac8
+- [x] Phase 37: Replays + share (unit URLs, Web Share API) — committed 2baeac8
+- [x] Phase 38: Real ad SDK (AdSDK abstraction, stub fallback) — committed 2baeac8
+- [x] Phase 39: i18n (en/es/pt, t() helper, language picker) — committed 2baeac8
+- [x] Bug fix: hold_midpoint movement + battle timeout — committed 27d2155
 
 ## Skipped / Blocked
 - Phase 24d (spring-physics secondary motion): deferred.
+- Phase 26 (LLM-authored full recipes): deferred (moonshot).
 
 ## Notes
-- Phase 23: Full spell system implemented:
-  - Spell object with fire(), checkTriggers(), tickZones()
-  - SPELL_TARGET (10 targeting modes), SPELL_SHAPE (5 shapes), SPELL_EFFECT (10 effects)
-  - 5 triggers: battle_start, on_first_contact, delayed_3s, when_ally_hurt, periodic_5s
-  - Persistent zones tick once per second, render as colored circles
-  - Spells drafted at 20% chance per draw from spellbook
-  - Spell cards render with ✨ icon + effect description
-  - _buildArmyFromPicks separates spells from units, returns {units, spells}
-  - Battle.start accepts 4th arg spells={player:[],enemy:[]}
-  - LLM spell forge: generateSpell() with SPELL_FIELD_ORDER/PROMPTS/PARSERS
-  - templateSpellFallback with 10 hand-authored spell templates
-  - semanticValidateSpell for cross-field validation
-  - Forge UI: unit/spell toggle, spell preview, add to spellbook
-  - Save v8: spellbook with starter spells (TNT + Heal Rain)
-  - BattleFX.onSpell + spellZone for visual effects
+- All 18 planned phases from OVERNIGHT.md are complete.
+- Critical bug fix: hold_midpoint movement was broken (only moved y-axis, never x-axis toward target). Fixed to use moveToward when out of range. This was causing battle stalemates since Phase 22 formation positioning.
+- Battle timeout (90s) added as backstop for kite/flee standoffs.
+- Save version: 12 (latest).
+- Server endpoints (analytics, leaderboard) are configurable, default null = no-op.
+- Ad SDK is abstracted, falls back to stub when no real SDK loaded.
+- i18n has en/es/pt translations for key UI strings. Full string extraction is future work.
 
 ## Current
-Starting Phase 25: LLM visual modifiers
+All phases complete. Final smoke test passed: fresh save → onboarding → menu → draft → battle → round end → next round working correctly.
