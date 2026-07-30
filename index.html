@@ -3370,20 +3370,7 @@ const G={
     if(skipBtn)skipBtn.style.display="inline-block";
     // Phase 12: hide model progress on screen entry.
     this._hideModelProgress();
-    // Phase 19b: daily forge cap (5/day).
-    const today=new Date().toDateString();
-    if((this.save.forgeDate||"")!==today){
-      this.save.forgeDate=today;
-      this.save.forgeCount=0;
-      saveData(this.save);
-    }
-    const forgeCount=this.save.forgeCount||0;
-    if(forgeCount>=5){
-      if(preview)preview.innerHTML='<div class="detail" style="color:#f84;">Daily forge limit reached (5/day). Come back tomorrow!</div>';
-      if(btn)btn.style.display="none";
-      return;
-    }
-    if(btn)btn.innerText=`📺 Watch Ad to Generate (${5-forgeCount} left today)`;
+    if(btn)btn.innerText="📺 Watch Ad to Generate";
   },
 
   // Phase 12: ad-gated forge — parallel ad + LLM generation.
@@ -3502,8 +3489,6 @@ const G={
     if(!this.pendingForgeUnit)return;
     this.addForge(this.pendingForgeUnit);
     this.pendingForgeUnit=null;
-    // Phase 19b: increment daily forge count.
-    this.save.forgeCount=(this.save.forgeCount||0)+1;
     saveData(this.save);
     toast("✓ Unit added to collection");
     this.menu();
