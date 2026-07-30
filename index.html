@@ -161,6 +161,7 @@ h2{font-size:.95rem;}
   <div style="background:#222;border-radius:4px;height:8px;margin:4px 0;">
     <div id="forgeModelFill" style="background:#4a7;height:8px;border-radius:4px;width:0%;transition:width .3s;"></div>
   </div>
+  <button class="btn" id="forgeModelCancelBtn" onclick="cancelLLM()" style="margin-top:6px;font-size:.8rem;">✖ Cancel download (use templates)</button>
 </div>
 <div id="forgePreview" style="margin:10px 0;"></div>
 <div id="forgeActions" style="display:none;">
@@ -405,74 +406,113 @@ function setStyle(id,prop,val){const el=$(id);if(el)el.style[prop]=val;}
 let llm=null;
 let llmReady=false;
 let llmLoading=false;
-const MODEL="Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
-const AI_TIMEOUT_MS=60000; // Phase 4: give slow phones 60s, then give up.
+let llmCancelled=false;       // user tapped Cancel during download
+let llmWorker=null;           // ref to the worker so we can terminate on cancel
+let llmLoadPromise=null;      // shared in-flight load promise (awaited by forge + preload)
+let llmCancelResolve=null;    // resolver for the cancel signal (unblocks awaiters)
+const MODEL="Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 // Phase 4: cache of validated AI-generated units so re-forge is instant
 // and we don't re-query the LLM every round.
 let aiCache=[];
 
+// Phase 4: update the forge model-download progress UI.
+// (The legacy aiText/aiFill elements don't exist in the DOM, so we drive
+// the forgeModelProgress bar directly plus a global for pollers.)
+let aiProgress={text:"",pct:0};
 async function updateAI(text,percent){
-  setText("aiText",text);
-  setStyle("aiFill","width",(percent||0)+"%");
+  aiProgress={text:text||"",pct:percent||0};
+  setText("forgeModelText",text);
+  setStyle("forgeModelFill","width",(percent||0)+"%");
 }
 
-// Phase 4: race the engine creation against a timeout.
-function withTimeout(promise,ms,msg){
-  return Promise.race([
-    promise,
-    new Promise((_,reject)=>setTimeout(()=>reject(new Error(msg)),ms))
-  ]);
+// A promise that resolves when the user cancels the in-flight download.
+// generateUnit races llmLoadPromise against this so a cancel always unblocks
+// the forge even if the underlying web-llm engine promise never settles.
+let llmCancelPromise=null;
+function resetCancelSignal(){
+  llmCancelPromise=new Promise(res=>{llmCancelResolve=res;});
+}
+
+// User-initiated cancel of an in-flight model download.
+// Terminates the worker (stops the download) and resets state so the forge
+// falls back to procedural templates. Safe to call when not loading.
+function cancelLLM(){
+  if(!llmLoading)return;
+  llmCancelled=true;
+  llmLoading=false;
+  llmReady=false;
+  if(llmWorker){try{llmWorker.terminate();}catch(e){}llmWorker=null;}
+  llm=null;
+  if(llmCancelResolve){try{llmCancelResolve();}catch(e){}}
+  updateAI("AI cancelled (templates)",0);
+  const aiStatus=$("aiStatus");
+  if(aiStatus)aiStatus.innerText="AI: Cancelled (templates)";
+  console.warn("AI load cancelled by user — using procedural forge.");
 }
 
 async function initLLM(){
-  if(llmReady||llmLoading)return;
+  if(llmReady||llmLoading)return llmLoadPromise;
   // Phase 1: if web-llm never loaded, fail fast and visibly.
   if(!W||!(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine)){
     await updateAI("AI unavailable",0);
-    return;
+    return null;
   }
   // Phase 4: skip preload entirely if no WebGPU — go straight to procedural.
   if(!navigator.gpu){
     await updateAI("AI unavailable (no WebGPU)",0);
-    return;
+    return null;
   }
   llmLoading=true;
+  llmCancelled=false;
+  resetCancelSignal();
   await updateAI("AI loading...",0);
-  try{
-    // Phase 12: prefer Web Worker to keep LLM inference off the main thread.
-    if(W.CreateWebWorkerMLCEngine){
-      const workerCode='import{WebWorkerMLCEngineHandler}from"https://esm.run/@mlc-ai/web-llm";const h=new WebWorkerMLCEngineHandler();self.onmessage=m=>h.onmessage(m);';
-      const blob=new Blob([workerCode],{type:"application/javascript"});
-      const worker=new Worker(URL.createObjectURL(blob),{type:"module"});
-      llm=await withTimeout(
-        W.CreateWebWorkerMLCEngine(worker,MODEL,{initProgressCallback:p=>{
+  // Phase 12: cache the downloaded model so it only downloads once.
+  // web-llm supports "cache" (Cache API, default), "indexeddb", "opfs".
+  // IndexedDB is the most reliable for large binary blobs across browsers,
+  // and works on http(s) origins (NOT file:// — serve over HTTP to cache).
+  const appConfig=W.prebuiltAppConfig
+    ? {...W.prebuiltAppConfig,cacheBackend:"indexeddb"}
+    : {cacheBackend:"indexeddb"};
+  llmLoadPromise=(async()=>{
+    try{
+      // Phase 12: prefer Web Worker to keep LLM inference off the main thread.
+      if(W.CreateWebWorkerMLCEngine){
+        const workerCode='import{WebWorkerMLCEngineHandler}from"https://esm.run/@mlc-ai/web-llm";const h=new WebWorkerMLCEngineHandler();self.onmessage=m=>h.onmessage(m);';
+        const blob=new Blob([workerCode],{type:"application/javascript"});
+        llmWorker=new Worker(URL.createObjectURL(blob),{type:"module"});
+        llm=await W.CreateWebWorkerMLCEngine(llmWorker,MODEL,{appConfig,initProgressCallback:p=>{
+          if(llmCancelled)return;
           let percent=Math.floor(p.progress*100);
           updateAI("Downloading AI "+percent+"%",percent);
-        }}),
-        AI_TIMEOUT_MS,
-        "AI load timed out"
-      );
-    }else{
-      // Fallback: main-thread engine (older web-llm versions).
-      llm=await withTimeout(
-        W.CreateMLCEngine(MODEL,{initProgressCallback:p=>{
+        }});
+      }else{
+        // Fallback: main-thread engine (older web-llm versions).
+        llm=await W.CreateMLCEngine(MODEL,{appConfig,initProgressCallback:p=>{
+          if(llmCancelled)return;
           let percent=Math.floor(p.progress*100);
           updateAI("Downloading AI "+percent+"%",percent);
-        }}),
-        AI_TIMEOUT_MS,
-        "AI load timed out"
-      );
+        }});
+      }
+      if(llmCancelled){llm=null;return null;}
+      llmReady=true;
+      await updateAI("AI READY",100);
+      const aiStatus=$("aiStatus");
+      if(aiStatus)aiStatus.innerText="AI: Ready";
+      return llm;
     }
-    llmReady=true;
-    await updateAI("AI READY",100);
-  }
-  catch(e){
-    // Expected on slow connections (model download > 60s) or no WebGPU.
-    console.warn("AI init failed, using procedural forge: "+(e&&e.message||e));
-    await updateAI("AI fallback",0);
-    llm=null;
-  }
-  llmLoading=false;
+    catch(e){
+      // Cancelled, network error, or no WebGPU.
+      console.warn("AI init failed, using procedural forge: "+(e&&e.message||e));
+      if(!llmCancelled)await updateAI("AI fallback",0);
+      llm=null;
+      return null;
+    }
+    finally{
+      llmLoading=false;
+      llmWorker=null;
+    }
+  })();
+  return llmLoadPromise;
 }
 
 // Phase 12: silently preload the LLM in the background after startup.
@@ -592,8 +632,19 @@ const CONSISTENCY_RULES=[
   // Structure body plan should be immobile.
   {if:a=>a.bodyPlan==="structure"&&a.movement!=="hold",flag:"movement"},
 ];
+// Phase 12: all fields the LLM must provide. Used to detect missing/invalid
+// fields so reaskFields can fill them with targeted per-field LLM calls.
+const ALL_FIELDS=["name","role","targeting","movement","attackCondition","abilityTrigger","moveSpeedMod","hp","dmg","range","speed","ability","bodyPlan","weaponType","primaryColor","accentColor","sizeMod"];
 function semanticValidate(a){
-  return CONSISTENCY_RULES.filter(r=>r.if(a)).map(r=>r.flag);
+  const flagged=CONSISTENCY_RULES.filter(r=>r.if(a)).map(r=>r.flag);
+  // Also flag any missing or invalid (out-of-enum / out-of-range) fields.
+  for(const f of ALL_FIELDS){
+    const v=a[f];
+    if(v===undefined||v===null||v===""){flagged.push(f);continue;}
+    if(ENUM_FIELDS[f]&&!ENUM_FIELDS[f].includes(v)){flagged.push(f);continue;}
+    if(INT_FIELDS[f]){const[min,max]=INT_FIELDS[f];if(typeof v!=="number"||v<min||v>max){flagged.push(f);continue;}}
+  }
+  return [...new Set(flagged)]; // dedupe
 }
 // Auto-fix flagged fields (cheaper than re-asking the LLM).
 function autoFixFields(a,flagged){
@@ -928,6 +979,8 @@ const SCHEMA_VERSION=1;
 function cacheKey(prompt,modelId){return modelId+":"+prompt;}
 // Phase 12: normalize prompt for cache key + fusion matching.
 function normalizePrompt(s){return(s||"").trim().toLowerCase().slice(0,100)||"warrior";}
+// Phase 12: once an open fails/hangs, remember so we stop retrying every forge.
+let idbBroken=false;
 function openDB(){
   return new Promise((res,rej)=>{
     if(!indexedDB){rej(new Error("no IndexedDB"));return;}
@@ -944,12 +997,23 @@ function openDB(){
     };
     r.onsuccess=()=>res(r.result);
     r.onerror=()=>rej(r.error);
+    r.onblocked=()=>rej(new Error("IndexedDB blocked"));
   });
 }
+// Defensive: if the open never settles (e.g. file:// origin, private mode,
+// blocked version change), give up after 2s so the forge never hangs forever.
+function openDBWithGuard(){
+  if(idbBroken)return Promise.reject(new Error("IndexedDB unavailable"));
+  return Promise.race([
+    openDB(),
+    new Promise((_,rej)=>setTimeout(()=>{idbBroken=true;rej(new Error("IndexedDB open hung"));},2000))
+  ]);
+}
 async function cacheGet(key){
+  if(idbBroken)return null;
   try{
-    const db=await openDB();
-    return new Promise((res)=>{
+    const db=await openDBWithGuard();
+    return await new Promise((res)=>{
       const tx=db.transaction(STORE,"readonly").objectStore(STORE).get(key);
       tx.onsuccess=()=>res(tx.result?tx.result.unit:null);
       tx.onerror=()=>res(null);
@@ -957,8 +1021,9 @@ async function cacheGet(key){
   }catch(e){return null;}
 }
 async function cachePut(key,prompt,modelId,unit){
+  if(idbBroken)return;
   try{
-    const db=await openDB();
+    const db=await openDBWithGuard();
     const tx=db.transaction(STORE,"readwrite").objectStore(STORE);
     tx.put({key,prompt,modelId,unit,generatedAt:Date.now()});
   }catch(e){/* best-effort */}
@@ -980,92 +1045,140 @@ const ENUM_FIELDS={
   sizeMod:["small","medium","large"]
 };
 const INT_FIELDS={hp:[10,200],dmg:[5,50],range:[30,250],speed:[30,120],moveSpeedMod:[50,150]};
+// Phase 12: parse a stat value from the LLM's answer. The LLM is free to
+// pick any number in the field's range — we extract it and clamp. Also
+// handles "word (NN)" format in case the model adds a label.
+function parseStat(field,answer){
+  const [min,max]=INT_FIELDS[field];
+  const paren=answer.match(/\((\d+)\)/);
+  const n=paren?parseInt(paren[1]):parseInt(answer);
+  return isNaN(n)?min:Math.max(min,Math.min(max,n));
+}
 const FIELD_PARSERS={
   name:s=>s.trim().slice(0,20),
   ...Object.fromEntries(Object.entries(ENUM_FIELDS).map(([f,vals])=>
     [f,s=>{const v=s.trim().toLowerCase();return vals.includes(v)?v:vals[0];}])),
-  ...Object.fromEntries(Object.entries(INT_FIELDS).map(([f,[min,max]])=>
-    [f,s=>{const n=parseInt(s);return isNaN(n)?min:Math.max(min,Math.min(max,n));}]))
+  // Int fields are parsed by parseStat in askField, not here.
+  ...Object.fromEntries(Object.keys(INT_FIELDS).map(f=>[f,s=>s]))
 };
+// Phase 12: shuffle an array (Fisher-Yates) — used to randomise enum option
+// order in prompts so the 0.5B model doesn't always pick the first option.
+function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+// Phase 12: join enum values in random order for a prompt.
+function opts(vals){return shuffle(vals).join(", ");}
 const FIELD_PROMPTS={
-  name:p=>`Give a short name (max 20 chars) for a unit based on: "${p}". Answer with the name only.`,
-  role:(n,a)=>`A ${n} — is it a frontline, carry, support, counter, or utility? Answer with one word.`,
-  targeting:(n,a)=>`A ${n} is a ${a.role}. Who should it target: closest, lowest_hp, highest_hp, enemy_carry, enemy_support, enemy_backline, enemy_frontline, enemy_cluster, lowest_ally, random? Answer with one word.`,
-  movement:(n,a)=>`A ${n} is a ${a.role}. How should it move: chase, flee, hold, hold_midpoint, kite, patrol? Answer with one word.`,
-  attackCondition:(n,a)=>`A ${n} targets ${a.targeting}. When should it attack: always, only_if_healthy, only_if_target_low, never? Answer with one word.`,
-  abilityTrigger:(n,a)=>`A ${n} has ability ${a.ability}. When should it trigger: on_cooldown, when_ally_hurt, when_surrounded, on_low_hp, on_death, on_first_hit, never? Answer with one word.`,
-  moveSpeedMod:(n,a)=>`A ${n} moves by ${a.movement}. What speed modifier fits, 50 (cautious) to 150 (aggressive)? Answer with a number only.`,
-  hp:(n,a)=>`A ${n} is a ${a.role}. How tough is a typical ${a.role}, on a scale of 10-200? Answer with a number only.`,
-  dmg:(n,a)=>`A ${n} is a ${a.role}. How much damage should it deal per hit, 5 (weak) to 50 (strong)? Answer with a number only.`,
-  range:(n,a)=>`A ${n} moves by ${a.movement}. What attack range fits, 30 (melee) to 250 (sniper)? Answer with a number only.`,
-  speed:(n,a)=>`A ${n} moves by ${a.movement}. How fast should a ${a.movement} unit be, 30 (slow) to 120 (fast)? Answer with a number only.`,
-  ability:(n,a)=>`A ${n} triggers abilities ${a.abilityTrigger}. What ability fits: none, splash, heal, dodge, poison, spawn, lifesteal, explode, heal_burst, shield, rage, slow? Answer with one word.`,
-  bodyPlan:(n,a)=>`A ${n} — what body plan fits: humanoid, quadruped, blob, flying, mechanical, structure? Answer with one word.`,
-  weaponType:(n,a)=>`A ${n} — what weapon fits: none, sword, bow, staff, dagger, shield, hammer, claws, breath? Answer with one word.`,
-  primaryColor:(n,a)=>`A ${n} — what color fits: green, blue, red, purple, yellow, orange, black, white, brown, gray, pink, cyan? Answer with one word.`,
-  accentColor:(n,a)=>`A ${n} — what accent color fits: green, blue, red, purple, yellow, orange, black, white, brown, gray, pink, cyan? Answer with one word.`,
-  sizeMod:(n,a)=>`A ${n} — what size fits: small, medium, large? Answer with one word.`,
+  name:p=>`Give a short name (max 20 chars) for a unit based on the concept: "${p}". Answer with the name only.`,
+  role:()=>`What combat role fits this unit? frontline = durable tank that soaks damage. carry = fragile damage dealer. support = heals or buffs allies. counter = punishes enemy weaknesses. utility = flexible specialist. Answer with one word.`,
+  targeting:()=>`Given this unit's identity, who should it target in battle: ${opts(ENUM_FIELDS.targeting)}? Answer with one word.`,
+  movement:()=>`Given this unit's identity, how should it move: ${opts(ENUM_FIELDS.movement)}? Answer with one word.`,
+  attackCondition:()=>`Given this unit's identity, when should it attack: ${opts(ENUM_FIELDS.attackCondition)}? Answer with one word.`,
+  ability:()=>`Given this unit's identity, what special ability fits: ${opts(ENUM_FIELDS.ability)}? Answer with one word.`,
+  abilityTrigger:()=>`Given this unit's identity and ability, when should the ability trigger: ${opts(ENUM_FIELDS.abilityTrigger)}? Answer with one word.`,
+  moveSpeedMod:(n,a)=>`How aggressive is this unit's speed? ${a.movement==="chase"?"Chase units are bold: 100-150. ":""}${a.movement==="hold"?"Hold units are cautious: 50-90. ":""}${a.movement==="kite"?"Kite units are measured: 70-120. ":""}${a.movement==="flee"?"Fleeing units are skittish: 80-130. ":""}${a.movement==="patrol"?"Patrol units are steady: 60-110. ":""}Pick any number 50-150 that fits. Answer with a number only.`,
+  hp:(n,a)=>`How tough is this unit? ${a.role==="frontline"?"Frontlines are tanks: 120-200 HP. ":""}${a.role==="carry"?"Carries are squishy: 15-60 HP. ":""}${a.role==="support"?"Supports are fragile: 30-90 HP. ":""}${a.role==="counter"?"Counters are moderate: 50-110 HP. ":""}${a.role==="utility"?"Utility units are varied: 40-100 HP. ":""}Pick any number 10-200 that fits the concept. Answer with a number only.`,
+  dmg:(n,a)=>`How much damage per hit? ${a.role==="carry"?"Carries hit hard: 25-50. ":""}${a.role==="frontline"?"Frontlines hit moderately: 10-30. ":""}${a.role==="support"?"Supports hit weakly: 5-15. ":""}${a.role==="counter"?"Counters hit sharply: 15-35. ":""}${a.role==="utility"?"Utility varies: 8-25. ":""}Pick any number 5-50 that fits the concept. Answer with a number only.`,
+  range:(n,a)=>`What attack range fits? ${a.weaponType==="bow"?"Bows are long-range: 150-250. ":""}${a.weaponType==="staff"?"Staves are ranged: 100-200. ":""}${(a.weaponType==="sword"||a.weaponType==="dagger"||a.weaponType==="claws"||a.weaponType==="hammer")?"Melee weapons are short: 30-60. ":""}${a.weaponType==="breath"?"Breath is medium: 60-120. ":""}${a.weaponType==="shield"?"Shields are close: 30-60. ":""}${a.weaponType==="none"?"Unarmed is touch: 30-50. ":""}Pick any number 30-250 that fits. Answer with a number only.`,
+  speed:(n,a)=>`How fast should it be? ${a.movement==="chase"?"Chase units are fast: 80-120. ":""}${a.movement==="hold"?"Hold units are slow: 30-60. ":""}${a.movement==="kite"?"Kite units are nimble: 70-100. ":""}${a.movement==="flee"?"Fleeing units are quick: 80-120. ":""}${a.movement==="patrol"?"Patrol units are moderate: 50-80. ":""}${a.bodyPlan==="flying"?"Flying creatures are naturally fast. ":""}${a.bodyPlan==="structure"?"Structures are immobile. ":""}Pick any number 30-120 that fits. Answer with a number only.`,
+  bodyPlan:()=>`Given this unit's identity, what body plan fits: ${opts(ENUM_FIELDS.bodyPlan)}? Answer with one word.`,
+  weaponType:()=>`Given this unit's identity, what weapon fits: ${opts(ENUM_FIELDS.weaponType)}? Answer with one word.`,
+  primaryColor:()=>`Given this unit's identity, what primary color fits: ${opts(ENUM_FIELDS.primaryColor)}? Answer with one word.`,
+  accentColor:()=>`Given this unit's identity, what accent color fits: ${opts(ENUM_FIELDS.accentColor)}? Answer with one word.`,
+  sizeMod:()=>`Given this unit's identity, what size fits: ${opts(ENUM_FIELDS.sizeMod)}? Answer with one word.`,
 };
+// Phase 12: ask the LLM a single field via a targeted micro-prompt.
+// The accumulating unit JSON is sent as system context so the LLM sees the
+// unit's identity building up and can make coherent choices. Returns the
+// parsed value or null if the call failed / answer was invalid.
+async function askField(field,name,attrs){
+  if(!llmReady)return null;
+  try{
+    // Build the context JSON from fields decided so far (skip undefined/empty).
+    const ctx={};
+    for(const f of FIELD_ORDER){
+      if(attrs[f]!==undefined&&attrs[f]!==null&&attrs[f]!=="")
+        ctx[f]=attrs[f];
+    }
+    const sys=`You are designing a game unit for a top-down auto-battler. So far the unit is:\n${JSON.stringify(ctx)}\nAnswer the next question with a single word or number only.`;
+    const user=FIELD_PROMPTS[field](name,attrs);
+    const reply=await llm.chat.completions.create({
+      messages:[{role:"system",content:sys},{role:"user",content:user}],
+      temperature:0.7,stream:false
+    });
+    const answer=(reply.choices[0].message.content||"").trim();
+    const parsed=INT_FIELDS[field]?parseStat(field,answer):FIELD_PARSERS[field](answer);
+    // Check if the parser returned the default (first enum value) because the
+    // answer wasn't recognised — that counts as a miss so we can retry.
+    if(ENUM_FIELDS[field]&&answer.toLowerCase()!==parsed&&answer.toLowerCase()!==parsed.replace(/_/g," "))
+      return null; // answer wasn't a valid enum value
+    return parsed;
+  }catch(e){
+    return null;
+  }
+}
+
+// Phase 12: order in which fields are asked. Each prompt can reference earlier
+// answers (e.g. targeting depends on role). ability is asked before
+// abilityTrigger to break the circular dependency in the prompt text.
+const FIELD_ORDER=[
+  "name","role","bodyPlan","weaponType","primaryColor","accentColor","sizeMod",
+  "targeting","movement",
+  "ability","abilityTrigger",
+  "attackCondition","hp","dmg","range","speed","moveSpeedMod"
+];
+
 // Re-ask flagged fields via targeted micro-prompts. Falls back to autoFix
 // values if the LLM is unavailable or the call fails.
 async function reaskFields(name,attrs,flagged){
   if(!llmReady)return autoFixFields(attrs,flagged);
   for(const field of flagged){
-    try{
-      const prompt=FIELD_PROMPTS[field](name,attrs);
-      const reply=await llm.chat.completions.create({
-        messages:[{role:"user",content:prompt}],
-        max_tokens:32,temperature:0.7,stream:false
-      });
-      const answer=reply.choices[0].message.content.trim();
-      attrs[field]=FIELD_PARSERS[field](answer);
-    }catch(e){
-      // keep the auto-fixed value
-    }
+    const val=await askField(field,name,attrs);
+    if(val!==null)attrs[field]=val;
   }
   return attrs;
 }
 
-// Phase 12: main generation orchestrator (hybrid JSON-mode + per-field fallback).
+// Phase 12: main generation orchestrator (per-field micro-prompts).
+// Asks the LLM one field at a time with a focused question, building on
+// earlier answers. Retries any field that came back invalid. Falls back to
+// templates if the LLM is unavailable.
 async function generateUnit(rawPrompt,arenaIndex){
   const prompt=normalizePrompt(rawPrompt);
   const key=cacheKey(prompt,MODEL);
   // 1. Cache hit?
   const cached=await cacheGet(key);
   if(cached)return cached;
-  // 2. Try LLM (JSON mode).
-  let attrs=null;
-  if(llmReady){
-    try{
-      const reply=await llm.chat.completions.create({
-        stream:false,
-        messages:[
-          {role:"system",content:"You are a game unit designer for a top-down auto-battler. Output a JSON object with the unit's name, combat behaviour, stats, and appearance. Pick values that fit the concept."},
-          {role:"user",content:`Design a unit based on: "${prompt}". Choose name, role, behaviour (targeting, movement, attackCondition, abilityTrigger, moveSpeedMod), stats (hp, dmg, range, speed), ability, body plan, weapon, colors, and size. All fields required.`}
-        ],
-        max_tokens:300,
-        temperature:0.7,
-        response_format:{type:"json_object",schema:JSON.stringify(UNIT_SCHEMA)}
-      });
-      attrs=JSON.parse(reply.choices[0].message.content);
-    }catch(e){
-      console.warn("LLM JSON mode failed, using template:",e.message);
-    }
+  // 2. If the model is still downloading, wait for it so the forge produces
+  //    a creative unit instead of a template. The user can Cancel via the
+  //    forge progress UI, which resolves the cancel signal and unblocks this.
+  if(llmLoading&&!llmReady&&!llmCancelled&&llmLoadPromise){
+    try{await Promise.race([llmLoadPromise,llmCancelPromise]);}catch(e){/* handled below */}
   }
-  // 3. Template fallback if no LLM or LLM failed.
-  if(!attrs)attrs=templateFallback(prompt);
-  // 4. Semantic validation + per-field fallback (re-ask LLM for bad fields).
+  // 3. No LLM — template fallback.
+  if(!llmReady){
+    const u=attrsToUnit(templateFallback(prompt),arenaIndex);
+    if(u)await cachePut(key,prompt,MODEL,u);
+    return u;
+  }
+  // 4. Per-field generation: ask each field one at a time, building on prior
+  //    answers. Retry up to 2 times on invalid answers. Enum options are
+  //    shuffled per call to counter first-option bias.
+  let attrs={};
+  for(const field of FIELD_ORDER){
+    let val=null;
+    for(let attempt=0;attempt<2&&val===null;attempt++){
+      val=await askField(field,attrs.name||prompt,attrs);
+    }
+    attrs[field]=val!==null?val:FIELD_PARSERS[field](""); // parser default
+  }
+  // 5. Semantic validation + per-field retry for inconsistent fields.
   const flagged=semanticValidate(attrs);
   if(flagged.length>0){
-    // Auto-fix first (provides baseline values + instant fix if no LLM).
     attrs=autoFixFields(attrs,flagged);
-    // Then re-ask the LLM for better values if available.
-    if(llmReady)attrs=await reaskFields(attrs.name,attrs,flagged);
+    attrs=await reaskFields(attrs.name,attrs,flagged);
   }
-  // 5. Build unit from attributes.
+  // 6. Build unit from attributes.
   const u=attrsToUnit(attrs,arenaIndex);
   if(!u){
-    // Validation failed — use template fallback.
     attrs=templateFallback(prompt);
     const u2=attrsToUnit(attrs,arenaIndex);
     if(u2){await cachePut(key,prompt,MODEL,u2);return u2;}
@@ -2609,10 +2722,12 @@ const G={
       const h1=document.querySelector("#menu h1");
       if(h1)h1.style.color=arena.c;
     }
-    // Phase 12: show forge button after Training Yard (arena >= 1 or 3+ wins).
+    // Phase 12: forge button. Normally gated behind Training Yard completion
+    // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
     const forgeBtn=$("forgeMenuBtn");
     if(forgeBtn){
-      const showForge=(this.save.arena||0)>=1||(this.save.matchWins||0)>=3;
+      const TESTING_FORGE=true; // TODO: set false before ship — gate behind Training Yard.
+      const showForge=TESTING_FORGE||(this.save.arena||0)>=1||(this.save.matchWins||0)>=3;
       forgeBtn.style.display=showForge?"inline-block":"none";
     }
     // Phase 12: update AI status badge.
@@ -3269,7 +3384,7 @@ const G={
     const adPromise=watchAd?new Promise(res=>showAdStub(15000,res)):Promise.resolve();
     let genPromise;
     if(canUseLLM){
-      // Phase 12: if LLM is still loading, show model download progress.
+      // Phase 12: if LLM is still loading, show model download progress + Cancel.
       if(llmLoading&&!llmReady){
         this._showModelProgress();
       }
@@ -3279,11 +3394,9 @@ const G={
       genPromise=Promise.resolve(attrsToUnit(templateFallback(prompt),arenaIdx));
     }
     await adPromise;
-    // Phase 19b: if LLM still running, show "Finishing up..." spinner.
+    // Keep model progress + Cancel visible while the LLM finishes downloading.
+    // Only swap to "Finishing up..." once generation is actually near done.
     let unit;
-    const finishingMsg='<div class="detail">Finishing up...</div>';
-    this._hideModelProgress();
-    if(preview&&preview.innerHTML!==finishingMsg)preview.innerHTML=finishingMsg;
     try{unit=await genPromise;}
     catch(e){
       console.warn("Generation failed, using template:",e.message);
@@ -3292,24 +3405,27 @@ const G={
     if(!unit){
       unit=attrsToUnit(templateFallback(prompt),arenaIdx);
     }
+    this._hideModelProgress();
     this.pendingForgeUnit=unit;
     this.showForgePreview(unit);
   },
-  // Phase 12: show model download progress bar while LLM loads.
+  // Phase 12: show model download progress bar + Cancel button while LLM loads.
   _showModelProgress(){
     const prog=$("forgeModelProgress");
     if(prog)prog.style.display="block";
-    // Poll llmLoading state and update progress from aiFill.
+    const cancelBtn=$("forgeModelCancelBtn");
+    if(cancelBtn)cancelBtn.style.display="inline-block";
+    // updateAI() drives forgeModelFill/forgeModelText directly; this poller
+    // just hides the panel once loading ends (ready, failed, or cancelled).
     if(this._modelPoll)clearInterval(this._modelPoll);
     this._modelPoll=setInterval(()=>{
-      const fill=$("forgeModelFill");
-      const text=$("forgeModelText");
-      // Read progress from the global AI progress bar.
-      const aiFill=document.getElementById("aiFill");
-      const pct=aiFill?aiFill.style.width:"0%";
-      if(fill)fill.style.width=pct;
-      if(text&&llmReady)text.innerText="AI model ready!";
-      if(!llmLoading){clearInterval(this._modelPoll);this._modelPoll=null;}
+      if(!llmLoading){
+        clearInterval(this._modelPoll);this._modelPoll=null;
+        // Keep the panel visible briefly if ready so the user sees "AI READY",
+        // but hide the cancel button once there's nothing to cancel.
+        if(cancelBtn)cancelBtn.style.display="none";
+        if(!llmReady)this._hideModelProgress();
+      }
     },200);
   },
   _hideModelProgress(){
@@ -3563,6 +3679,12 @@ window.attrsToUnit=attrsToUnit;
 window.validateUnit=validateUnit;
 window.templateFallback=templateFallback;
 window.clearError=clearError;
+window.cancelLLM=cancelLLM;
+window._getW=()=>W;
+window._getLlm=()=>llm;
+window._getLlmReady=()=>llmReady;
+window._getLlmLoading=()=>llmLoading;
+window._getLlmCancelled=()=>llmCancelled;
 
 // Phase 7: remove the loading splash once init is done.
 function hideSplash(){

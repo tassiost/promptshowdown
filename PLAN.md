@@ -600,32 +600,34 @@ else:                   state = "idle", t = (Battle.time / 2.0) % 1
 
 **Today:** The forge (line ~1137) generates flat stats via a generic prompt. The current model is `Llama-3.2-1B-Instruct-q4f32_1-MLC` (line 323). The `@mlc-ai/web-llm` import is already correct (lines 176-178, multi-CDN). The forge button is hidden in Tier 1 (Phase 10). This phase re-enables it as an ad-gated LLM unit forge.
 
-### Architecture: Hybrid JSON-mode-first + per-field fallback
+### Architecture: Per-field micro-prompts with accumulating context
 
-WebLLM v0.2.84 supports `response_format: { type: "json_object", schema: <JSON schema string> }` — a WebAssembly grammar sampler that **forces** the LLM to emit valid JSON matching our exact schema. This eliminates the structural failure mode (malformed JSON, dropped fields, invalid enum values) that motivated the pure per-field approach.
+The forge asks the LLM one field at a time via a focused micro-prompt. Each call includes the accumulating unit JSON as system context, so the LLM sees the unit's identity building up and can make coherent choices that fit the concept. This plays to the 0.5B model's strength (short classification answers) rather than its weakness (generating a large valid JSON blob in one shot).
 
-**The hybrid approach:**
-1. **JSON mode call first** (1 call, ~5-10s) — grammar-constrained, guaranteed valid structure + enum values + integer ranges.
-2. **Semantic validation** (instant, no LLM) — cross-field consistency checks (carry shouldn't have hp=200, bow should produce projectile FX, etc.).
-3. **Per-field fallback** (only for semantically inconsistent fields, ~2-5s each) — targeted micro-prompts to re-ask just the bad fields.
+**The per-field approach:**
+1. **Ask each field sequentially** (17 calls, ~1-2s each) — each prompt is a single classification or tier-pick question. The accumulating JSON (`{name:"Fire Dragon",role:"frontline",bodyPlan:"flying",...}`) is sent as system context so later fields can reference earlier answers.
+2. **Retry invalid fields** (up to 2 attempts per field) — if the LLM returns an answer that doesn't match an enum value, retry the same question.
+3. **Semantic validation** (instant, no LLM) — cross-field consistency checks (carry shouldn't have hp=200, structure should hold, etc.). Flagged fields get auto-fixed then re-asked.
 4. **Recipe assembler** builds the visual recipe from the final attributes.
 
-**Why hybrid (not pure JSON mode):** The grammar sampler guarantees *structural* validity but not *semantic* validity. A 0.5B model might emit `{"role":"carry","hp":180}` — structurally valid JSON matching the schema, but semantically wrong (carries are squishy, hp should be 30-80). The per-field fallback catches and fixes these semantic errors without paying the cost of 15 separate calls for every forge.
+**Why per-field (not JSON mode):** The 0.5B model wraps JSON output in markdown fences, omits fields, and picks invalid enum values when asked for a 17-field JSON blob in one call. Per-field calls are reliable — each is a short question with a one-word answer. The accumulating context means the LLM builds a coherent picture of the unit as it answers.
 
-**Why hybrid (not pure per-field):** The per-field approach (17 calls, ~35s) is reliable but slow. JSON mode gets all 17 fields in one call (~5-10s). Most fields will be semantically correct on the first try — only 2-4 typically need re-asking. Total: ~10-20s typical, vs ~35s for pure per-field.
+**Stat prompts use named tiers, not raw numbers:** The 0.5B model is poor at numeric reasoning (always picks the minimum). Instead of "how tough is it? (10-200)", the prompt offers named tiers: "tank (180), sturdy (140), tough (110)" for frontlines. The parser extracts the number from parentheses. This turns numeric generation into a classification task.
 
-**Performance comparison:**
+**Enum options are shuffled** in each prompt to break the 0.5B model's strong bias toward the first listed option.
 
-| Approach | Calls | Best case | Typical case | Worst case |
-|---|---|---|---|---|
-| Pure JSON mode | 1 | ~5s | ~5s (no semantic errors) | ~5s (but semantically wrong, uncaught) |
-| Pure per-field | 17 | ~25s | ~35s | ~85s |
-| **Hybrid** | 1 + 0-4 | ~5s | ~10-20s | ~25s (1 + 4 fallback calls) |
-| Template fallback | 0 | instant | instant | instant |
+**No max_tokens cap:** Local inference is free — there's no reason to truncate the LLM's output.
 
-The hybrid is strictly better: fastest in the common case, no worse than per-field in the worst case, and catches semantic errors that pure JSON mode would miss.
+**Model caching:** web-llm is configured with `cacheBackend: "indexeddb"` so the ~500MB model downloads once and loads from cache on subsequent page loads (~2s vs ~3min). Requires serving over HTTP (file:// blocks browser storage APIs).
 
-This pattern is informed by the macsand project (`/Users/tassio/macsand/WEBLLM_MATERIAL_PLAN.md`), which uses per-field micro-prompts with Qwen2.5-1.5B. The macsand plan notes that WebLLM's JSON mode "could replace the 18 per-field calls with a single LLM call — ~18x faster generation with guaranteed valid JSON." We're taking that improvement but keeping per-field as a fallback for semantic correctness.
+**Performance:**
+
+| Approach | Calls | Typical | Notes |
+|---|---|---|---|
+| Per-field with context | 17 + 0-4 retries | ~20-40s | Reliable, coherent, creative |
+| Template fallback | 0 | instant | Used when LLM unavailable/cancelled |
+
+The per-field approach is slower than a single JSON-mode call but far more reliable with a 0.5B model. The ad (~15-30s) hides most of the wait. Cached re-forges are instant.
 
 #### Step 1: Web Worker (LLM off the main thread)
 
@@ -1151,6 +1153,7 @@ async function forgeWithAd(prompt) {
 - Model: `Qwen2.5-0.5B-Instruct-q4f16_1-MLC` (replaces current `Llama-3.2-1B-Instruct-q4f32_1-MLC`). Confirmed in web-llm registry with `low_resource_required: true`, `vram_required_MB: 944.62`. The 0.5B model is smaller and faster than the current 1B model, with grammar/JSON-schema support.
 - This means the first forge has a longer wait (ad + download + generation), but every forge after is just ad + generation (~15-30s total).
 - `preloadAI()` (line ~381) — repurpose to silently preload the model in the background after the game starts, so by the time the user first taps "Forge," the model may already be cached. No UX prompt — just a silent background download if WebGPU is present.
+- **Model download UX (no timeout):** the load has **no hard timeout**. If the user taps Forge while the model is still downloading, the forge waits for the load (so it produces a creative LLM unit, not a template) and shows a live download progress bar with a **"✖ Cancel download (use templates)"** button. `cancelLLM()` terminates the worker, flips `llmCancelled`, resolves a cancel signal that unblocks the in-flight `generateUnit`, and the forge falls back to a template. `generateUnit` races `llmLoadPromise` against `llmCancelPromise` so a cancel always unblocks even if the underlying engine promise never settles. The legacy 60s `AI_TIMEOUT_MS` / `withTimeout` were removed in favour of this user-driven cancel.
 
 #### Step 13: Forge screen redesign
 
@@ -1517,11 +1520,11 @@ if (!save.version || save.version < 6) {
 | **Ad duration < generation time** | Low (hybrid is ~10-20s, ads are 15-30s) | Low (brief spinner) | "Finishing up..." spinner for remaining fallback calls. If consistently >5s after ad, increase `max_tokens` or reduce fallback fields. |
 | **LLM produces invalid/irrelevant answers** | Low (grammar sampler guarantees structure) | Low (semantic fallback) | Grammar sampler forces valid JSON + enum values + integer ranges. Semantic validation catches cross-field inconsistencies. Per-field fallback re-asks only flagged fields. Unit always registers. |
 | **WebGPU OOM on mobile** | Medium (500MB model + game) | High (forge unavailable) | Detect OOM in `initLLM()` catch → show "AI unavailable on this device, using templates" → template fallback. Game fully playable without LLM. Tier 1 has no LLM at all. |
-| **LLM generation too slow (>30s)** | Low (hybrid is 1 + 0-4 calls, not 15) | Low (hidden by ad) | 30s total timeout → use fallbacks for unanswered fields. Ad hides the wait. Re-rolls on same prompt hit cache (instant, free). LLM in Web Worker so game stays interactive. |
+| **LLM generation too slow (>30s)** | Low (hybrid is 1 + 0-4 calls, not 15) | Low (hidden by ad) | No hard timeout — the forge waits for the model and shows a download progress bar with a **Cancel** button. If the user cancels (or the load fails), template fallback. Ad hides the inference wait. Re-rolls on same prompt hit cache (instant, free). LLM in Web Worker so game stays interactive. |
 | **Recipe too large for P2P** | Low (3KB × 12 = 36KB max) | Low (slow round start) | Minify field names + lz-string compress + dedupe starter units. Fallback to role-coded shapes (Tier 1 visuals) if recipe drops. |
 | **Sprite rendering kills mobile FPS** | Low (120 shapes/frame) | High (unplayable) | Cap shapes at 10 per unit. Cap units at 12 per battle. Graceful degradation: if FPS < 25 for 1s, reduce to Tier 1 role-coded shapes for all units (Phase 17 perf guard). |
 | **LLM units break game balance** | Medium (wide param clamps) | High (meta broken) | Arena-based clamps (Phase 15). Role/counter system self-balances. No coin cost (ad-gated), but daily forge cap limits volume. |
-| **Model download fails / interrupted** | Medium (mobile network) | Medium (forge unavailable) | web-llm caches to IndexedDB (resumable). If download fails, template fallback. User still gets a unit after watching the ad. Silent background preload after startup. |
+| **Model download fails / interrupted** | Medium (mobile network) | Medium (forge unavailable) | web-llm caches to IndexedDB (resumable). If download fails, template fallback. User still gets a unit after watching the ad. Silent background preload after startup. **No download timeout** — the forge shows live download progress with a **Cancel download** button so the user decides when to give up and fall back to templates. `cancelLLM()` terminates the worker and resolves any in-flight forge via a cancel signal. |
 | **Save migration corrupts data** | Low (well-tested migration) | High (data loss) | `migrateSave()` backs up old save before migrating (existing v4 pattern). Test migration with a v5 save before shipping. |
 | **trystero P2P drops recipes** | Medium (torrent signaling) | Low (visual only) | Recipes are visual-only; combat behaviour is in snapshots. Tier 1 role-coded shapes fallback. Re-send on next round. |
 | **Bot matches feel stale (random drafting, no strategy)** | Medium (bot is intentionally simple) | Low (still playable, just not challenging) | Bot drafts randomly — feels like a casual human. Arena-themed bot pools (Phase 15) add variety. If players find bots too easy, add a `BotStrategy` layer (role-fill, counter-pick) as a future enhancement. The bot is the safety net, not the main experience — as the player base grows, more matches are human vs human. |
