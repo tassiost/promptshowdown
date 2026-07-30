@@ -2947,14 +2947,33 @@ const Battle={
 
 // Phase 9/15: Bot opponent — fake multiplayer. Random drafting, no strategy.
 // Feels like a casual human opponent, not an AI.
+// Phase 21: BotStrategy — pure functions for strategic bot drafting.
+const BotStrategy={
+  // Returns a sorted pick list for one draw slot, given current picks + pool.
+  pickDraw(currentPicks, pool, scoutedPlayerPicks){
+    const roles=currentPicks.map(p=>p.role);
+    const missing=this.missingRoles(roles);
+    if(missing.includes("frontline"))return this.firstOfRole(pool,"frontline");
+    if(missing.includes("carry"))return this.firstOfRole(pool,"carry");
+    if(scoutedPlayerPicks?.some(p=>p.ability==="ramp") &&
+       !roles.includes("counter"))return this.firstOfRole(pool,"counter");
+    if(missing.length)return this.firstOfRole(pool,missing[0]);
+    return pool[F(R()*pool.length)];
+  },
+  missingRoles(roles){
+    const want=["frontline","carry"];
+    return want.filter(r=>!roles.includes(r));
+  },
+  firstOfRole(pool,role){return pool.find(u=>u.role===role)||pool[0];}
+};
+
 const Bot={
   loadout:[],         // 4 random units from the pool (generated per match)
 
-  // Phase 15: generate a random 4-unit loadout from the arena's bot pool.
-  // botPool is an array of unit names; resolved against G.base + G.save.collection.
+  // Phase 15/21: generate a 4-unit loadout from the arena's bot pool.
+  // Phase 21: biased to guarantee at least 1 frontline + 1 carry.
   generateLoadout(botPool){
     this.loadout=[];
-    // Resolve names to unit objects from base roster or collection.
     const resolve=name=>{
       const base=G.base.find(u=>u.n===name);
       if(base)return cloneUnit(base);
@@ -2964,21 +2983,35 @@ const Bot={
     };
     const pool=botPool.map(resolve).filter(Boolean);
     if(!pool.length)return;
-    // Pick 4 random units (with replacement — duplicates allowed).
-    for(let i=0;i<4;i++){
-      this.loadout.push(cloneUnit(pool[F(R()*pool.length)]));
+    // Phase 21: re-roll until pool has at least 1 frontline + 1 carry.
+    let attempts=0;
+    let picks=[];
+    while(attempts<10){
+      picks=[];
+      for(let i=0;i<4;i++){
+        picks.push(cloneUnit(pool[F(R()*pool.length)]));
+      }
+      const roles=picks.map(u=>u.role);
+      if(roles.includes("frontline")&&roles.includes("carry"))break;
+      attempts++;
     }
+    this.loadout=picks;
   },
 
-  // Draft a round: pick drawCount random cards from the loadout.
+  // Phase 21: strategic draft — role-fill + counter-pick.
   // Returns array of picked units (3-4 units).
-  draftRound(drawCount){
+  draftRound(drawCount,scoutedPlayerPicks){
     const picks=[];
     const pool=[...this.loadout];
     for(let i=0;i<drawCount;i++){
       if(!pool.length)break;
-      const idx=F(R()*pool.length);
-      picks.push(cloneUnit(pool[idx]));
+      const pick=BotStrategy.pickDraw(picks,pool,scoutedPlayerPicks);
+      if(pick){
+        picks.push(cloneUnit(pick));
+        // Remove from pool (no duplicates within a round).
+        const idx=pool.findIndex(u=>u.n===pick.n&&u.role===pick.role);
+        if(idx>=0)pool.splice(idx,1);
+      }
     }
     return picks;
   },
@@ -3556,12 +3589,14 @@ const G={
     this.showScout();
   },
 
-  // Phase 14: generate opponent picks for the scout screen.
+  // Phase 14/21: generate opponent picks for the scout screen.
   generateScoutPicks(){
     const drawCount=Match.comebackEligible()?4:3;
+    // Phase 21: pass player's previous-round picks for counter-picking.
+    const scoutIntel=this.prevPlayerPicks||null;
     // For bot matches, the bot's picks are its round draft.
     // For multiplayer, this is overwritten when opponent_picks arrives.
-    this.opponentPicks=Bot.draftRound(drawCount);
+    this.opponentPicks=Bot.draftRound(drawCount,scoutIntel);
     // Phase 18: host sends opponent_picks to guest.
     if(connected&&role==="host"){
       transmit("opponent_picks",{picks:serializeUnitsForPeer(this.opponentPicks)});
@@ -3596,6 +3631,8 @@ const G={
 
   // Phase 14: proceed from scout to actual battle.
   startBattle(){
+    // Phase 21: store player's picks for bot counter-picking next round.
+    this.prevPlayerPicks=this.selected?[...this.selected]:null;
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
     if(connected&&role==="host"){

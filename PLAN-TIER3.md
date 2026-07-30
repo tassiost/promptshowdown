@@ -87,7 +87,7 @@ Forge is in test mode (`TESTING_FORGE=true`). Start a bot match with Wizard in l
 
 ---
 
-## Phase 21 — Bot Role-Fill Strategy ✅ PLANNED
+## Phase 21 — Bot Role-Fill Strategy ✅ DONE
 
 **Why:** Make the scout screen meaningful. Today `Bot.draftRound` (line 2393) picks randomly — scouting it tells you nothing. A role-fill bot guarantees a frontline + a carry, so the player can scout "they have a tank and a ramp carry → I should pick Assassin" and have that *mean* something.
 
