@@ -334,3 +334,79 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** `buildArmyFromSelected` (used by host to build guest army) called `this.applyUpgrades(cloneUnit(pick))` which uses the **host's** `this.unitLevel(u.n)`. The guest's units were upgraded based on the host's upgrade levels, not the guest's. A guest with level 5 Knight would get the host's level 0 Knight stats if the host hadn't upgraded Knight.
 **Fix:** Guest now sends `upgrades` map (unit name → level) with the `deck` message. `startHostBattle` and `buildArmyFromSelected` accept `guestUpgrades` and use `_applyUpgradeLevel(u, guestUpgrades[name]||0)` instead of `applyUpgrades(u)` for guest units. Refactored `applyUpgrades` to delegate to `_applyUpgradeLevel` for reuse.
+
+---
+
+## Round 5 — 2026-07-31 (abilities, spells, P2P, bot)
+
+### BUG-044 🟢 Ranged lifesteal doesn't heal owner (heals disposable synth attacker)
+**File:** index.html:3634-3636
+**Found:** 2026-07-31
+**Description:** Projectile hits create a synthetic attacker object (`synth={h:1,mh:1,...}`) and call `takeDamage(synth,target)`. When the attacker has `ability:"lifesteal"`, `takeDamage` heals `synth.h` (the disposable object), not the real owner unit. Ranged units with lifesteal never heal.
+**Fix:** Before `takeDamage`, find the real owner unit by `p.owner` id and sync `synth.h=owner.h, synth.mh=owner.mh`. After `takeDamage`, write back `owner.h=synth.h` if healing occurred.
+
+### BUG-045 🟢 Ranged ramp doesn't apply to owner (applies to synth, lost on GC)
+**File:** index.html:3595-3602
+**Found:** 2026-07-31
+**Description:** When a projectile kill triggers ramp, `onUnitDeath` uses `u.lastAttacker` which is the synth object. The ramp bonus (`killer.d*=1.15`) is applied to the synth, which is then garbage collected. The real owner's damage never increases.
+**Fix:** In `onUnitDeath`, if `killer` is not in `this.units` (it's a synth), resolve the real owner via `killer.id` and apply ramp to the real unit instead.
+
+### BUG-046 🟢 Spell shape `anchor.x??anchor.x` no-op (same as BUG-032)
+**File:** index.html:3079, 3084, 3100, 3118
+**Found:** 2026-07-31
+**Description:** `circle_aoe`, `line`, `cone`, and `persistent_zone` spell shapes all used `anchor.x??anchor.x` (no-op). If `anchor.x` is `undefined`, it stays `undefined` instead of falling back to `0`, causing `Math.hypot(u.x-undefined,...)` = `NaN` → no units affected.
+**Fix:** Changed all to `anchor.x??0, anchor.y??0`.
+
+### BUG-047 🟢 Bot gets comeback bonus when it wins (inverted eligibility)
+**File:** index.html:5014, 4939
+**Found:** 2026-07-31
+**Description:** `generateScoutPicks` and `buildBotArmy` used `Match.comebackEligible()` to determine the bot's draw count. `comebackEligible()` returns true when `last.winner==="enemy"` (bot won). So the bot got 4 draws when it won, not when it lost — the opposite of the comeback mechanic's intent.
+**Fix:** Replaced with `botComeback = Match.history.length>0 && last.winner==="player"` (bot lost → bot gets 4 draws).
+
+### BUG-048 🟢 `G.renderScout()` undefined — crashes guest on opponent_picks
+**File:** index.html:2065
+**Found:** 2026-07-31
+**Description:** The `opponent_picks` network handler called `G.renderScout()` but the function is `G.showScout()`. This threw `TypeError: G.renderScout is not a function` whenever the guest received opponent picks after round 1.
+**Fix:** Changed to `G.showScout()`.
+
+### BUG-049 🟢 Guest `round_end` winner/lives not translated (inverted display)
+**File:** index.html:2068-2074
+**Found:** 2026-07-31
+**Description:** The guest's `round_end` handler used the host's winner and lives directly. Host's "player" = host won, but guest's `roundResult` shows "ROUND WON" for `winner==="player"`. Guest saw "ROUND WON" when they lost. Lives were also inverted — guest saw host's lives as their own.
+**Fix:** Translate winner (`"player"→"enemy"`, `"enemy"→"player"`) and swap `livesPlayer`/`livesEnemy` for guest perspective.
+
+### BUG-050 🟢 Guest `match_end` winner not translated (inverted display)
+**File:** index.html:2076-2080
+**Found:** 2026-07-31
+**Description:** Same as BUG-049 but for match end. Guest's `onMatchEnd` received host's winner directly, showing "MATCH WON" when the guest lost.
+**Fix:** Translate winner for guest perspective before calling `G.onMatchEnd()`.
+
+### BUG-051 🟢 Guest starts draft independently of host (race condition)
+**File:** index.html:5186
+**Found:** 2026-07-31
+**Description:** `roundResult` set the "Next Round" button to call `Match.startRound()` for both host and guest. In P2P, the guest calling `Match.startRound()` starts the draft locally without waiting for the host's `round_start` message. The guest's draft would use stale `_hostDrawCount` from the previous round.
+**Fix:** In P2P guest mode, disable the "Next Round" button and show "WAITING FOR HOST..." — the guest's draft starts when the host sends `round_start`.
+
+### BUG-052 🟢 Guest role tracking uses wrong team (tracks host's roles)
+**File:** index.html:5157
+**Found:** 2026-07-31
+**Description:** `onBattleEnd` tracked surviving units from `team==="player"` for the Role Master achievement. In P2P guest mode, the guest's units are `team==="enemy"` in snapshots. The guest would track the host's surviving roles, not their own.
+**Fix:** Use `teamForRole = connected&&role==="guest" ? "enemy" : "player"` when filtering survivors.
+
+### BUG-053 🟢 Spell deduplication doesn't work for spells in draft
+**File:** index.html:4791, 4914
+**Found:** 2026-07-31
+**Description:** `drawOne` tracked used names via `st.picks.map(u=>u.n)`. Spells have `name` (not `n`), so `u.n` is `undefined` for spells. `usedNames` contained `undefined`, and `rollOne` never checked spell names against `usedNames`. The same spell could be offered multiple times in the same draw.
+**Fix:** `drawOne` now uses `u._isSpell?u.name:u.n` for both initial set and adding. `rollOne` filters `availableSpells` by `usedNames.has(s.name)`.
+
+### BUG-054 🟢 Settings migration uses `audio` instead of `audioEnabled`
+**File:** index.html:580
+**Found:** 2026-07-31
+**Description:** Migration set `s.settings={audio:true,...}` but `applyAudioSettings` checks `s.audioEnabled`. The `audio` field was never read, so the default audio-enabled state relied on `undefined!==false` being `true` (works but inconsistent).
+**Fix:** Changed migration to `audioEnabled:true`.
+
+### BUG-055 🟢 LLM spell semantic validation doesn't auto-fix invalid enums
+**File:** index.html:1873-1877
+**Found:** 2026-07-31
+**Description:** `semanticValidateSpell` flagged invalid `trigger`, `effect`, `shape`, and `fxType` values, but the auto-fix only handled `target` and `duration`. Invalid enum values would silently produce spells that do nothing (`SPELL_SHAPE[undefined]?.()` returns `[]`).
+**Fix:** Added auto-fix for invalid `trigger` (→`"battle_start"`), `effect` (→`"damage"`), `shape` (→`"circle_aoe"`), and `fxType` (→`"explosion"`).

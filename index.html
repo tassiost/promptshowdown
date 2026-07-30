@@ -577,7 +577,7 @@ function migrateSave(s){
   if(s.version<9){
     // v8 -> v9 (Phase 31): onboarding flag + settings.
     s.onboarded=s.onboarded||false;
-    s.settings=s.settings||{audio:true,reducedMotion:false,quality:"auto"};
+    s.settings=s.settings||{audioEnabled:true,reducedMotion:false,quality:"auto"};
     s.version=9;
   }
   if(s.version<10){
@@ -1875,6 +1875,11 @@ async function generateSpell(rawPrompt,arenaIndex){
     // Auto-fix: set ally target for ally effects, duration=3 for DoT.
     if(flagged.includes("target")&&SPELL_ALLY_EFFECTS.includes(attrs.effect))attrs.target="ally_cluster";
     if(flagged.includes("duration")&&(attrs.effect==="damage_over_time"||attrs.shape==="persistent_zone"))attrs.duration=3;
+    // Auto-fix invalid enum values to defaults.
+    if(flagged.includes("trigger"))attrs.trigger="battle_start";
+    if(flagged.includes("effect"))attrs.effect="damage";
+    if(flagged.includes("shape"))attrs.shape="circle_aoe";
+    if(flagged.includes("fxType"))attrs.fxType="explosion";
   }
   const spell={...attrs,_isSpell:true};
   await cachePut(key,prompt,MODEL,spell);
@@ -2062,21 +2067,26 @@ function networkReceive(data){
     if(data.t==="opponent_picks"){
       if(role==="guest"){
         G.opponentPicks=deserializeUnitsFromPeer(data.d.picks);
-        G.renderScout();
+        G.showScout();
       }
     }
     if(data.t==="round_end"){
       if(role==="guest"){
         const d=data.d;
-        Match.livesPlayer=d.livesPlayer;
-        Match.livesEnemy=d.livesEnemy;
-        G.roundResult(d.winner,d.livesPlayer,d.livesEnemy);
+        // Swap lives: host's player lives = guest's enemy lives.
+        Match.livesPlayer=d.livesEnemy;
+        Match.livesEnemy=d.livesPlayer;
+        // Translate host perspective to guest perspective.
+        const w=d.winner==="player"?"enemy":d.winner==="enemy"?"player":"draw";
+        G.roundResult(w,d.livesEnemy,d.livesPlayer);
       }
     }
     if(data.t==="match_end"){
       if(role==="guest"){
         Match.active=false;
-        G.onMatchEnd(data.d.winner);
+        // Translate host perspective to guest perspective.
+        const w=data.d.winner==="player"?"enemy":data.d.winner==="enemy"?"player":"draw";
+        G.onMatchEnd(w);
       }
     }
     if(data.t==="round_deck"){
@@ -3076,12 +3086,12 @@ const SPELL_SHAPE={
   point(anchor){return anchor?[anchor]:[];},
   circle_aoe(anchor,spec,b){
     if(!anchor)return[];
-    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    const ax=anchor.x??0,ay=anchor.y??0;
     return b.units.filter(u=>u.h>0&&Math.hypot(u.x-ax,u.y-ay)<(spec.radius||60));
   },
   line(anchor,spec,b,team){
     if(!anchor)return[];
-    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    const ax=anchor.x??0,ay=anchor.y??0;
     // Line from caster side to target.
     const sx=team==="player"?40:360;
     const sy=ay;
@@ -3097,7 +3107,7 @@ const SPELL_SHAPE={
   },
   cone(anchor,spec,b,team){
     if(!anchor)return[];
-    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    const ax=anchor.x??0,ay=anchor.y??0;
     const sx=team==="player"?40:360;
     const dirX=ax-sx,dirY=ay-sy;
     const dirLen=Math.hypot(dirX,dirY)||1;
@@ -3115,7 +3125,7 @@ const SPELL_SHAPE={
     // Register a zone — returns [] (effect applied via zone ticking).
     if(!anchor)return[];
     b.zones.push({
-      x:anchor.x??anchor.x,y:anchor.y??anchor.y,
+      x:anchor.x??0,y:anchor.y??0,
       radius:spec.radius||60,duration:spec.duration||3,
       maxDuration:spec.duration||3,spec,team,fired:0
     });
@@ -3592,7 +3602,12 @@ const Battle={
       this.triggerAbility(u,allies,enemies);
     }
     // Phase 20: ramp — attacker gains +15% dmg on kill (cap 3× base).
-    const killer=u.lastAttacker;
+    let killer=u.lastAttacker;
+    // If killer is a projectile synth (not in this.units), resolve real owner.
+    if(killer&&killer.id&&!this.units.includes(killer)){
+      const realKiller=this.units.find(u2=>u2.id===killer.id&&u2.h>0);
+      if(realKiller)killer=realKiller;
+    }
     if(killer&&killer.ability==="ramp"&&killer.h>0&&killer.baseD){
       const cap=killer.baseD*3;
       if(killer.d<cap){
@@ -3633,7 +3648,14 @@ const Battle={
             // Synthetic attacker carrying projectile properties.
             const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
               c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD};
+            // For lifesteal on ranged units, heal the real owner instead of synth.
+            const owner=this.units.find(u=>u.id===p.owner&&u.h>0);
+            if(owner){synth.h=owner.h;synth.mh=owner.mh;synth.d=owner.d;synth.baseD=owner.baseD;}
             this.takeDamage(synth,f,foes);
+            if(owner){
+              if(synth.h>owner.h)owner.h=synth.h; // lifesteal
+              if(synth.d>owner.d)owner.d=synth.d; // ramp
+            }
             hit=true;break;
           }
         }
@@ -4776,12 +4798,12 @@ const G={
     const st=this.roundDraftState;
     if(!st)return;
     // Generate 3 cards for this draw (no dupes within this draw).
-    const usedNames=new Set(st.picks.map(u=>u.n));
+    const usedNames=new Set(st.picks.map(u=>u._isSpell?u.name:u.n));
     const offering=[];
     for(let i=0;i<3;i++){
       const u=this.rollOne(usedNames);
       if(!u)continue;
-      usedNames.add(u.n);
+      usedNames.add(u._isSpell?u.name:u.n);
       offering.push(u);
     }
     this.currentOffering=offering;
@@ -4899,8 +4921,9 @@ const G={
   rollOne(usedNames){
     // Phase 23: 20% chance to roll a spell from spellbook (if any).
     const spellbook=this.save.spellbook||[];
-    if(spellbook.length&&R()<0.2){
-      const spell=spellbook[F(R()*spellbook.length)];
+    const availableSpells=spellbook.filter(s=>!usedNames.has(s.name));
+    if(availableSpells.length&&R()<0.2){
+      const spell=availableSpells[F(R()*availableSpells.length)];
       return {...spell,_isSpell:true};
     }
     const pool=this.loadoutUnits();
@@ -4924,7 +4947,8 @@ const G={
 
   // Phase 9/14: build a bot army from opponent picks (3 copies each).
   buildBotArmy(){
-    const botPicks=this.opponentPicks||Bot.draftRound(Match.comebackEligible()?4:3);
+    const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
+    const botPicks=this.opponentPicks||Bot.draftRound(botComeback?4:3);
     const result=this._buildArmyFromPicks(botPicks,false,false);
     this.enemySpells=result.spells;
     return result.units;
@@ -4999,7 +5023,9 @@ const G={
 
   // Phase 14/21: generate opponent picks for the scout screen.
   generateScoutPicks(){
-    const drawCount=Match.comebackEligible()?4:3;
+    // Bot gets comeback when it lost (player won last round).
+    const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
+    const drawCount=botComeback?4:3;
     // Phase 21: pass player's previous-round picks for counter-picking.
     const scoutIntel=this.prevPlayerPicks||null;
     // For bot matches, the bot's picks are its round draft.
@@ -5133,7 +5159,9 @@ const G={
     }
     // Phase 19a: track last surviving player unit's role for Role Master.
     if(winner==="player"){
-      const survivors=Battle.units.filter(u=>u.team==="player"&&u.h>0);
+      // In P2P guest mode, the guest's units are team "enemy" in snapshots.
+      const teamForRole=connected&&role==="guest"?"enemy":"player";
+      const survivors=Battle.units.filter(u=>u.team===teamForRole&&u.h>0);
       if(survivors.length>0){
         const lastRole=survivors[0].role;
         if(!this.save.roleWins)this.save.roleWins={};
@@ -5166,8 +5194,15 @@ const G={
     const nr=$("nextRound");
     if(nr){
       nr.style.display="block";
-      nr.innerText="NEXT ROUND";
-      nr.onclick=()=>{Match.startRound();};
+      if(connected&&role==="guest"){
+        nr.innerText="WAITING FOR HOST...";
+        nr.disabled=true;
+        nr.onclick=null;
+      }else{
+        nr.innerText="NEXT ROUND";
+        nr.disabled=false;
+        nr.onclick=()=>{Match.startRound();};
+      }
     }
     // 5 XP consolation for losing a round (softens comebacks).
     if(!win){
