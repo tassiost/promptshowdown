@@ -1635,6 +1635,10 @@ function parseStat(field,answer){
   const n=paren?parseInt(paren[1]):parseInt(answer);
   return isNaN(n)?min:Math.max(min,Math.min(max,n));
 }
+function parseEnum(answer,values,defaultValue){
+  const v=(answer||"").trim().toLowerCase();
+  return values.includes(v)?v:defaultValue;
+}
 const FIELD_PARSERS={
   name:s=>s.trim().slice(0,20),
   ...Object.fromEntries(Object.entries(ENUM_FIELDS).map(([f,vals])=>
@@ -1925,10 +1929,16 @@ function setupNetwork(id){
     room.onPeerLeave=()=>{
       connected=false;
       setText("connection","Status: disconnected");
-      // Phase 18: mid-match disconnect — offer "Continue vs Bot".
+      // Phase 18: mid-match disconnect — offer "Continue vs Bot" (host) or return to menu (guest).
       if(Match.active&&role==="host"){
         const lastLoadout=Match.opponentPicks?.map(u=>u.n)||[];
         showDisconnectPrompt(lastLoadout);
+      }else if(Match.active&&role==="guest"){
+        Match.active=false;
+        Battle.stop();
+        G.stopSnapshots();
+        toast("Host disconnected.");
+        G.onMatchEnd("enemy");
       }
     };
     return true;
@@ -1999,11 +2009,15 @@ function networkReceive(data){
     }
     if(data.t==="request_deck"){
       // Host asked for our deck; send our currently selected units.
-      if(role==="guest")transmit("deck",{selected:G.selected});
+      if(connected&&role==="guest"){
+        const upgrades={};
+        for(const p of G.selected||[]){if(!p._isSpell)upgrades[p.n]=G.unitLevel(p.n);}
+        transmit("deck",{selected:G.selected,upgrades});
+      }
     }
     if(data.t==="deck"){
       // Host receives the guest's deck and starts the authoritative battle.
-      if(role==="host")G.startHostBattle(data.d.selected);
+      if(role==="host")G.startHostBattle(data.d.selected,data.d.upgrades);
     }
     if(data.t==="snap"){
       // Guest renders the host's authoritative snapshot.
@@ -2019,8 +2033,13 @@ function networkReceive(data){
       }
     }
     if(data.t==="forge"){
-      let u=unit(data.d);
-      if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);saveData(G.save);G.wins();}
+      if(data.d._isSpell){
+        if(!G.save.spellbook)G.save.spellbook=[];
+        if(!G.save.spellbook.some(s=>s.name===data.d.name)){G.save.spellbook.push(data.d);saveData(G.save);G.wins();}
+      }else{
+        let u=unit(data.d);
+        if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);saveData(G.save);G.wins();}
+      }
     }
     // Phase 18: extended protocol for match/round management.
     if(data.t==="match_start"){
@@ -2033,7 +2052,8 @@ function networkReceive(data){
     if(data.t==="round_start"){
       if(role==="guest"){
         const d=data.d;
-        G.roundDraftState={drawIndex:0,picks:[],drawCount:d.drawIndex||3};
+        // Store host-sent draw count before startRoundDraft overwrites roundDraftState.
+        G._hostDrawCount=d.drawIndex||3;
         // Store opponent picks (serialized) for scout screen.
         if(d.opponentPicks)G.opponentPicks=deserializeUnitsFromPeer(d.opponentPicks);
         G.startRoundDraft();
@@ -2545,7 +2565,7 @@ const SpriteRenderer={
       eyeColor=u.recipe.eyeColor;
       eyeGlow=u.recipe.eyeStyle==="glowing"||u.recipe.eyeStyle==="visorglow"?6:0;
     }else{
-      eyeColor=fxType==="shadow"||fxType==="arcane"||u.bodyPlan==="undead"?"#f4f":u.bodyPlan==="undead"?"#4f4":"#000";
+      eyeColor=u.bodyPlan==="undead"?"#4f4":fxType==="shadow"||fxType==="arcane"?"#f4f":"#000";
       eyeGlow=fxType==="shadow"||fxType==="arcane"||u.bodyPlan==="undead"?4:0;
     }
     // Blink: every 3-5s, 100ms scale-Y to 0.1.
@@ -2704,7 +2724,7 @@ const GameAudio={
   startMusic(){
     if(!this.ctx||!this.enabled)return;
     if(this.musicInterval)return;
-    const root=[261.63,329.63,392,440][this.save?.arena||0]||261.63;
+    const root=[261.63,329.63,392,440][G.save?.arena||0]||261.63;
     // Bass drone.
     const bass=this.ctx.createOscillator();bass.type="sine";bass.frequency.value=root/2;
     const bg=this.ctx.createGain();bg.gain.value=0.08;
@@ -3289,6 +3309,7 @@ const Battle={
     this.roundFlash=null;  // Phase 17: reset round flash
     this.recentCrits=[];   // Phase 17: clear crit tracking
     this._prevSnapshot=null; // Phase 17: clear snapshot diff state
+    this._processedCrits=null; // Phase 17: clear processed crit tracking
     this.deathLog=[];      // Phase 16: clear death order log
     // Phase 23: init spells + zones.
     this.spells=[];
@@ -3842,9 +3863,18 @@ const Battle={
     }
     // Phase 17: crit FX from recentCrits in snapshot.
     if(s.recentCrits){
+      if(!this._processedCrits)this._processedCrits=new Set();
       for(const rc of s.recentCrits){
+        const key=rc.id+":"+rc.t;
+        if(this._processedCrits.has(key))continue;
+        this._processedCrits.add(key);
         const u=this.units.find(x=>x.id===rc.id);
         if(u)BattleFX.onCrit(u);
+      }
+      // Prune old processed crits (keep last 100 entries).
+      if(this._processedCrits.size>100){
+        const arr=[...this._processedCrits];
+        this._processedCrits=new Set(arr.slice(-50));
       }
     }
     // Phase 17: round-end flash from winner transition.
@@ -4250,6 +4280,10 @@ const G={
   // Capped at level 10 (200% bonus) to prevent runaway stats.
   applyUpgrades(u){
     const lvl=Math.min(this.unitLevel(u.n),10);
+    return this._applyUpgradeLevel(u,lvl);
+  },
+  _applyUpgradeLevel(u,lvl){
+    lvl=Math.min(lvl,10);
     if(lvl>0){
       u.h=F(u.h*(1+0.1*lvl));
       u.d=F(u.d*(1+0.1*lvl));
@@ -4451,17 +4485,28 @@ const G={
       this.screen("forge");
       const preview=$("forgePreview");
       if(preview){
-        preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${u.primaryColor||'#4a7'}">${u.n}</div><div class="detail">${u.h} HP · ${u.d} DMG · ${u.r} range<br>${u.role||''} · ${u.ability||'none'}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
+        if(u._isSpell){
+          preview.innerHTML=`<div class="card" style="border-color:#fa4;max-width:280px;margin:0 auto;"><div class="title" style="color:#fa4">✨ ${u.name}</div><div class="detail">${(u.effect||'').replace(/_/g,' ')}<br><span style="color:var(--accent2)">${(u.trigger||'').replace(/_/g,' ')}</span></div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Spellbook</button>`;
+        }else{
+          preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${u.primaryColor||'#4a7'}">${u.n}</div><div class="detail">${u.h} HP · ${u.d} DMG · ${u.r} range<br>${u.role||''} · ${u.ability||'none'}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
+        }
       }
       this._pendingImport=u;
     }catch(e){toast("Invalid share link");}
   },
   _importSharedUnit(){
     if(!this._pendingImport)return;
-    const sanitized=unit(this._pendingImport);
-    this.addForge(sanitized);
-    saveData(this.save);
-    toast("✓ Unit added from share link!");
+    if(this._pendingImport._isSpell){
+      if(!this.save.spellbook)this.save.spellbook=[];
+      this.save.spellbook.push(this._pendingImport);
+      saveData(this.save);
+      toast("✓ Spell added from share link!");
+    }else{
+      const sanitized=unit(this._pendingImport);
+      this.addForge(sanitized);
+      saveData(this.save);
+      toast("✓ Unit added from share link!");
+    }
     this._pendingImport=null;
     this.menu();
   },
@@ -4703,7 +4748,8 @@ const G={
     // Rerolls are per-match: only reset on round 1.
     if(Match.round===1)this.rerolls=3;
     // Determine draw count: 4th-draw comeback if player lost last round.
-    const drawCount=Match.comebackEligible()?4:3;
+    // Guest uses host-sent draw count (comeback is from host's perspective).
+    const drawCount=(connected&&role==="guest")?(this._hostDrawCount||3):(Match.comebackEligible()?4:3);
     this.roundDraftState={drawIndex:0,picks:[],drawCount};
     this.selected=[];
     this.screen("draft");
@@ -4940,7 +4986,9 @@ const G={
     if(connected&&role==="guest"){
       this.generateScoutPicks();
       this.showScout();
-      transmit("deck",{selected:this.selected});
+      const upgrades={};
+      for(const p of this.selected||[]){if(!p._isSpell)upgrades[p.n]=this.unitLevel(p.n);}
+      transmit("deck",{selected:this.selected,upgrades});
       return;
     }
     // Phase 9/14: bot match — generate bot picks for scout, then show scout.
@@ -5023,8 +5071,8 @@ const G={
   },
 
   // Phase 5: host assembles the full battle once the guest's deck arrives.
-  startHostBattle(guestSelected){
-    const guestArmy=this.buildArmyFromSelected(guestSelected);
+  startHostBattle(guestSelected,guestUpgrades){
+    const guestArmy=this.buildArmyFromSelected(guestSelected,guestUpgrades);
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
     Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
@@ -5032,7 +5080,7 @@ const G={
     this.startSnapshots();
   },
 
-  buildArmyFromSelected(selected){
+  buildArmyFromSelected(selected,guestUpgrades){
     const out=[];
     const spells=[];
     for(const pick of selected){
@@ -5040,7 +5088,7 @@ const G={
       if(pick._isSpell){spells.push(pick);continue;} // Phase 23
       const [yMin,yMax]=this._formationY(pick.role,false);
       for(let i=0;i<3;i++){
-        const u=this.applyUpgrades(cloneUnit(pick));
+        const u=guestUpgrades?this._applyUpgradeLevel(cloneUnit(pick),guestUpgrades[pick.n]||0):this.applyUpgrades(cloneUnit(pick));
         const xSpread=Q(40,160);
         out.push({...u,x:400-xSpread,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
@@ -5458,7 +5506,8 @@ const G={
       `<div class="detail">${effectDesc} · ${targetDesc}<br>${triggerDesc} · ${spell.fxType}<br>Magnitude: ${spell.magnitude} · Radius: ${spell.radius} · Duration: ${spell.duration}s</div>`+
       `</div>`+
       `<button class="btn primary" onclick="G.addSpellToBook()" style="margin-top:10px;">➕ Add to Spellbook</button>`;
-    if(btn)$("forgeGenBtn").style.display="inline-block";
+    const genBtn=$("forgeGenBtn");
+    if(genBtn)genBtn.style.display="inline-block";
   },
   // Phase 23: add forged spell to spellbook.
   addSpellToBook(){
@@ -5654,6 +5703,7 @@ const G={
   // Phase 13 (Open Q8): takes the higher of each stat (hp, dmg, range, speed),
   // keeps the first unit's behaviour fields + recipe (no averaging).
   fuseUnit(name){
+    if(this.unitLevel(name)>=10){toast("Already at max level");return;}
     const coll=this.save.collection||[];
     const matches=coll.filter(u=>u.n===name);
     if(matches.length<2){toast("Need 2 of the same unit to fuse");return;}
@@ -5692,14 +5742,15 @@ const G={
       if(seen[u.n])continue;
       seen[u.n]=true;
       const lvl=this.unitLevel(u.n);
+      const maxed=lvl>=10;
       const cost=30+lvl*20;
-      const canAfford=this.save.coins>=cost;
+      const canAfford=this.save.coins>=cost&&!maxed;
       const row=document.createElement("div");
       row.className="upRow";
       row.innerHTML=
         `<div><div class="upName" style="color:${u.c}">${u.n} <span class="lvlBadge">Lv${lvl}</span></div>`+
-        `<div class="upStats">${u.h} HP · ${u.d} DMG → ${F(u.h*(1+0.1*(lvl+1)))} HP · ${F(u.d*(1+0.1*(lvl+1)))} DMG</div></div>`+
-        `<button class="btn ${canAfford?"primary":""}" ${canAfford?"":"disabled"}>${cost}💰</button>`;
+        `<div class="upStats">${maxed?"MAX LEVEL":`${u.h} HP · ${u.d} DMG → ${F(u.h*(1+0.1*(lvl+1)))} HP · ${F(u.d*(1+0.1*(lvl+1)))} DMG`}</div></div>`+
+        `<button class="btn ${canAfford?"primary":""}" ${canAfford?"":"disabled"}>${maxed?"MAX":cost+"💰"}</button>`;
       const btn=row.querySelector("button");
       if(btn)btn.onclick=()=>this.upgradeUnit(u.n,cost);
       area.appendChild(row);
@@ -5708,6 +5759,7 @@ const G={
 
   // Phase 6: spend coins to raise a unit's upgrade level.
   upgradeUnit(name,cost){
+    if(this.unitLevel(name)>=10){toast("Already at max level");return;}
     if(this.save.coins<cost){toast("Not enough coins");return;}
     this.save.coins-=cost;
     this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;

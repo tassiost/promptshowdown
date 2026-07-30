@@ -276,3 +276,61 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-30
 **Description:** The timeout path in `checkEnd` didn't call `BattleFX.shake(4)` (unlike normal end) and silently swallowed errors in `onEnd` callback with `catch(e){}`.
 **Fix:** Added `BattleFX.shake(4)` and `showError()` in the catch block.
+
+---
+
+## Round 4 — 2026-07-31 (deep bug hunt continued)
+
+### BUG-035 🟢 Guest disconnect leaves guest hanging (no handler for host leaving)
+**File:** index.html:1925-1933
+**Found:** 2026-07-31
+**Description:** `onPeerLeave` only handled host-side disconnect (showing "Continue vs Bot" prompt). When the host disconnected, the guest's `onPeerLeave` fired but the `if(Match.active&&role==="host")` check meant the guest got no prompt or cleanup. Guest was left on a frozen battle screen indefinitely.
+**Fix:** Added `else if(Match.active&&role==="guest")` branch that stops battle, stops snapshots, shows toast, and calls `G.onMatchEnd("enemy")`.
+
+### BUG-036 🟢 `parseEnum` function undefined (crashes LLM spell forge)
+**File:** index.html:1804-1808
+**Found:** 2026-07-31
+**Description:** `SPELL_FIELD_PARSERS` used `parseEnum(a,values,defaultValue)` but `parseEnum` was never defined. When the LLM was available and a spell was forged, the parser would throw a `ReferenceError`, crashing the spell forge.
+**Fix:** Added `parseEnum` function next to `parseStat` that trims/lowercases the answer and checks membership in the enum values array.
+
+### BUG-037 🟢 Upgrade screen allows upgrading past level 10 (wastes coins)
+**File:** index.html:5710-5720
+**Found:** 2026-07-31
+**Description:** `applyUpgrades` caps at level 10, but the upgrade screen didn't check the cap. Players could spend coins upgrading to level 11+ with no effect. `upgradeUnit` also lacked a cap check.
+**Fix:** Added `maxed=lvl>=10` check in upgrade screen rendering (disables button, shows "MAX"). Added `if(this.unitLevel(name)>=10)` guard in `upgradeUnit`.
+
+### BUG-038 🟢 `fuseUnit` allows fusing past level 10 (wastes units)
+**File:** index.html:5695
+**Found:** 2026-07-31
+**Description:** Same as BUG-037 but for fusion. `fuseUnit` didn't check the level cap, so players could fuse units past level 10 with no stat benefit, wasting a duplicate unit.
+**Fix:** Added `if(this.unitLevel(name)>=10)` guard at the start of `fuseUnit`.
+
+### BUG-039 🟢 `showSpellForgePreview` references undefined `btn` (ReferenceError)
+**File:** index.html:5499
+**Found:** 2026-07-31
+**Description:** `showSpellForgePreview` used `if(btn)$("forgeGenBtn").style.display="inline-block"` but `btn` was a local variable in `_doForge`, not in scope here. This threw a `ReferenceError` every time a spell forge preview was shown, preventing the "Generate" button from reappearing.
+**Fix:** Replaced with `const genBtn=$("forgeGenBtn"); if(genBtn)genBtn.style.display="inline-block"`.
+
+### BUG-040 🟢 P2P `forge` message converts spells to broken units
+**File:** index.html:2031-2034
+**Found:** 2026-07-31
+**Description:** The `forge` network message handler called `unit(data.d)` on all incoming data. If a spell (with `_isSpell:true`) was shared via P2P forge, `unit()` stripped `_isSpell` and created a broken unit with default stats. The spell was lost.
+**Fix:** Added `if(data.d._isSpell)` branch that adds the spell to `G.save.spellbook` instead of calling `unit()`.
+
+### BUG-041 🟢 `_importSharedUnit` converts spells to broken units
+**File:** index.html:4485-4493
+**Found:** 2026-07-31
+**Description:** Same class as BUG-040 but for URL import. `_importSharedUnit` called `unit(this._pendingImport)` unconditionally, stripping `_isSpell` from spells. Also, the preview showed unit stats (HP, DMG) for spells which don't have those fields.
+**Fix:** Added `if(this._pendingImport._isSpell)` branch that adds to spellbook directly. Also updated `importUnitFromURL` preview to show spell info (effect, trigger) instead of unit stats.
+
+### BUG-042 🟢 Guest draft draw count ignores host's comeback eligibility
+**File:** index.html:2048-2055, 4727-4733
+**Found:** 2026-07-31
+**Description:** The host sends `drawIndex` (draw count: 3 or 4 for comeback) in the `round_start` message. The guest's `round_start` handler set `G.roundDraftState.drawCount` from this value, but `startRoundDraft()` immediately overwrote `roundDraftState` with a locally-computed `Match.comebackEligible()?4:3`. From the guest's perspective, comeback eligibility is inverted (guest lost = host won), so the guest got the wrong draw count.
+**Fix:** Store host-sent draw count in `G._hostDrawCount` before calling `startRoundDraft()`. In `startRoundDraft()`, guests use `G._hostDrawCount` instead of locally-computed `comebackEligible()`.
+
+### BUG-043 🟢 P2P host applies own upgrade levels to guest's units
+**File:** index.html:5065, 5081
+**Found:** 2026-07-31
+**Description:** `buildArmyFromSelected` (used by host to build guest army) called `this.applyUpgrades(cloneUnit(pick))` which uses the **host's** `this.unitLevel(u.n)`. The guest's units were upgraded based on the host's upgrade levels, not the guest's. A guest with level 5 Knight would get the host's level 0 Knight stats if the host hadn't upgraded Knight.
+**Fix:** Guest now sends `upgrades` map (unit name → level) with the `deck` message. `startHostBattle` and `buildArmyFromSelected` accept `guestUpgrades` and use `_applyUpgradeLevel(u, guestUpgrades[name]||0)` instead of `applyUpgrades(u)` for guest units. Refactored `applyUpgrades` to delegate to `_applyUpgradeLevel` for reuse.
