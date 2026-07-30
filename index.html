@@ -1504,6 +1504,7 @@ function deserializeUnitsFromPeer(data){
     }
     // Custom unit: expand recipe.
     if(d.recipe)d.recipe=expandRecipe(d.recipe);
+    if(d._isSpell)return d; // spells are passed through as-is
     return unit(d);
   }).filter(Boolean);
 }
@@ -2086,6 +2087,11 @@ function moveAway(u,t,d){
   const dx=u.x-t.x, dy=u.y-t.y, dd=Math.hypot(dx,dy);
   if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
 }
+// Phase 10: effective speed — base * moveSpeedMod, halved if slowed.
+function effSpeed(u){
+  const base=u.s*(u.moveSpeedMod/100);
+  return u.slow>0?base*0.5:base;
+}
 function closestEnemy(u,enemies){
   let best=null,bd=Infinity;
   for(const e of enemies){
@@ -2144,12 +2150,12 @@ const TARGETING={
 };
 
 const MOVEMENT={
-  chase:(u,target,dt)=>{if(target&&target.h>0)moveToward(u,target,u.s*(u.moveSpeedMod/100)*dt);},
-  flee:(u,target,dt)=>{if(target&&target.h>0)moveAway(u,target,u.s*(u.moveSpeedMod/100)*dt);},
+  chase:(u,target,dt)=>{if(target&&target.h>0)moveToward(u,target,effSpeed(u)*dt);},
+  flee:(u,target,dt)=>{if(target&&target.h>0)moveAway(u,target,effSpeed(u)*dt);},
   hold:(u,target,dt)=>{/* no movement */},
   hold_midpoint:(u,target,dt)=>{
     const mid=u.team==="player"?Battle.canvasH*0.6:Battle.canvasH*0.4;
-    const sp=u.s*(u.moveSpeedMod/100)*dt;
+    const sp=effSpeed(u)*dt;
     if(target&&target.h>0){
       const d=dist(u,target);
       if(d>u.r){
@@ -2164,13 +2170,13 @@ const MOVEMENT={
   kite:(u,target,dt)=>{
     if(!target||target.h<=0)return;
     const d=dist(u,target);
-    const sp=u.s*(u.moveSpeedMod/100)*dt;
+    const sp=effSpeed(u)*dt;
     if(d<u.r*0.5)moveAway(u,target,sp);
     else if(d>u.r*1.1)moveToward(u,target,sp);
   },
   patrol:(u,target,dt)=>{
     u.patrolT=(u.patrolT||0)+dt;
-    u.x+=Math.sin(u.patrolT*2)*u.s*(u.moveSpeedMod/100)*dt*0.5;
+    u.x+=Math.sin(u.patrolT*2)*effSpeed(u)*dt*0.5;
   },
 };
 
@@ -2797,7 +2803,7 @@ const BattleFX={
   // Phase 23: spell cast FX — big burst at anchor + screen shake.
   onSpell(spec,anchor,affected,team){
     if(!anchor)return;
-    const ax=anchor.x??anchor.x,ay=anchor.y??anchor.y;
+    const ax=anchor.x??0,ay=anchor.y??0;
     const colorMap={explosion:"#f84",frost:"#6cf",lightning:"#ff4",poison_cloud:"#6f4",heal_glow:"#fd8",shockwave:"#fff",fire_wall:"#f84"};
     const color=colorMap[spec.fxType]||"#fff";
     const count=spec.shape==="persistent_zone"?8:spec.shape==="circle_aoe"?12:6;
@@ -3157,6 +3163,7 @@ const Spell={
     }
     BattleFX.onSpell(spec,anchor,affected,team);
     GameAudio.sfx("spell_"+(spec.fxType==="explosion"?"fire":spec.fxType==="frost"?"frost":spec.fxType==="lightning"?"lightning":"fire"));
+    Quests.track("spell_use");
   },
   // Phase 23: check trigger conditions each frame.
   checkTriggers(battle,dt){
@@ -3433,7 +3440,7 @@ const Battle={
     MOVEMENT[u.movement](u,target,dt);
     if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
       this.attack(u,target,enemies);
-      u.cool=u.a;
+      u.cool=1/u.a; // cooldown = 1 / attacks_per_second
       u.attackedThisFrame=true; // Phase 11: trigger attack animation
       u.attackT=0;              // Phase 11: start attack anim timer
     }
@@ -3490,7 +3497,6 @@ const Battle={
     }
     else {BattleFX.onHit(target);GameAudio.sfx("hit");} // Phase 30
     this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
-    transmit("hit",{target:target.id,damage:dmg});
     // lifesteal: heal attacker for 50% of damage dealt
     if(attacker.ability==="lifesteal")attacker.h=Math.min(attacker.mh,attacker.h+dmg*0.5);
     // slow: debuff target for 1s (refreshes, doesn't stack)
@@ -3752,8 +3758,9 @@ const Battle={
         const enemyHP=this.units.filter(u=>u.team==="enemy").reduce((s,u)=>s+Math.max(0,u.h),0);
         this.winner=playerHP>enemyHP?"player":(enemyHP>playerHP?"enemy":"draw");
         BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
+        BattleFX.shake(4);
         this.stop();
-        if(this.onEnd)try{this.onEnd(this.winner);}catch(e){}
+        if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle end handler failed: "+(e&&e.message||e));}
       }
       return;
     }
@@ -3917,7 +3924,8 @@ const Quests={
     for(const quest of q.list){
       if(quest.claimed)continue;
       if(quest.type===event){
-        quest.progress=Math.min(quest.target,quest.progress+1);
+        const inc=data!=null?data:1;
+        quest.progress=Math.min(quest.target,quest.progress+inc);
       }
     }
     saveData(G.save);
@@ -4450,7 +4458,8 @@ const G={
   },
   _importSharedUnit(){
     if(!this._pendingImport)return;
-    this.addForge(this._pendingImport);
+    const sanitized=unit(this._pendingImport);
+    this.addForge(sanitized);
     saveData(this.save);
     toast("✓ Unit added from share link!");
     this._pendingImport=null;
@@ -4549,6 +4558,7 @@ const G={
   },
   saveSetting(key,val){
     if(!this.save.settings)this.save.settings={};
+    if(key==="analyticsOptOut"){this.save.analyticsOptOut=val;saveData(this.save);return;}
     this.save.settings[key]=val;
     saveData(this.save);
     // Apply immediately.
@@ -4565,7 +4575,9 @@ const G={
   applyColorblind(hex){
     const cb=this.save.settings?.colorblind||"off";
     if(cb==="off"||!hex||!hex.startsWith("#"))return hex;
-    const n=parseInt(hex.slice(1),16);
+    let h=hex.slice(1);
+    if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    const n=parseInt(h,16);
     let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
     if(cb==="deuteranopia"){// red→orange, green→yellow
       r=Math.min(255,r+30);g=Math.min(255,g+30);

@@ -206,3 +206,73 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-30
 **Description:** `_buildArmyFromPicks` had an empty-army fallback (added in BUG-008 fix), but `buildArmyFromSelected` (used for P2P guest army) did not. If a guest sent all-spell picks, the guest army would be empty → instant loss.
 **Fix:** Added the same empty-army fallback to `buildArmyFromSelected`.
+
+---
+
+## Round 3 — 2026-07-30 (deep bug hunt)
+
+### BUG-024 🔴 Attack cooldown inverted (fast attackers attack slower)
+**File:** index.html:3441
+**Found:** 2026-07-30
+**Description:** `u.cool=u.a` set cooldown to the attack speed value directly. But `a` is attacks-per-second, so cooldown should be `1/a`. With the old code, a unit with `a=2` (fast) got a 2s cooldown (slow), and a unit with `a=0.5` (slow) got a 0.5s cooldown (fast). This inverted attack speeds for all units.
+**Fix:** Changed to `u.cool=1/u.a`.
+
+### BUG-025 🔴 Slow status has no effect on movement speed
+**File:** index.html:2146-2174
+**Found:** 2026-07-30
+**Description:** The `slow` debuff (`u.slow`) was tracked and decremented, and a visual ring was drawn, but movement functions used `u.s*(u.moveSpeedMod/100)*dt` without checking `u.slow`. Slowed units moved at full speed.
+**Fix:** Added `effSpeed(u)` helper that halves speed when `u.slow>0`. All movement functions now use `effSpeed(u)`.
+
+### BUG-026 🟡 `spell_use` quest never tracked (impossible to complete)
+**File:** index.html:3877, 3142-3165
+**Found:** 2026-07-30
+**Description:** The "Use a spell in battle" quest (`type:"spell_use"`) was defined in `QUEST_POOL` but `Quests.track("spell_use")` was never called anywhere. The quest was impossible to complete.
+**Fix:** Added `Quests.track("spell_use")` in `Spell.fire()`.
+
+### BUG-027 🟡 `Quests.track` ignores `data` parameter for value-based quests
+**File:** index.html:3918-3928
+**Found:** 2026-07-30
+**Description:** `track(event,data)` always incremented progress by 1, ignoring `data`. For `round_reach` quests, `track("round_reach",5)` was called but only incremented by 1, requiring 5 matches reaching round 5 instead of 1.
+**Fix:** `track` now uses `data` as the increment amount when provided.
+
+### BUG-028 🟡 `analyticsOptOut` saved to wrong path (opt-out doesn't work)
+**File:** index.html:4559-4564, 495
+**Found:** 2026-07-30
+**Description:** `saveSetting('analyticsOptOut',val)` stored the value at `this.save.settings.analyticsOptOut`, but `Analytics.track` checks `G.save?.analyticsOptOut` (top-level). The opt-out setting was never read, so analytics were always sent.
+**Fix:** `saveSetting` now stores `analyticsOptOut` at the top level of save data.
+
+### BUG-029 🟡 `deserializeUnitsFromPeer` converts spells to broken units
+**File:** index.html:1499-1508
+**Found:** 2026-07-30
+**Description:** When spells (with `_isSpell:true`) were sent via `serializeUnitsForPeer` in `round_deck` messages, `deserializeUnitsFromPeer` called `unit(d)` on them. `unit()` doesn't preserve `_isSpell`, so spells became regular units with default stats. The host would then try to build an army from these broken "units".
+**Fix:** Added `if(d._isSpell)return d` before calling `unit(d)`.
+
+### BUG-030 🟢 `_importSharedUnit` doesn't sanitize via `unit()`
+**File:** index.html:4455-4462
+**Found:** 2026-07-30
+**Description:** `_importSharedUnit` passed the raw parsed JSON from the share URL directly to `addForge`, without calling `unit()` to validate/sanitize. Imported units could have missing fields, wrong types, or invalid values, causing battle crashes.
+**Fix:** Now calls `unit(this._pendingImport)` before adding to collection.
+
+### BUG-031 🟢 Redundant `transmit("hit")` causes guest warning spam
+**File:** index.html:3493
+**Found:** 2026-07-30
+**Description:** `takeDamage` called `transmit("hit",{target,damage})` on every hit, but the guest doesn't handle "hit" messages. The guest logged `"Unknown network message type: hit"` warnings at 20Hz during battles.
+**Fix:** Removed the `transmit("hit")` call — hit data is already in snapshots.
+
+### BUG-032 🟢 `onSpell` FX has redundant nullish coalescing (`x??x`)
+**File:** index.html:2806
+**Found:** 2026-07-30
+**Description:** `anchor.x??anchor.x` is a no-op — both branches return the same value. Was likely intended to fall back to a different field.
+**Fix:** Changed to `anchor.x??0`.
+
+### BUG-033 🟢 `applyColorblind` doesn't handle 3-char hex (same as BUG-001)
+**File:** index.html:4575-4587
+**Found:** 2026-07-30
+**Description:** `parseInt("fb0",16)` = 4016, wrong channels extracted. Same class of bug as BUG-001. Unlikely to trigger since shape colors come from `COLOR_MAP` (6-char hex), but possible with custom colors.
+**Fix:** Added 3-char hex expansion before parsing.
+
+### BUG-034 🟢 Timeout `checkEnd` missing screen shake + error reporting
+**File:** index.html:3754-3762
+**Found:** 2026-07-30
+**Description:** The timeout path in `checkEnd` didn't call `BattleFX.shake(4)` (unlike normal end) and silently swallowed errors in `onEnd` callback with `catch(e){}`.
+**Fix:** Added `BattleFX.shake(4)` and `showError()` in the catch block.
