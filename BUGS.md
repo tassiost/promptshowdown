@@ -612,3 +612,9 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** `RECIPE_MINIFY` mapped both `"arc"` and `"arm_raise"` to `"ar"`. `RECIPE_EXPAND` (the reverse map) would have `"ar"` map to `"arm_raise"` (last entry wins), losing the `"arc"` mapping. This is currently dead code (both are values, not keys, in recipe shapes), but could cause issues if the minify function were ever extended to map values.
 **Fix:** Changed `"arm_raise"` mapping from `"ar"` to `"am"`.
+
+### BUG-087 🔴 Kite movement dead zone exceeds attack range — units stare instead of fighting
+**File:** index.html:2255-2261
+**Found:** 2026-07-31
+**Description:** The `kite` movement function had a dead zone between `r*0.5` and `r*1.1` where the unit doesn't move. But the attack range is `r` (checked in `act()` as `dist(u,target)<=u.r`). Between `r` and `r*1.1`, the unit is too far to attack but the kite behavior says "don't move." Two kite units (e.g., Wizard with r=160) would converge to distance ~176, just outside attack range, and stare at each other forever.
+**Fix:** Changed the upper kite threshold from `r*1.1` to `r` so the dead zone ends exactly at attack range. Units now always close to within attack range before stopping.

@@ -2257,7 +2257,7 @@ const MOVEMENT={
     const d=dist(u,target);
     const sp=effSpeed(u)*dt;
     if(d<u.r*0.5)moveAway(u,target,sp);
-    else if(d>u.r*1.1)moveToward(u,target,sp);
+    else if(d>u.r)moveToward(u,target,sp);
   },
   patrol:(u,target,dt)=>{
     u.patrolT=(u.patrolT||0)+dt;
