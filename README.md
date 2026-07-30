@@ -1,10 +1,10 @@
-# Prompt Showdown v4
+# Prompt Showdown
 
 An AI-forged auto-battler with P2P multiplayer, progression, and a procedural unit forge. Single self-contained `index.html` — no build step, no dependencies to install.
 
 ## Play locally
 
-Just open `index.html` in a modern browser. For full functionality (ES module imports + P2P torrent signalling) serve it over HTTP:
+Open `index.html` in a modern browser. For full functionality (ES module imports + P2P) serve it over HTTP:
 
 ```bash
 python3 -m http.server 8765
@@ -13,64 +13,75 @@ python3 -m http.server 8765
 
 ## Features
 
-- **Draft system** — rarity-weighted unit pool (common / rare / legendary), rerolls, no duplicates
-- **Auto-battle** — projectiles, crits, status effects (poison / slow / stun), abilities (splash / heal / dodge / poison), collision separation
-- **AI Forge** — generates new units via WebLLM (Llama-3.2-1B) when WebGPU is available; falls back to procedural generation otherwise. Includes validation + caching.
-- **Progression** — XP, player levels, coins, unit upgrades (+10% HP/DMG per level), fusion (combine 2 duplicates → +1 level), achievements
-- **P2P multiplayer** — host-authoritative sync at 20Hz via Trystero (WebTorrent signalling, no server needed)
+- **AI Forge** — generates custom units from text prompts via a local LLM (Qwen2.5-1.5B, runs in-browser via WebLLM/WebGPU). Per-field micro-prompts with accumulating context produce creative, coherent units. Falls back to archetype templates when WebGPU is unavailable.
+- **Draft system** — rarity-weighted unit pool (70% common / 25% rare / 5% legendary), 3 rerolls per match, comeback bonus (4th draw after a loss)
+- **Auto-battle** — projectiles, crits, status effects (poison / slow / stun), 12 abilities (splash / heal / dodge / poison / explode / shield / spawn / lifesteal / rage / counter / heal_burst / none), collision separation, skeletal sprite animations
+- **Behaviour Composition API** — 5 composable enums (targeting, movement, attackCondition, abilityTrigger, role) create diverse unit AI without scripting
+- **Progression** — XP, player levels, coins, unit upgrades (+10% HP/DMG per level), fusion (2 duplicates → +1 level), 6 arenas with increasing difficulty
+- **P2P multiplayer** — host-authoritative sync at 20Hz via Trystero (WebTorrent signalling, no server needed). Full flow: matchmaking → draft → scout → battle → results
+- **Sprite system** — 6 body plans (humanoid, beast, quad, serpent, flyer, blob), 9 weapons, skeletal joints with animation (arm_raise, leg_swing, bow_draw, tail_wag), role-coded fallbacks
+- **Clean modern UI** — indigo/slate palette, gradient title, rounded corners, soft shadows, hover effects, screen transitions
 - **Mobile-friendly** — adaptive FPS (60 desktop / 30 mobile), tap-to-tick, vibration feedback, fullscreen, pause-on-hidden
 - **Resilient** — visible error panel, save backup + crash recovery, version migrations, PWA manifest
+
+## Quick start
+
+1. Start a local server: `python3 -m http.server 8765`
+2. Open `http://localhost:8765/index.html` in Chrome/Edge (WebGPU needed for AI forge)
+3. Click **FIGHT** to play vs bot, or open two tabs and both click **FIGHT** for P2P multiplayer
+4. Click **FORGE** to generate custom units from text prompts (e.g. "ice mage", "fire dragon")
 
 ## Deploy to Render.com
 
 This repo includes a `render.yaml` blueprint so Render auto-creates the service on connect.
 
-### Option A — Blueprint (recommended, fastest)
+### Option A — Blueprint (recommended)
 
-1. Push this repo to GitHub (already done if you're reading this on GitHub).
+1. Push this repo to GitHub.
 2. Go to **https://dashboard.render.com** → **New** → **Blueprint**.
-3. Select this repository. Render reads `render.yaml` and creates a **Static Site** named `prompt-showdown` automatically.
-4. Click **Apply**. Render deploys `index.html` from the repo root.
-5. Wait ~30s for the build to finish, then open the assigned `https://prompt-showdown-xxxx.onrender.com` URL.
+3. Select this repository. Render reads `render.yaml` and creates a **Static Site**.
+4. Click **Apply**. Wait ~30s, then open the assigned URL.
 
 ### Option B — Manual static site
 
-If you'd rather configure by hand:
-
 1. **https://dashboard.render.com** → **New** → **Static Site**.
 2. Connect your GitHub account and select this repo.
-3. Fill in:
-   - **Name**: `prompt-showdown`
-   - **Build Command**: *(leave empty, or `echo "no build needed"`)*
-   - **Publish Directory**: `.` (the repo root — that's where `index.html` lives)
-   - **Plan**: Free
+3. Fill in: **Name**: `prompt-showdown`, **Build Command**: *(empty)*, **Publish Directory**: `.`, **Plan**: Free.
 4. Click **Create Static Site**. Done.
-
-### After deploy
-
-- **Custom domain**: Static Site → Settings → Custom Domains → add your domain. Render provides the CNAME to point at.
-- **Auto-deploy**: On by default — every `git push` to `main` triggers a redeploy.
-- **Cache headers**: Already set in `render.yaml` (`index.html` = no-cache, other HTML = 5min).
-- **Headers/CORS**: The game loads `web-llm` and `@trystero-p2p/torrent` from CDNs at runtime. No server-side CORS config is needed — those CDNs send permissive CORS headers.
 
 ### Notes
 
-- **WebGPU / AI Forge**: The LLM-backed forge only activates in browsers with WebGPU (Chrome/Edge desktop). On unsupported browsers (Safari, Firefox, mobile) the game automatically uses the procedural forge — no action needed.
-- **P2P multiplayer**: Uses WebTorrent trackers via Trystero. Works from any HTTPS origin (Render serves HTTPS by default). Open the same room ID in two browser tabs/devices.
-- **Free tier**: Render free static sites sleep after inactivity and wake on first request (~15s cold start). For always-on, upgrade to a paid plan.
+- **WebGPU / AI Forge**: The LLM forge only activates in browsers with WebGPU (Chrome/Edge desktop). On unsupported browsers (Safari, Firefox, mobile) the game uses template-based forge — no action needed.
+- **P2P multiplayer**: Uses WebTorrent trackers via Trystero. Works from any HTTPS origin. Open the same room ID in two browser tabs/devices.
+- **Free tier**: Render free static sites sleep after inactivity and wake on first request (~15s cold start).
 
 ## Project structure
 
 ```
-index.html      # the entire game (HTML + CSS + JS in one file)
-render.yaml     # Render blueprint
-README.md       # this file
+index.html          # the entire game (HTML + CSS + JS in one file, ~3800 lines)
+vendor/
+  core.mjs          # trystero P2P core (vendored from esm.sh)
+  torrent.mjs       # trystero torrent signaling (vendored from esm.sh)
+  lz-string.mjs     # LZ-string compression for P2P payloads (vendored from esm.sh)
+render.yaml         # Render.com blueprint
+README.md           # this file
+ARCHITECTURE.md     # full system architecture documentation
+CONTRIBUTING.md     # development setup and conventions
+PLAN.md             # development roadmap and phase tracking
 ```
 
 ## Tech
 
 - Vanilla JS (ES modules, no framework, no bundler)
-- [web-llm](https://github.com/mlc-ai/web-llm) for in-browser LLM unit generation
-- [@trystero-p2p/torrent](https://github.com/dmotz/trystero) for serverless P2P
+- [web-llm](https://github.com/mlc-ai/web-llm) + Qwen2.5-1.5B for in-browser LLM unit generation
+- [@trystero-p2p/torrent](https://github.com/dmotz/trystero) v0.25.3 for serverless P2P (vendored locally)
+- [lz-string](https://github.com/pieroxy/lz-string) for P2P payload compression (vendored locally)
 - Canvas 2D for rendering
 - `localStorage` for saves (with backup + migration)
+- IndexedDB for LLM generation cache
+
+## Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — full system architecture: game objects, screens, LLM generation, P2P protocol, battle system, sprite rendering, progression
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — development setup, code conventions, testing, commit style
+- **[PLAN.md](PLAN.md)** — development roadmap with phase tracking

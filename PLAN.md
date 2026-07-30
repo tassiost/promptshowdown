@@ -2,6 +2,12 @@
 
 **Status: ALL PHASES COMPLETE ✅ (implemented, audited, detail-checked, bug-fixed)**
 
+**Post-completion updates:**
+- **Phase 12 (LLM Forge) reworked**: Switched from 0.5B to Qwen2.5-1.5B model. Replaced single JSON call with per-field micro-prompts + accumulating context. Removed tier-based stat system (LLM now generates raw numbers directly). Enum options shuffled to counter first-option bias. No max_tokens cap.
+- **P2P multiplayer fixed**: Vendored trystero v0.25.3 locally (esm.sh had connection issues). Updated for v0.25 API changes (makeAction returns object, onPeerJoin/onPeerLeave are setters, added disconnect()). Matchmaking timeout increased 5s → 15s.
+- **UI redesigned**: Clean modern aesthetic — indigo/slate palette, CSS variables, gradient title, rounded corners, soft shadows, hover effects, screen transitions.
+- **Vendored deps**: trystero (core.mjs, torrent.mjs) and lz-string (lz-string.mjs) in `vendor/` for reliability.
+
 **Product strategy: two tiers.**
 
 1. **Tier 1 — Draft Showdown clone (ship first):** A complete, fully-playable hybrid-casual PVP card-draft auto-battler. Rounds, lives, 3-pick-per-round drafting, comeback mechanic, 4-card loadout, arenas, opponent scout, synergy hints, P2P multiplayer. Uses a curated 6-unit roster with simple visuals (colored shapes with role-coded borders). No LLM dependency — the game is fun and complete without it. **There is no separate "singleplayer" mode.** Every match goes through the same matchmaking flow — if no human opponent is found within a timeout, the slot is filled by a bot (random starter deck, random drafting). The player never knows (or cares) whether they fought a human or a bot; the UX is identical.
