@@ -10,63 +10,101 @@
 <title>Prompt Showdown v4</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:#080810;color:#fff;font-family:sans-serif;height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;}
-.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;}
+:root{
+  --bg:#0b1120;--bg2:#131c31;--card:#1a2440;--card2:#212e4f;
+  --border:#2a3a5e;--text:#e2e8f0;--muted:#8395b8;
+  --accent:#6366f1;--accent2:#818cf8;--accent-dim:#3730a3;
+  --ok:#10b981;--warn:#f59e0b;--danger:#f43f5e;
+  --rare:#3b82f6;--legendary:#f59e0b;
+  --radius:12px;--radius-sm:8px;
+  --shadow:0 4px 16px rgba(0,0,0,.4);
+  --shadow-lg:0 8px 32px rgba(0,0,0,.5);
+}
+body{
+  background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);
+  color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;
+  -webkit-font-smoothing:antialiased;
+}
+.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;padding:16px 12px;animation:fadeIn .3s ease;}
 .screen.active{display:flex;}
-h1,h2{color:#0ff;text-align:center;margin:6px;}
-h1{font-size:1.4rem;}
-h2{font-size:.95rem;}
-.btn{background:#151525;border:1px solid #0ff;color:#0ff;padding:10px 16px;margin:4px;border-radius:4px;cursor:pointer;font-size:.8rem;}
-.btn.primary{background:#0ff;color:#000;}
-.btn.red{border-color:#f44;color:#f44;}
-.btn:disabled{opacity:.3;}
-.group{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;margin:5px;}
-.pill{background:#111122;border:1px solid #222244;padding:5px 10px;border-radius:4px;font-size:.7rem;}
-.card{background:#111122;border:1px solid #222244;padding:8px;margin:4px;min-width:90px;text-align:center;border-radius:4px;cursor:pointer;}
-.card.selected{border-color:#0f0;box-shadow:0 0 8px #0f04;}
-.title{font-weight:bold;}
-.detail{font-size:.65rem;color:#999;}
-/* Phase 3: rarity borders for draft cards */
-.card.rar-common{border-color:#444;}
-.card.rar-rare{border-color:#44aaff;box-shadow:0 0 4px #44aaff44;}
-.card.rar-legendary{border-color:#fb0;box-shadow:0 0 8px #fb088;}
-.rarityTag{font-size:.6rem;font-weight:bold;letter-spacing:1px;}
-.rarityTag.common{color:#888;}
-.rarityTag.rare{color:#44aaff;}
-.rarityTag.legendary{color:#fb0;}
-/* Phase 6: progression UI */
-.lvlBadge{display:inline-block;background:#fb0;color:#000;font-size:.55rem;font-weight:bold;padding:1px 4px;border-radius:3px;margin-left:3px;}
-.upRow{display:flex;align-items:center;justify-content:space-between;background:#111122;border:1px solid #222244;padding:6px 8px;margin:3px 0;border-radius:4px;font-size:.7rem;width:280px;}
-.upRow .upName{font-weight:bold;}
-.upRow .upStats{color:#999;font-size:.6rem;}
-#toast{position:fixed;left:50%;top:60px;transform:translateX(-50%);background:#151525;border:1px solid #fb0;color:#fb0;padding:8px 14px;border-radius:6px;font-size:.75rem;font-weight:bold;z-index:10000;display:none;text-align:center;box-shadow:0 0 12px #fb055;}
-.reward{display:flex;gap:8px;justify-content:center;margin:6px 0;}
-.reward .pill{font-size:.8rem;}
-/* Phase 7: loading splash */
-#splash{position:fixed;inset:0;background:#080810;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:#0ff;font-size:.9rem;text-align:center;}
-#splash .spin{width:36px;height:36px;border:3px solid #222;border-top-color:#0ff;border-radius:50%;animation:sp 1s linear infinite;margin-bottom:12px;}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+h1{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;text-align:center;margin:12px 6px;background:linear-gradient(135deg,var(--accent2),#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var(--text);}
+.btn{
+  background:var(--card);border:1px solid var(--border);color:var(--text);
+  padding:12px 20px;margin:4px;border-radius:var(--radius-sm);cursor:pointer;
+  font-size:.85rem;font-weight:600;transition:all .15s ease;width:100%;max-width:280px;
+}
+.btn:hover{background:var(--card2);border-color:var(--accent);transform:translateY(-1px);}
+.btn:active{transform:translateY(0);}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#7c3aed);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.4);}
+.btn.primary:hover{box-shadow:0 6px 20px rgba(99,102,241,.5);transform:translateY(-2px);}
+.btn.red{border-color:var(--danger);color:var(--danger);}
+.btn.red:hover{background:rgba(244,63,94,.1);}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+.group{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 5px;}
+.pill{background:var(--card);border:1px solid var(--border);padding:6px 12px;border-radius:20px;font-size:.72rem;font-weight:600;color:var(--muted);}
+.card{
+  background:var(--card);border:1px solid var(--border);padding:10px;margin:4px;
+  min-width:92px;text-align:center;border-radius:var(--radius-sm);cursor:pointer;
+  transition:all .15s ease;box-shadow:var(--shadow);
+}
+.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
+.card.selected{border-color:var(--ok);box-shadow:0 0 0 2px rgba(16,185,129,.3),var(--shadow-lg);}
+.title{font-weight:700;font-size:.82rem;}
+.detail{font-size:.68rem;color:var(--muted);line-height:1.4;}
+/* Rarity borders */
+.card.rar-common{border-color:var(--border);}
+.card.rar-rare{border-color:var(--rare);box-shadow:0 0 12px rgba(59,130,246,.2),var(--shadow);}
+.card.rar-legendary{border-color:var(--legendary);box-shadow:0 0 16px rgba(245,158,11,.25),var(--shadow);}
+.rarityTag{font-size:.58rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;}
+.rarityTag.common{color:var(--muted);}
+.rarityTag.rare{color:var(--rare);}
+.rarityTag.legendary{color:var(--legendary);}
+/* Progression */
+.lvlBadge{display:inline-block;background:var(--warn);color:#000;font-size:.55rem;font-weight:800;padding:2px 6px;border-radius:4px;margin-left:4px;}
+.upRow{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);padding:10px 12px;margin:4px 0;border-radius:var(--radius-sm);font-size:.75rem;width:280px;box-shadow:var(--shadow);}
+.upRow .upName{font-weight:700;}
+.upRow .upStats{color:var(--muted);font-size:.65rem;}
+#toast{position:fixed;left:50%;top:80px;transform:translateX(-50%);background:var(--card);border:1px solid var(--warn);color:var(--warn);padding:10px 18px;border-radius:var(--radius);font-size:.78rem;font-weight:700;z-index:10000;display:none;text-align:center;box-shadow:var(--shadow-lg);}
+.reward{display:flex;gap:8px;justify-content:center;margin:8px 0;}
+.reward .pill{font-size:.8rem;padding:8px 14px;}
+/* Splash */
+#splash{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:var(--accent2);font-size:.9rem;text-align:center;font-weight:600;}
+#splash .spin{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px;}
 @keyframes sp{to{transform:rotate(360deg);}}
-#fsBtn{position:fixed;left:5px;top:5px;background:#151525;border:1px solid #0ff;color:#0ff;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:.7rem;z-index:9000;}
-.input{background:#111122;border:1px solid #0ff;color:#0ff;padding:8px;width:180px;margin:5px;}
-#cv{background:#101020;border:1px solid #202040;touch-action:none;max-width:100%;}
-#battleLog{position:fixed;right:5px;top:70px;width:120px;max-height:140px;overflow:auto;background:#000d;border:1px solid #333;font-size:8px;padding:5px;}
-#networkBadge{position:fixed;top:5px;right:5px;display:none;color:#fb0;border:1px solid #fb0;padding:4px;font-size:10px;}
-.aiBox{background:#111122;border:1px solid #222244;padding:8px;margin:5px;width:230px;text-align:center;font-size:.7rem;}
-.aiBar{height:10px;width:100%;background:#05050a;border:1px solid #0ff;margin-top:5px;}
-#aiFill{height:100%;width:0%;background:#0ff;}
-/* Phase 1: visible error panel */
-#errorPanel{position:fixed;left:5px;bottom:5px;right:5px;max-width:410px;max-height:120px;overflow:auto;background:#2a0a0a;border:1px solid #f44;color:#fcc;font-size:11px;padding:8px;border-radius:4px;display:none;z-index:9999;}
-#errorPanel .errHead{font-weight:bold;color:#f44;margin-bottom:4px;display:flex;justify-content:space-between;}
-#errorPanel .errClose{cursor:pointer;color:#fcc;}
+#fsBtn{position:fixed;left:8px;top:8px;background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:.72rem;z-index:9000;transition:all .15s ease;}
+#fsBtn:hover{color:var(--text);border-color:var(--accent);}
+.input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
+.input:focus{border-color:var(--accent);}
+#cv{background:#0d1526;border:1px solid var(--border);touch-action:none;max-width:100%;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);}
+#battleLog{position:fixed;right:5px;top:70px;width:120px;max-height:140px;overflow:auto;background:rgba(11,17,32,.9);border:1px solid var(--border);font-size:8px;padding:5px;border-radius:var(--radius-sm);color:var(--muted);}
+#networkBadge{position:fixed;top:8px;right:8px;display:none;color:var(--warn);border:1px solid var(--warn);padding:4px 8px;font-size:10px;border-radius:6px;background:rgba(245,158,11,.1);}
+.aiBox{background:var(--card);border:1px solid var(--border);padding:12px;margin:6px;width:240px;text-align:center;font-size:.72rem;border-radius:var(--radius-sm);box-shadow:var(--shadow);}
+.aiBar{height:8px;width:100%;background:var(--bg);border-radius:4px;margin-top:8px;overflow:hidden;}
+#aiFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .3s;}
+/* Error panel */
+#errorPanel{position:fixed;left:8px;bottom:8px;right:8px;max-width:410px;max-height:120px;overflow:auto;background:rgba(244,63,94,.15);border:1px solid var(--danger);color:#fecaca;font-size:11px;padding:10px;border-radius:var(--radius-sm);display:none;z-index:9999;backdrop-filter:blur(8px);}
+#errorPanel .errHead{font-weight:700;color:var(--danger);margin-bottom:6px;display:flex;justify-content:space-between;}
+#errorPanel .errClose{cursor:pointer;color:#fecaca;}
+/* Forge-specific */
+#forgePrompt{width:90%;padding:12px 14px;margin:10px 0;font-size:.95rem;border-radius:var(--radius);border:1px solid var(--border);background:var(--card);color:var(--text);outline:none;transition:border-color .15s;}
+#forgePrompt:focus{border-color:var(--accent);}
+#forgePreview{margin:12px 0;}
+/* Scrollbar */
+.screen::-webkit-scrollbar{width:4px;}
+.screen::-webkit-scrollbar-track{background:transparent;}
+.screen::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
 </style>
 </head>
 <body>
 
 <!-- Phase 7: loading splash (removed once init completes) -->
-<div id="splash"><div class="spin"></div><div>Loading Prompt Showdown…</div></div>
+<div id="splash"><div class="spin"></div><div style="font-weight:700;">Loading Prompt Showdown…</div></div>
 <button id="fsBtn" onclick="toggleFullscreen()">⛶</button>
 <div class="screen active" id="menu">
-<h1>PROMPT SHOWDOWN v5</h1>
+<h1>PROMPT SHOWDOWN</h1>
 <div class="group">
 <div class="pill">🏆 <span id="wins">0</span></div>
 <div class="pill">⭐ Lv<span id="playerLevel">1</span></div>
@@ -74,55 +112,57 @@ h2{font-size:.95rem;}
 <div class="pill">🧠 <span id="aiUnits">0</span></div>
 <div class="pill" id="netPill" style="display:none">🌐 <span id="netText">OFF</span></div>
 </div>
-<div id="arenaBadge" style="margin:8px 0;font-size:.9rem;"></div>
+<div id="arenaBadge" style="margin:10px 0;font-size:.9rem;font-weight:600;text-align:center;"></div>
+<div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:8px;">
 <button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
 <button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;">🔮 FORGE</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 </div>
+</div>
 
 <div class="screen" id="matchmaking">
-<h2>🔍 FINDING OPPONENT...</h2>
-<div id="matchmakingSpinner" style="font-size:2rem;margin:20px;">⏳</div>
-<div class="detail" id="matchmakingStatus">Searching for a human opponent...</div>
-<button class="btn" onclick="G.cancelMatchmaking()">CANCEL</button>
+<h2>🔍 Finding Opponent...</h2>
+<div id="matchmakingSpinner" style="font-size:2.5rem;margin:24px;animation:sp 1.5s linear infinite;display:inline-block;">⏳</div>
+<div class="detail" id="matchmakingStatus" style="margin-bottom:16px;">Searching for a human opponent...</div>
+<button class="btn" onclick="G.cancelMatchmaking()">Cancel</button>
 </div>
 
 <div class="screen" id="lobby">
-<h2>🌐 P2P LOBBY</h2>
-<div class="detail">Torrent signalling</div>
+<h2>🌐 P2P Lobby</h2>
+<div class="detail" style="margin-bottom:8px;">Torrent signalling</div>
 <input class="input" id="roomId" value="room1">
-<div class="group">
-<button class="btn primary" onclick="G.host()">HOST</button>
-<button class="btn" onclick="G.join()">JOIN</button>
+<div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;">
+<button class="btn primary" onclick="G.host()">Host</button>
+<button class="btn" onclick="G.join()">Join</button>
 </div>
-<div class="pill" id="connection">Status: idle</div>
-<button class="btn" onclick="G.menu()">BACK</button>
+<div class="pill" id="connection" style="margin-top:10px;">Status: idle</div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="draft">
-<h2>DRAFT</h2>
-<div id="livesHUD" style="font-size:.8rem;margin:4px;"></div>
-<div id="draftDots" style="font-size:1.2rem;margin:4px;letter-spacing:4px;"></div>
-<div id="comebackBanner" style="display:none;font-size:1.1rem;color:#fa0;margin:6px;padding:6px;border-radius:6px;background:#210;text-align:center;font-weight:bold;">⭐ COMEBACK BONUS — 4th draw!</div>
-<div class="detail" id="draftHint">Pick 1 unit</div>
+<h2>Draft</h2>
+<div id="livesHUD" style="font-size:.8rem;margin:6px;font-weight:600;"></div>
+<div id="draftDots" style="font-size:1.2rem;margin:6px;letter-spacing:4px;"></div>
+<div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:rgba(245,158,11,.1);border:1px solid var(--warn);text-align:center;font-weight:700;">⭐ COMEBACK BONUS — 4th draw!</div>
+<div class="detail" id="draftHint" style="margin-bottom:8px;">Pick 1 unit</div>
 <div id="draftArea"></div>
 <div class="group">
-<button class="btn" id="rerollButton" onclick="G.reroll()">🎲 REROLL (<span id="rerollsLeft">3</span>)</button>
+<button class="btn" id="rerollButton" onclick="G.reroll()">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
 </div>
 </div>
 
 <div class="screen" id="scout">
-<h2>🔍 OPPONENT SCOUT</h2>
-<div id="livesHUDScout" style="font-size:.8rem;margin:4px;"></div>
-<div class="detail">Enemy is fielding these units this round:</div>
-<div id="scoutArea" style="display:flex;gap:5px;justify-content:center;margin:12px 0;flex-wrap:wrap;"></div>
-<button class="btn primary" onclick="G.startBattle()">⚔️ TO BATTLE</button>
+<h2>🔍 Opponent Scout</h2>
+<div id="livesHUDScout" style="font-size:.8rem;margin:6px;font-weight:600;"></div>
+<div class="detail" style="margin-bottom:8px;">Enemy is fielding these units this round:</div>
+<div id="scoutArea" style="display:flex;gap:6px;justify-content:center;margin:12px 0;flex-wrap:wrap;"></div>
+<button class="btn primary" onclick="G.startBattle()">⚔️ To Battle</button>
 </div>
 
 <div class="screen" id="battle">
-<div style="width:100%;display:flex;justify-content:space-between;padding:4px;font-size:.75rem;">
+<div style="width:100%;display:flex;justify-content:space-between;padding:6px 4px;font-size:.75rem;font-weight:600;">
 <span id="livesBattle" style="font-size:.8rem;"></span>
 <span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
 <span id="turn">T0</span>
@@ -131,63 +171,66 @@ h2{font-size:.95rem;}
 <div id="battleLog"></div>
 <div id="networkBadge">🌐 ONLINE</div>
 <div class="group">
-<button class="btn primary" onclick="G.tick()">⏵</button>
-<button class="btn" onclick="G.auto()">⏩</button>
-<button class="btn red" onclick="G.skip()">✕</button>
+<button class="btn primary" onclick="G.tick()" style="width:auto;padding:12px 18px;">⏵</button>
+<button class="btn" onclick="G.auto()" style="width:auto;padding:12px 18px;">⏩</button>
+<button class="btn red" onclick="G.skip()" style="width:auto;padding:12px 18px;">✕</button>
 </div>
 </div>
 
 <div class="screen" id="result">
 <h1 id="resultTitle">RESULT</h1>
-<div id="livesResult" style="font-size:.9rem;margin:6px;"></div>
-<div id="matchHint" style="font-size:.8rem;margin:6px;color:#fa0;padding:6px;border-radius:6px;background:#111;"></div>
+<div id="livesResult" style="font-size:.9rem;margin:10px;font-weight:600;text-align:center;"></div>
+<div id="matchHint" style="font-size:.8rem;margin:10px;color:var(--warn);padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <div class="reward" id="matchRewards" style="display:none;">
 <div class="pill">⭐ <span id="xpGain">+0</span> XP</div>
 <div class="pill">💰 <span id="coinGain">+0</span></div>
 </div>
-<button class="btn primary" id="nextRound">NEXT ROUND</button>
-<button class="btn" id="matchMenu" style="display:none;" onclick="G.menu()">MENU</button>
+<div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:12px;">
+<button class="btn primary" id="nextRound">Next Round</button>
+<button class="btn" id="matchMenu" style="display:none;" onclick="G.menu()">Menu</button>
+</div>
 </div>
 
 <div class="screen" id="forge">
-<h2>🔮 FORGE CUSTOM UNIT</h2>
-<div class="detail" id="aiStatus">AI: idle</div>
-<input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja..."
-  style="width:90%;padding:8px;margin:8px 0;font-size:1rem;border-radius:6px;border:1px solid #444;background:#111;color:#fff;">
+<h2>🔮 Forge Custom Unit</h2>
+<div class="detail" id="aiStatus" style="margin-bottom:8px;">AI: idle</div>
+<input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja...">
+<div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;">
 <button class="btn primary" id="forgeGenBtn" onclick="G.forgeWithAd()">📺 Watch Ad to Generate</button>
 <button class="btn" id="forgeSkipBtn" onclick="G.forgeSkipAd()" style="display:none;">⏭ Skip Ad (template)</button>
-<div id="forgeModelProgress" style="display:none;margin:8px 0;">
-  <div class="detail" id="forgeModelText">Loading AI model... (one-time only)</div>
-  <div style="background:#222;border-radius:4px;height:8px;margin:4px 0;">
-    <div id="forgeModelFill" style="background:#4a7;height:8px;border-radius:4px;width:0%;transition:width .3s;"></div>
-  </div>
-  <button class="btn" id="forgeModelCancelBtn" onclick="cancelLLM()" style="margin-top:6px;font-size:.8rem;">✖ Cancel download (use templates)</button>
 </div>
-<div id="forgePreview" style="margin:10px 0;"></div>
-<div id="forgeActions" style="display:none;">
+<div id="forgeModelProgress" style="display:none;margin:12px 0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;">
+  <div class="detail" id="forgeModelText" style="margin-bottom:8px;">Loading AI model... (one-time only)</div>
+  <div style="background:var(--bg);border-radius:6px;height:8px;margin:6px 0;overflow:hidden;">
+    <div id="forgeModelFill" style="background:linear-gradient(90deg,var(--accent),var(--accent2));height:8px;border-radius:6px;width:0%;transition:width .3s;"></div>
+  </div>
+  <button class="btn red" id="forgeModelCancelBtn" onclick="cancelLLM()" style="margin-top:8px;font-size:.78rem;">✖ Cancel download</button>
+</div>
+<div id="forgePreview" style="margin:12px 0;"></div>
+<div id="forgeActions" style="display:none;flex-direction:column;gap:6px;width:100%;max-width:280px;">
 <button class="btn primary" onclick="G.keepForge()">✓ KEEP</button>
 <button class="btn" onclick="G.forgeWithAd()">🎲 REROLL (Watch Ad)</button>
 </div>
-<button class="btn" onclick="G.menu()">BACK</button>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← BACK</button>
 </div>
 
 <div class="screen" id="deck">
-<h2>📋 LOADOUT</h2>
-<div class="detail">4 cards in your loadout · tap collection to swap</div>
-<div id="loadoutArea" style="display:flex;gap:5px;justify-content:center;margin:8px 0;"></div>
-<div id="synergyMeter" style="margin:8px 0;font-size:.8rem;padding:6px;border-radius:6px;background:#111;"></div>
-<h2 style="font-size:.8rem;margin-top:10px;">COLLECTION</h2>
-<div class="detail">Tap a unit with a duplicate to fuse (2 → +1 Lv)</div>
+<h2>📋 Loadout</h2>
+<div class="detail" style="margin-bottom:8px;">4 cards in your loadout · tap collection to swap</div>
+<div id="loadoutArea" style="display:flex;gap:6px;justify-content:center;margin:10px 0;"></div>
+<div id="synergyMeter" style="margin:10px 0;font-size:.8rem;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
+<h2 style="font-size:.85rem;margin-top:14px;">Collection</h2>
+<div class="detail" style="margin-bottom:8px;">Tap a unit with a duplicate to fuse (2 → +1 Lv)</div>
 <div id="deckArea"></div>
-<button class="btn" onclick="G.menu()">BACK</button>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="upgrade">
-<h2>⬆ UPGRADE</h2>
-<div class="pill">💰 <span id="upgradeCoins">0</span> coins</div>
-<div class="detail">Spend coins to level up units (+10% HP/DMG per level)</div>
+<h2>⬆ Upgrade</h2>
+<div class="pill" style="margin:8px;">💰 <span id="upgradeCoins">0</span> coins</div>
+<div class="detail" style="margin-bottom:10px;">Spend coins to level up units (+10% HP/DMG per level)</div>
 <div id="upgradeArea"></div>
-<button class="btn" onclick="G.menu()">BACK</button>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <!-- Phase 1: visible error panel -->
@@ -224,16 +267,16 @@ async function loadModules(){
       console.warn("web-llm import failed ("+url+"): "+(e&&e.message||e));
     }
   }
-  // trystero: package was renamed from "trystero" to "@trystero-p2p/torrent".
+  // trystero: vendored locally to avoid esm.sh connection issues.
   try{
-    const tr = await import("https://esm.sh/@trystero-p2p/torrent");
+    const tr = await import("./vendor/torrent.mjs");
     joinRoom = tr.joinRoom;
   }catch(e){
     console.warn("trystero import failed: "+(e&&e.message||e)+" — multiplayer disabled.");
   }
   // lz-string: compression for P2P recipe serialization (Phase 18).
   try{
-    const lz = await import("https://esm.sh/lz-string");
+    const lz = await import("./vendor/lz-string.mjs");
     LZString = lz.LZString || lz.default?.LZString || lz.default;
   }catch(e){
     console.warn("lz-string import failed: "+(e&&e.message||e)+" — recipes sent uncompressed.");
@@ -1214,6 +1257,7 @@ let room=null;
 let sendNet=null;
 let connected=false;
 let role="none";
+function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;}}
 
 function setupNetwork(id){
   if(!joinRoom){
@@ -1223,16 +1267,18 @@ function setupNetwork(id){
   try{
     room=joinRoom({appId:"prompt-showdown-v4"},id);
     let action=room.makeAction("game");
-    sendNet=action[0];
-    action[1](data=>{if(data)networkReceive(data);});
-    room.onPeerJoin(()=>{
+    // trystero v0.25+ returns {send, onMessage, onReceiveProgress}
+    sendNet=action.send||action[0];
+    if("onMessage" in action)action.onMessage=data=>{if(data)networkReceive(data);};
+    else if(typeof action[1]==="function")action[1](data=>{if(data)networkReceive(data);});
+    room.onPeerJoin=()=>{
       connected=true;
       setText("connection","Status: connected");
       const np=$("netPill");if(np)np.style.display="inline-flex";
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
-    });
-    room.onPeerLeave(()=>{
+    };
+    room.onPeerLeave=()=>{
       connected=false;
       setText("connection","Status: disconnected");
       // Phase 18: mid-match disconnect — offer "Continue vs Bot".
@@ -1240,7 +1286,7 @@ function setupNetwork(id){
         const lastLoadout=Match.opponentPicks?.map(u=>u.n)||[];
         showDisconnectPrompt(lastLoadout);
       }
-    });
+    };
     return true;
   }
   catch(e){
@@ -1251,7 +1297,7 @@ function setupNetwork(id){
 
 function transmit(type,data){
   if(connected&&sendNet){
-    try{sendNet({t:type,d:data});}catch(e){showError("Network send failed: "+(e&&e.message||e));}
+    try{const r=sendNet({t:type,d:data});if(r&&r.catch)r.catch(e=>console.error("[P2P] send error:",e.message));}catch(e){showError("Network send failed: "+(e&&e.message||e));}
   }
 }
 
@@ -2720,7 +2766,7 @@ const G={
       badge.innerHTML=html;
       // Phase 19a: theme color shift on the h1.
       const h1=document.querySelector("#menu h1");
-      if(h1)h1.style.color=arena.c;
+      if(h1){h1.style.background="none";h1.style.webkitTextFillColor=arena.c;h1.style.color=arena.c;}
     }
     // Phase 12: forge button. Normally gated behind Training Yard completion
     // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
@@ -2760,7 +2806,7 @@ const G={
       this.startBotMatch();
       return;
     }
-    // Set a 5s timeout — if no opponent joins, start bot match.
+    // Set a 15s timeout — if no opponent joins, start bot match.
     this.matchmakingCancelled=false;
     this.matchmakingTimer=setTimeout(()=>{
       if(this.matchmakingCancelled)return;
@@ -2880,14 +2926,14 @@ const G={
     // Phase 16: check if this unit fills a missing role (only after first pick).
     const pickedRoles=this.roundDraftState.picks.map(p=>p.role);
     const missingRole=this.roundDraftState.picks.length>0&&!pickedRoles.includes(u.role);
-    const roleFillHint=missingRole?`<br><span style="color:#4f4">fills ${u.role}</span>`:"";
-    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
-    const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
+    const roleFillHint=missingRole?`<br><span style="color:var(--ok)">fills ${u.role}</span>`:"";
+    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
+    const roleLabel=u.role?`<br><span style="color:var(--muted)">${u.role}</span>`:"";
     card.innerHTML=
       `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
       `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${roleLabel}${roleFillHint}</div>`;
-    if(missingRole)card.style.borderColor="#4f4";
+    if(missingRole)card.style.borderColor="var(--ok)";
     card.onclick=()=>{
       const st=this.roundDraftState;
       if(!st)return;
@@ -3438,17 +3484,17 @@ const G={
   showForgePreview(u){
     const preview=$("forgePreview");
     if(!preview||!u)return;
-    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
-    const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
-    preview.innerHTML=`<div class="card" style="border-color:#fa0;">
+    const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2);font-weight:600;">${u.ability}</span>`:"";
+    const roleLabel=u.role?`<br><span style="color:var(--muted)">${u.role}</span>`:"";
+    preview.innerHTML=`<div class="card" style="border-color:var(--legendary);box-shadow:0 0 20px rgba(245,158,11,.2),var(--shadow-lg);max-width:200px;margin:0 auto;">
       <div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>
-      <canvas width="56" height="56" style="display:block;margin:2px auto;"></canvas>
-      <div class="title" style="color:${u.c}">${u.n}</div>
-      <div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · ⚡${u.s}${abLabel}${roleLabel}</div>
+      <canvas width="56" height="56" style="display:block;margin:4px auto;"></canvas>
+      <div class="title" style="color:${u.c};font-size:.9rem;">${u.n}</div>
+      <div class="detail" style="margin-top:4px;">${u.h} HP · ${u.d} DMG<br>R${u.r} · ⚡${u.s}${abLabel}${roleLabel}</div>
     </div>`;
     SpriteRenderer.renderPreview(preview.querySelector("canvas"),u);
     const actions=$("forgeActions");
-    if(actions)actions.style.display="block";
+    if(actions)actions.style.display="flex";
   },
 
   // Phase 12: keep the forged unit — add to collection.
@@ -3491,8 +3537,8 @@ const G={
         const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
         const card=document.createElement("div");
         card.className="card";
-        card.style.borderColor="#0ff";
-        card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG<br><span style="color:#0ff">SLOT ${i+1}</span></div>`;
+        card.style.borderColor="var(--accent)";
+        card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG<br><span style="color:var(--accent2)">SLOT ${i+1}</span></div>`;
         SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
         card.onclick=()=>this.swapLoadoutSlot(i);
         la.appendChild(card);
@@ -3512,16 +3558,16 @@ const G={
       const lvl=this.unitLevel(u.n);
       const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
       const canFuse=counts[u.n]>=2;
-      const fuseHint=canFuse?`<br><span style="color:#fb0">tap to fuse</span>`:"";
+      const fuseHint=canFuse?`<br><span style="color:var(--legendary)">tap to fuse</span>`:"";
       const inLoadout=this.save.loadout.includes(u.n);
-      const slotTag=inLoadout?`<br><span style="color:#0ff">in loadout</span>`:"<br><span style=\"color:#888\">tap to slot</span>";
-      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
+      const slotTag=inLoadout?`<br><span style="color:var(--accent2)">in loadout</span>`:"<br><span style=\"color:var(--muted)\">tap to slot</span>";
+      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
       const card=document.createElement("div");
       card.className="card";
       card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       if(canFuse){
-        card.style.borderColor="#fb0";
+        card.style.borderColor="var(--legendary)";
         card.onclick=()=>this.fuseUnit(u.n);
       }else{
         card.onclick=()=>this.addToLoadout(u.n);
@@ -3685,6 +3731,9 @@ window._getLlm=()=>llm;
 window._getLlmReady=()=>llmReady;
 window._getLlmLoading=()=>llmLoading;
 window._getLlmCancelled=()=>llmCancelled;
+window._transmit=transmit;
+window._isConnected=()=>connected;
+window._getRole=()=>role;
 
 // Phase 7: remove the loading splash once init is done.
 function hideSplash(){
