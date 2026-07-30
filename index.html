@@ -2138,7 +2138,19 @@ const MOVEMENT={
   hold:(u,target,dt)=>{/* no movement */},
   hold_midpoint:(u,target,dt)=>{
     const mid=u.team==="player"?Battle.canvasH*0.6:Battle.canvasH*0.4;
-    if(Math.abs(u.y-mid)>10)u.y+=Math.sign(mid-u.y)*u.s*(u.moveSpeedMod/100)*dt;
+    const sp=u.s*(u.moveSpeedMod/100)*dt;
+    if(target){
+      const d=dist(u,target);
+      if(d>u.r){
+        // Out of range — close the distance toward target.
+        moveToward(u,target,sp);
+      }else{
+        // In range — hold the midpoint y.
+        if(Math.abs(u.y-mid)>10)u.y+=Math.sign(mid-u.y)*sp*0.5;
+      }
+    }else{
+      if(Math.abs(u.y-mid)>10)u.y+=Math.sign(mid-u.y)*sp;
+    }
   },
   kite:(u,target,dt)=>{
     if(!target)return;
@@ -3685,7 +3697,18 @@ const Battle={
   checkEnd(){
     const playerAlive=this.units.some(u=>u.team==="player"&&u.h>0);
     const enemyAlive=this.units.some(u=>u.team==="enemy"&&u.h>0);
-    if(playerAlive&&enemyAlive)return;
+    if(playerAlive&&enemyAlive){
+      // Battle timeout: if battle runs > 90s, end as draw (prevents kite stalemates).
+      if(this.time>90){
+        const playerHP=this.units.filter(u=>u.team==="player").reduce((s,u)=>s+Math.max(0,u.h),0);
+        const enemyHP=this.units.filter(u=>u.team==="enemy").reduce((s,u)=>s+Math.max(0,u.h),0);
+        this.winner=playerHP>enemyHP?"player":(enemyHP>playerHP?"enemy":"draw");
+        BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
+        this.stop();
+        if(this.onEnd)try{this.onEnd(this.winner);}catch(e){}
+      }
+      return;
+    }
     this.winner=playerAlive?"player":(enemyAlive?"enemy":"draw");
     // Phase 17: round-end flash + screen shake.
     BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
