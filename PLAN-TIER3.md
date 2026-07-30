@@ -139,7 +139,7 @@ Start 5 bot matches in Training Yard → scout each → verify every bot army ha
 
 ---
 
-## Phase 22 — Role-Based Formation Positioning ✅ PLANNED
+## Phase 22 — Role-Based Formation Positioning ✅ DONE
 
 **Why:** Make positioning a real skill. Today `_buildArmyFromPicks` (line 2897) places every unit at `Q(40,360)` x and `Q(yMin,yMax)` y, uniformly. Real Draft Showdown's entire depth is "frontline in front, carries in back, divers in mid." Without this, the frontline/protect synergy is purely behavioural luck.
 

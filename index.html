@@ -3493,23 +3493,40 @@ const G={
   // Phase 10: build an army (3 copies of each picked unit).
   // Team is now a string ("player"/"enemy"); Battle.start() sets it.
   buildArmy(){
-    return this._buildArmyFromPicks(this.selected,true,420,600);
+    return this._buildArmyFromPicks(this.selected,true,true);
   },
 
   // Phase 9/14: build a bot army from opponent picks (3 copies each).
   buildBotArmy(){
     const botPicks=this.opponentPicks||Bot.draftRound(Match.comebackEligible()?4:3);
-    return this._buildArmyFromPicks(botPicks,false,40,150);
+    return this._buildArmyFromPicks(botPicks,false,false);
   },
 
-  // Helper: build an army from picks (3 copies each, positioned in y range).
-  _buildArmyFromPicks(picks,applyUpg,yMin,yMax){
+  // Phase 22: role-based formation y-bands.
+  // Player: frontline at low y (front=toward enemy at top), carry at high y (back).
+  // Enemy: frontline at high y (front=toward player at bottom), carry at low y (back).
+  _formationY(role,isPlayer){
+    const FORMATION_PLAYER={
+      frontline:[350,420], counter:[400,470], utility:[440,500], carry:[470,530], support:[490,540]
+    };
+    const FORMATION_ENEMY={
+      frontline:[130,200], counter:[90,160], utility:[60,120], carry:[40,100], support:[30,80]
+    };
+    const bands=isPlayer?FORMATION_PLAYER:FORMATION_ENEMY;
+    return bands[role]||bands.frontline;
+  },
+
+  // Helper: build an army from picks (3 copies each, positioned by role).
+  _buildArmyFromPicks(picks,applyUpg,isPlayer){
     const out=[];
     for(const pick of picks||[]){
       if(!pick)continue;
+      const [yMin,yMax]=this._formationY(pick.role,isPlayer);
       for(let i=0;i<3;i++){
         const u=applyUpg?this.applyUpgrades(cloneUnit(pick)):cloneUnit(pick);
-        out.push({...u,x:Q(40,360),y:Q(yMin,yMax),h:u.h,mh:u.h});
+        const xSpread=Q(40,160); // player left, enemy right (mirrored below)
+        const xPos=isPlayer?xSpread:400-xSpread;
+        out.push({...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
     return out;
@@ -3616,9 +3633,11 @@ const G={
     const out=[];
     for(const pick of selected){
       if(!pick)continue;
+      const [yMin,yMax]=this._formationY(pick.role,false);
       for(let i=0;i<3;i++){
         const u=this.applyUpgrades(cloneUnit(pick));
-        out.push({...u,x:Q(40,360),y:Q(40,150),h:u.h,mh:u.h});
+        const xSpread=Q(40,160);
+        out.push({...u,x:400-xSpread,y:Q(yMin,yMax),h:u.h,mh:u.h});
       }
     }
     return out;
