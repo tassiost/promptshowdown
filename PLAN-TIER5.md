@@ -227,7 +227,7 @@ Single-file architecture means no `.wav`/`.mp3` files. All SFX are synthesized a
 
 ---
 
-## Phase 33 — Daily Quests + Login Streaks ✅ PLANNED
+## Phase 33 — Daily Quests + Login Streaks ✅ DONE
 
 **Why:** Gates D7+ retention — the hybrid-casual lifeblood. Without a reason to come back tomorrow, the game bleeds players after the first session. Daily quests + login streaks are the proven pattern (Clash Royale, Marvel Snap, every Voodoo game).
 
