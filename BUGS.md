@@ -520,3 +520,49 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** `_drawShapeRaw` for polygon shapes iterates `shape.pts` without checking if it exists. A malformed recipe with a polygon shape but no `pts` array would throw a TypeError, crashing the render loop.
 **Fix:** Added `if(!shape.pts||!shape.pts.length)break;` guard before iterating polygon points.
+
+---
+
+## Round 8 — 2026-07-31
+
+### BUG-073 🔴 P2P guest double round-end / match-end
+**File:** index.html:5244-5249
+**Found:** 2026-07-31
+**Description:** When the guest received a snapshot with `winner` set, `applyRemoteSnapshot` called `onBattleEnd`, which called `Match.onRoundEnd` — decrementing lives and pushing to history. Then the host's `round_end` message arrived and set `Match.livesPlayer`/`Match.livesEnemy` (overwriting the decremented values), but `Match.history` still had a duplicate entry. If the match ended, `Match.onRoundEnd` called `onMatchEnd`, and then the `match_end` message also called `onMatchEnd` — double match end.
+**Fix:** Guest's `onBattleEnd` now returns early for P2P guests. The host sends `round_end`/`match_end` messages that handle all state updates and UI transitions for the guest.
+
+### BUG-074 🟡 Spell with "center" target hits both allies and enemies
+**File:** index.html:3229-3233
+**Found:** 2026-07-31
+**Description:** `Spell.fire` only filtered affected units by team for targets starting with "ally" or "enemy". The "center" target (which targets the middle of the battlefield) fell through — both allies and enemies would be affected by damage spells.
+**Fix:** Changed the filter to a binary ally/enemy split: ally targets filter to allies, all other targets (including "center") default to enemies only.
+
+### BUG-075 🟡 damage_over_time spell overwrites higher poison damage from unit abilities
+**File:** index.html:3181
+**Found:** 2026-07-31
+**Description:** `SPELL_EFFECT.damage_over_time` set `u.poisonDmg=spec.magnitude||10`, overwriting any existing poison damage. If a unit ability (poison) had already applied higher poison damage (`attacker.d*0.3`), the spell would reduce it.
+**Fix:** Changed to `u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10)` to preserve the higher damage value, matching the unit ability's behavior.
+
+### BUG-076 🟡 Shared unit loses color on import
+**File:** index.html:4521
+**Found:** 2026-07-31
+**Description:** `shareUnit` serialized `primaryColor:u.c` but not `c` (the hex color field). On import, `unit()` looks for `x.c`, not `x.primaryColor`, so the imported unit would default to `#0ff` (cyan) instead of its original color.
+**Fix:** Added `c:u.c` to the serialized data alongside `primaryColor:u.c`.
+
+### BUG-077 🟡 P2P guest match hint uses wrong team for death log
+**File:** index.html:5372
+**Found:** 2026-07-31
+**Description:** `generateMatchHint` filtered `deathLog` for `d.team==="player"`. In P2P, the guest's units are team "enemy" in snapshots, so the guest's death log entries have `team:"enemy"`. The hint never found player deaths for the guest, so death-order-based strategy hints never appeared.
+**Fix:** Added team translation: `const playerTeam=connected&&role==="guest"?"enemy":"player"` and filter by `playerTeam`.
+
+### BUG-078 🟢 Rage damage multiplier exceeds 2x when attacker HP goes negative
+**File:** index.html:3559
+**Found:** 2026-07-31
+**Description:** Rage damage multiplier is `1+(1-h/mh)`. If `h` goes negative (e.g., from overkill), the multiplier exceeds 2.0. This could happen with projectile kills where the attacker dies between launch and impact.
+**Fix:** Clamped with `Math.max(0,1-attacker.h/attacker.mh)` to cap the multiplier at 2.0.
+
+### BUG-079 🟢 Settings "Master Mute" label is misleading
+**File:** index.html:134
+**Found:** 2026-07-31
+**Description:** The checkbox labeled "Master Mute" actually enables audio when checked (`audioEnabled=true`). The label contradicts the behavior — users would expect checking "Mute" to silence audio, but it does the opposite.
+**Fix:** Changed label to "Audio Enabled" to match the actual behavior.

@@ -131,7 +131,7 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <div class="group" style="max-width:300px;margin:0 auto;">
 <h3 style="font-size:.9rem;margin-bottom:8px;">Audio</h3>
 <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
-<span>Master Mute</span><input type="checkbox" id="setAudioEnabled" onchange="G.saveSetting('audioEnabled',this.checked)">
+<span>Audio Enabled</span><input type="checkbox" id="setAudioEnabled" onchange="G.saveSetting('audioEnabled',this.checked)">
 </label>
 <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
 <span>SFX Volume</span><input type="range" id="setSfxVol" min="0" max="100" value="70" onchange="G.saveSetting('sfxVol',this.value/100)" style="width:120px;">
@@ -3178,7 +3178,7 @@ const SPELL_SHAPE={
 // Phase 23: spell effect — applies the effect to affected units.
 const SPELL_EFFECT={
   damage(units,spec){units.forEach(u=>{u.h-=spec.magnitude||30;});},
-  damage_over_time(units,spec){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=spec.magnitude||10;u.poisonTick=0;});},
+  damage_over_time(units,spec){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;});},
   slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
   stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
   heal_allies(units,spec){units.forEach(u=>{u.h=Math.min(u.mh,u.h+(spec.magnitude||30));});},
@@ -3228,7 +3228,8 @@ const Spell={
     // For ally-targeting effects, filter to allies only.
     if(spec.target.startsWith("ally")||spec.target==="lowest_ally"){
       affected=affected.filter(u=>u.team===team);
-    }else if(spec.target.startsWith("enemy")||spec.target==="lowest_hp_enemy"||spec.target==="highest_hp_enemy"||spec.target==="random_enemy"){
+    }else{
+      // All other targets (enemy_*, center, etc.) default to enemies only.
       affected=affected.filter(u=>u.team!==team);
     }
     if(spec.shape!=="persistent_zone"){
@@ -3555,7 +3556,7 @@ const Battle={
     if(target.shieldActive>0){this.log(target.n+" shielded!");target.hasBeenHit=true;return;}
     let dmg=attacker.d;
     // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
-    if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+(1-attacker.h/attacker.mh);
+    if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+Math.max(0,1-attacker.h/attacker.mh);
     // crit
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
@@ -4517,7 +4518,7 @@ const G={
   // Phase 37: share forged unit via URL.
   shareUnit(u){
     try{
-      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,role:u.role,ability:u.ability,weaponType:u.weaponType,bodyPlan:u.bodyPlan,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
+      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,role:u.role,ability:u.ability,weaponType:u.weaponType,bodyPlan:u.bodyPlan,c:u.c,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
       const compressed=LZString?LZString.compressToEncodedURIComponent(data):encodeURIComponent(data);
       const url=location.origin+location.pathname+"?unit="+compressed;
       if(navigator.share){
@@ -5240,6 +5241,11 @@ const G={
     }
     // Phase 5: in multiplayer the host already broadcast the final winner;
     // guests reach here via the snapshot path with a translated winner.
+    // P2P guest: host sends round_end/match_end messages that handle state
+    // updates (lives, history). Guest just shows the result screen.
+    if(connected&&role==="guest"){
+      return;
+    }
     if(Match.active){
       Match.onRoundEnd(winner);
     }else{
@@ -5363,7 +5369,9 @@ const G={
     const roles={};
     for(const u of units)if(u.role)roles[u.role]=(roles[u.role]||0)+1;
     const deathLog=Match.deathLog||Battle.deathLog||[];
-    const playerDeaths=deathLog.filter(d=>d.team==="player");
+    // P2P guest: guest's units are team "enemy" in snapshots.
+    const playerTeam=connected&&role==="guest"?"enemy":"player";
+    const playerDeaths=deathLog.filter(d=>d.team===playerTeam);
     const firstDeath=playerDeaths[0];
     if(win){
       if(roles["frontline"]&&roles["carry"])return"💡 Solid frontline + carry combo won the day";
