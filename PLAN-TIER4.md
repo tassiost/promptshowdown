@@ -212,7 +212,7 @@ Squash/stretch: on attack windup (squash down 15%), on strike (stretch forward 1
 
 ---
 
-## Phase 25 — LLM-Authored Visual Modifiers ✅ PLANNED
+## Phase 25 — LLM-Authored Visual Modifiers ✅ DONE
 
 **Why:** Phase 24 makes everything look 10x better but still only ~20 silhouettes (the new body plans). A "fire dragon" and "ice dragon" both use the `dragon` body plan — same shape, different color. Phase 25 lets the LLM pick *visual modifiers* (horns, wings, tail type, aura, eye color, pattern, weapon style) that the assembler composes onto the body plan, giving real per-prompt visual variety without the risk of the LLM emitting raw shape coordinates.
 
