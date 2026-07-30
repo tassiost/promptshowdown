@@ -2172,6 +2172,125 @@ const SpriteRenderer={
 
 // Phase 17: Procedural FX System — particles, hit flashes, screen shake.
 // State-derived so P2P guests see the same juice without extra network traffic.
+// Phase 30: Audio system — procedural Web Audio (no asset files).
+const GameAudio={
+  ctx:null,master:null,sfxGain:null,musicGain:null,
+  enabled:true,sfxVol:0.7,musicVol:0.4,
+  musicOsc:[],musicInterval:null,
+  init(){
+    if(this.ctx)return;
+    try{
+      this.ctx=new (window.AudioContext||window.webkitAudioContext)();
+      this.master=this.ctx.createGain();this.master.connect(this.ctx.destination);
+      this.sfxGain=this.ctx.createGain();this.sfxGain.connect(this.master);
+      this.musicGain=this.ctx.createGain();this.musicGain.connect(this.master);
+      this.applyVolumes();
+    }catch(e){console.warn("Audio init failed:",e);}
+  },
+  applyVolumes(){
+    if(!this.ctx)return;
+    this.sfxGain.gain.value=this.enabled?this.sfxVol:0;
+    this.musicGain.gain.value=this.enabled?this.musicVol:0;
+  },
+  resume(){
+    if(this.ctx&&this.ctx.state==="suspended")this.ctx.resume();
+  },
+  // SFX synthesizer — plays a named sound via oscillators/noise.
+  sfx(name,opts={}){
+    if(!this.ctx||!this.enabled)return;
+    const c=this.ctx,t=c.currentTime;
+    const pitch=opts.pitch||0;
+    const make=(type,f0,f1,dur,gain,filter)=>{
+      const osc=c.createOscillator();osc.type=type;
+      osc.frequency.setValueAtTime(f0*Math.pow(1.06,pitch),t);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1,f1*Math.pow(1.06,pitch)),t+dur);
+      const g=c.createGain();g.gain.setValueAtTime(gain,t);
+      g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+      let node=osc;
+      if(filter){
+        const f=c.createBiquadFilter();f.type=filter.type||"lowpass";
+        f.frequency.value=filter.freq||800;
+        osc.connect(f);f.connect(g);
+      }else{osc.connect(g);}
+      g.connect(this.sfxGain);
+      osc.start(t);osc.stop(t+dur);
+    };
+    const noise=(dur,gain,filterFreq,filterType)=>{
+      const buf=c.createBuffer(1,c.sampleRate*dur,c.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+      const src=c.createBufferSource();src.buffer=buf;
+      const f=c.createBiquadFilter();f.type=filterType||"lowpass";f.frequency.value=filterFreq||800;
+      const g=c.createGain();g.gain.setValueAtTime(gain,t);
+      g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+      src.connect(f);f.connect(g);g.connect(this.sfxGain);
+      src.start(t);src.stop(t+dur);
+    };
+    switch(name){
+      case "attack_melee":make("square",200,80,0.08,0.15,{type:"lowpass",freq:600});break;
+      case "attack_ranged":make("triangle",600,1200,0.06,0.12,{type:"bandpass",freq:800});break;
+      case "hit":noise(0.05,0.15,800,"lowpass");break;
+      case "crit":noise(0.05,0.15,800,"lowpass");make("square",400,400,0.12,0.1);break;
+      case "death":make("sawtooth",150,40,0.2,0.15);break;
+      case "spawn":make("sine",200,600,0.1,0.1);break;
+      case "heal":make("sine",400,800,0.2,0.08);break;
+      case "explode":noise(0.3,0.2,2000,"lowpass");break;
+      case "shield":make("square",300,300,0.15,0.08);break;
+      case "spell_fire":noise(0.4,0.12,2000,"lowpass");make("sawtooth",80,60,0.4,0.08);break;
+      case "spell_frost":make("sine",1200,1200,0.3,0.06,{type:"highpass",freq:1000});break;
+      case "spell_lightning":make("square",2000,2000,0.04,0.15);break;
+      case "ui_click":make("sine",800,800,0.03,0.05);break;
+      case "ui_hover":make("sine",600,600,0.02,0.03);break;
+      case "round_start":make("sawtooth",110,110,0.6,0.1);make("sawtooth",220,220,0.6,0.08);break;
+      case "round_win":make("sine",440,440,0.15,0.1);setTimeout(()=>make("sine",554,554,0.15,0.1),150);setTimeout(()=>make("sine",659,659,0.3,0.1),300);break;
+      case "round_lose":make("sine",440,440,0.2,0.1);setTimeout(()=>make("sine",392,392,0.2,0.1),200);setTimeout(()=>make("sine",330,330,0.4,0.1),400);break;
+      case "match_win":make("sine",440,440,0.15,0.1);setTimeout(()=>make("sine",554,554,0.15,0.1),150);setTimeout(()=>make("sine",659,659,0.15,0.1),300);setTimeout(()=>make("sine",880,880,0.5,0.12),450);break;
+      case "match_lose":make("sawtooth",220,220,0.3,0.1);setTimeout(()=>make("sawtooth",196,196,0.3,0.1),300);setTimeout(()=>make("sawtooth",165,165,0.6,0.1),600);break;
+      case "forge_whoosh":noise(0.5,0.1,1000,"bandpass");break;
+      case "forge_reveal":make("sine",200,1200,0.4,0.1);break;
+      case "ramp_up":make("sine",400,800,0.08,0.08);break;
+    }
+  },
+  // Procedural music — generative ambient loop.
+  startMusic(){
+    if(!this.ctx||!this.enabled)return;
+    if(this.musicInterval)return;
+    const root=[261.63,329.63,392,440][this.save?.arena||0]||261.63;
+    // Bass drone.
+    const bass=this.ctx.createOscillator();bass.type="sine";bass.frequency.value=root/2;
+    const bg=this.ctx.createGain();bg.gain.value=0.08;
+    bass.connect(bg);bg.connect(this.musicGain);bass.start();
+    this.musicOsc=[bass];
+    // Slow arpeggio.
+    const notes=[root,root*1.25,root*1.5,root*1.875];
+    let step=0;
+    this.musicInterval=setInterval(()=>{
+      if(!this.ctx||!this.enabled){this.stopMusic();return;}
+      const t=this.ctx.currentTime;
+      const osc=this.ctx.createOscillator();osc.type="sine";
+      osc.frequency.value=notes[step%notes.length];
+      const g=this.ctx.createGain();g.gain.setValueAtTime(0.05,t);
+      g.gain.exponentialRampToValueAtTime(0.001,t+0.8);
+      osc.connect(g);g.connect(this.musicGain);
+      osc.start(t);osc.stop(t+0.8);
+      step++;
+    },800);
+  },
+  stopMusic(){
+    if(this.musicInterval){clearInterval(this.musicInterval);this.musicInterval=null;}
+    for(const o of this.musicOsc){try{o.stop();}catch(e){}}
+    this.musicOsc=[];
+  },
+};
+// Phase 30: fxType → base frequency for attack SFX.
+function fxTypeFreq(fxType){
+  switch(fxType){
+    case "fire":return 2; case "frost":return 1.5; case "lightning":return 3;
+    case "poison":return 0.5; case "heal_glow":return 1.2; case "shadow":return 0.7;
+    default:return 0;
+  }
+}
+
 const MAX_PARTICLES=60;
 // Phase 24e: derive elemental fxType from unit attributes for auras.
 const AURA_MAP={
@@ -2228,6 +2347,7 @@ const BattleFX={
   onKill(u){
     this.burst(u.x,u.y,"#fd4",5,70);
     u.hitFlash=0.08;
+    GameAudio.sfx("ramp_up"); // Phase 30
   },
   // Phase 24e: persistent unit aura — per-frame particle emitter driven by fxType.
   unitAura(u,dt){
@@ -2266,6 +2386,7 @@ const BattleFX={
   // Spawn pop-in: scale 0->1 ease-out-back.
   onSpawn(u){
     u.spawnT=0.001; // start spawn animation
+    GameAudio.sfx("spawn"); // Phase 30
   },
   // Attack lunge: offset 4px toward target.
   onAttack(u,target){
@@ -2573,6 +2694,7 @@ const Battle={
   attack(attacker,target,enemies){
     BattleFX.onAttack(attacker,target); // Phase 17: attack lunge FX
     BattleFX.fireRecipeFx(attacker,target); // Phase 17: weapon-based recipe FX
+    GameAudio.sfx(attacker.r>RANGED_THRESHOLD?"attack_ranged":"attack_melee",{pitch:fxTypeFreq(attacker.fxType)}); // Phase 30
     if(attacker.r>RANGED_THRESHOLD){
       this.projectiles.push({
         x:attacker.x,y:attacker.y,
@@ -2606,13 +2728,14 @@ const Battle={
     // Phase 17: FX on hit.
     if(crit){
       BattleFX.onCrit(target);
+      GameAudio.sfx("crit"); // Phase 30
       // Phase 17: track crits for P2P snapshot sync.
       if(!this.recentCrits)this.recentCrits=[];
       this.recentCrits.push({id:target.id,t:this.time});
       // Keep only recent crits (last 2 seconds).
       this.recentCrits=this.recentCrits.filter(rc=>this.time-rc.t<2);
     }
-    else BattleFX.onHit(target);
+    else {BattleFX.onHit(target);GameAudio.sfx("hit");} // Phase 30
     this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
     transmit("hit",{target:target.id,damage:dmg});
     // lifesteal: heal attacker for 50% of damage dealt
@@ -2636,7 +2759,7 @@ const Battle={
     switch(u.ability){
       case "heal":{
         const ally=lowestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h);
-        if(ally){ally.h=Math.min(ally.mh,ally.h+u.d*2);u.abCool=3.0;this.log(u.n+" heals "+ally.n);}
+        if(ally){ally.h=Math.min(ally.mh,ally.h+u.d*2);u.abCool=3.0;this.log(u.n+" heals "+ally.n);GameAudio.sfx("heal");}
         break;
       }
       case "spawn":{
@@ -2657,12 +2780,14 @@ const Battle={
         for(let e of enemies.filter(e=>e.h>0&&dist(u,e)<60))this.takeDamage(u,e,enemies);
         u.abCool=5.0;
         this.log(u.n+" explodes!");
+        GameAudio.sfx("explode"); // Phase 30
         break;
       }
       case "heal_burst":{
         for(let a of allies.filter(a=>a.h>0&&dist(u,a)<60))a.h=Math.min(a.mh,a.h+u.d*2);
         u.abCool=4.0;
         this.log(u.n+" heal burst!");
+        GameAudio.sfx("heal"); // Phase 30
         break;
       }
       case "shield":{
@@ -2670,6 +2795,7 @@ const Battle={
         u.abCool=8.0;
         if(u.abilityTrigger==="on_first_hit")u.firstHitUsed=true;
         this.log(u.n+" raises shield");
+        GameAudio.sfx("shield"); // Phase 30
         break;
       }
       // "none" and passive abilities: no-op here
@@ -2695,6 +2821,7 @@ const Battle={
     }
     u.deathT=0;
     BattleFX.onDeath(u); // Phase 17: death burst FX
+    GameAudio.sfx("death"); // Phase 30
     // Phase 16: track death order for post-match hint.
     if(!this.deathLog)this.deathLog=[];
     this.deathLog.push({n:u.n,role:u.role,team:u.team,t:this.time});
@@ -3206,6 +3333,10 @@ const G={
   init(){
     // Phase 7: migrate older saves forward, then fill any missing defaults.
     this.save=migrateSave(this.save);
+    // Phase 30: init audio on first user gesture (mobile autoplay policy).
+    const audioInit=()=>{GameAudio.init();GameAudio.resume();document.removeEventListener("pointerdown",audioInit);document.removeEventListener("keydown",audioInit);};
+    document.addEventListener("pointerdown",audioInit);
+    document.addEventListener("keydown",audioInit);
     if(!this.save.version)this.save.version=CURRENT_VERSION;
     if(!this.save.wins)this.save.wins=0;
     if(!this.save.deck)this.save.deck=this.base.map(unit);
@@ -3388,6 +3519,7 @@ const G={
 
   // Phase 9: called by Match.startRound() to start the sequential draft.
   startRoundDraft(){
+    GameAudio.sfx("round_start"); // Phase 30
     // Rerolls are per-match: only reset on round 1.
     if(Match.round===1)this.rerolls=3;
     // Determine draw count: 4th-draw comeback if player lost last round.
@@ -3633,6 +3765,7 @@ const G={
   startBattle(){
     // Phase 21: store player's picks for bot counter-picking next round.
     this.prevPlayerPicks=this.selected?[...this.selected]:null;
+    GameAudio.init();GameAudio.startMusic(); // Phase 30
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
     if(connected&&role==="host"){
@@ -3731,6 +3864,8 @@ const G={
     this.screen("result");
     const win=winner==="player";
     setText("resultTitle",win?"ROUND WON":"ROUND LOST");
+    GameAudio.sfx(win?"round_win":"round_lose"); // Phase 30
+    GameAudio.stopMusic(); // Phase 30: stop battle music
     const lr=$("livesResult");
     if(lr)lr.innerText=`You ${this.livesHearts(livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(livesEnemy,DEFAULT_LIVES)}`;
     // Hide match rewards (awarded on match end, not round end).
@@ -3752,6 +3887,8 @@ const G={
   // Phase 8: Match ended — award XP/coins, show match result, update wins.
   onMatchEnd(winner){
     const win=winner==="player";
+    GameAudio.sfx(win?"match_win":"match_lose"); // Phase 30
+    GameAudio.stopMusic(); // Phase 30
     let xpGain=0,coinGain=0,arenaAdvanced=false;
     if(win){
       vibrate([40,30,40]); // Phase 7: victory haptic
@@ -3969,6 +4106,7 @@ const G={
   },
   // Core forge logic — runs ad (if watchAd) + generation in parallel.
   async _doForge(prompt,watchAd){
+    GameAudio.sfx("forge_whoosh"); // Phase 30
     const btn=$("forgeGenBtn");
     const skipBtn=$("forgeSkipBtn");
     if(btn)btn.style.display="none";
@@ -4006,6 +4144,7 @@ const G={
     this._hideModelProgress();
     this.pendingForgeUnit=unit;
     this.showForgePreview(unit);
+    GameAudio.sfx("forge_reveal"); // Phase 30
   },
   // Phase 12: show model download progress bar + Cancel button while LLM loads.
   _showModelProgress(){
@@ -4326,8 +4465,15 @@ document.addEventListener("pointerdown",e=>{
 });
 
 // Phase 7: reset Battle.last on visibility change so dt doesn't jump.
+// Phase 30: pause/resume music on visibility change.
 document.addEventListener("visibilitychange",()=>{
-  if(!document.hidden&&Battle.running){Battle.last=performance.now();}
+  if(!document.hidden&&Battle.running){Battle.last=performance.now();GameAudio.startMusic();}
+  else{GameAudio.stopMusic();}
+});
+
+// Phase 30: delegated UI click sound for all buttons.
+document.addEventListener("click",e=>{
+  if(e.target&&e.target.classList&&e.target.classList.contains("btn"))GameAudio.sfx("ui_click");
 });
 
 // Phase 1 + Phase 7: kick off module load + init. Errors surface in the panel.

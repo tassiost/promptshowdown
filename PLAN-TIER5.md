@@ -37,7 +37,7 @@ Audio first (biggest feel win, lowest risk). Onboarding + settings next (shippab
 
 ---
 
-## Phase 30 — Audio System ✅ PLANNED
+## Phase 30 — Audio System ✅ DONE
 
 **Why:** The single biggest "feel" gap. The entire 3700-line `index.html` has **zero** audio — no `AudioContext`, no `sound`, no `music` reference anywhere. A game with Tier 4's rich visuals + spring physics + auras but dead silence feels broken. Every player notices in the first 5 seconds.
 
