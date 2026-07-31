@@ -47,6 +47,8 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 .btn.red{border-color:var(--danger);color:var(--danger);}
 .btn.red:hover{background:rgba(251,113,133,.1);box-shadow:0 0 12px rgba(251,113,133,.3);}
 .btn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+.btn:focus-visible,.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 .group{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 5px;}
 .pill{background:var(--card);border:1px solid var(--border);padding:6px 12px;border-radius:20px;font-size:.72rem;font-weight:600;color:var(--muted);}
 .card{
@@ -155,29 +157,29 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="tipOfDay" style="margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.75rem;color:var(--muted);text-align:center;max-width:280px;"></div>
 <div id="unitSpotlight" style="display:none;margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--accent);border-radius:var(--radius-sm);font-size:.72rem;text-align:center;max-width:280px;"></div>
 <div style="display:flex;gap:4px;justify-content:center;margin:4px 0;">
-<button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;">Easy</button>
-<button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;">Normal</button>
-<button class="btn" onclick="G.setDifficulty('hard')" id="diffHard" style="font-size:.7rem;padding:3px 10px;">Hard</button>
+<button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;" aria-label="Set difficulty to easy">Easy</button>
+<button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;" aria-label="Set difficulty to normal">Normal</button>
+<button class="btn" onclick="G.setDifficulty('hard')" id="diffHard" style="font-size:.7rem;padding:3px 10px;" aria-label="Set difficulty to hard">Hard</button>
 </div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:8px;">
-<button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
-<button class="btn" onclick="G.quickMatch()" style="font-size:.85rem;">⚡ QUICK MATCH</button>
-<button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;">🔮 FORGE</button>
-<button class="btn" onclick="G.deck()">📋 DECK</button>
-<button class="btn" onclick="G.shop()">🛒 SHOP</button>
-<button class="btn" onclick="G.codex()">📖 CODEX</button>
-<button class="btn" onclick="G.stats()">📊 STATS</button>
-<button class="btn" onclick="G.achievementsScreen()">🏆 ACHIEVEMENTS</button>
-<button class="btn" onclick="G.replaysScreen()">🎬 HISTORY</button>
-<button class="btn" onclick="G.tierList()">📊 TIER LIST</button>
-<button class="btn" onclick="G.profile()">👤 PROFILE</button>
-<button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
-<button class="btn red" onclick="G.reset()">↺ RESET</button>
-<button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
-<button class="btn" onclick="G.showSettings()" style="font-size:.78rem;opacity:0.7;">⚙️ Settings</button>
-<button class="btn" onclick="G.showQuests()" style="font-size:.78rem;opacity:0.7;">📋 Quests <span id="questBadge" style="background:var(--accent);color:#fff;border-radius:8px;padding:1px 5px;font-size:.7rem;display:none;">!</span></button>
-<button class="btn" onclick="G.showLeaderboard()" style="font-size:.78rem;opacity:0.7;">🏆 Ranked</button>
-<button class="btn" onclick="G.p2pTest()" style="font-size:.78rem;opacity:0.7;">🧪 P2P Test</button>
+<button class="btn primary" onclick="G.startMatchmaking()" aria-label="Start matchmaking for a match">⚔️ FIGHT</button>
+<button class="btn" onclick="G.quickMatch()" style="font-size:.85rem;" aria-label="Quick match against a bot">⚡ QUICK MATCH</button>
+<button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;" aria-label="Forge a custom unit or spell">🔮 FORGE</button>
+<button class="btn" onclick="G.deck()" aria-label="View and edit your deck">📋 DECK</button>
+<button class="btn" onclick="G.shop()" aria-label="Visit the shop to buy units">🛒 SHOP</button>
+<button class="btn" onclick="G.codex()" aria-label="View the unit codex encyclopedia">📖 CODEX</button>
+<button class="btn" onclick="G.stats()" aria-label="View your profile and stats">📊 STATS</button>
+<button class="btn" onclick="G.achievementsScreen()" aria-label="View achievements">🏆 ACHIEVEMENTS</button>
+<button class="btn" onclick="G.replaysScreen()" aria-label="View match history and replays">🎬 HISTORY</button>
+<button class="btn" onclick="G.tierList()" aria-label="View the tier list">📊 TIER LIST</button>
+<button class="btn" onclick="G.profile()" aria-label="View your profile">👤 PROFILE</button>
+<button class="btn" onclick="G.upgrade()" aria-label="Upgrade your units">⬆ UPGRADE</button>
+<button class="btn red" onclick="G.reset()" aria-label="Reset all progress">↺ RESET</button>
+<button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;" aria-label="Show how to play tutorial">❓ How to Play</button>
+<button class="btn" onclick="G.showSettings()" style="font-size:.78rem;opacity:0.7;" aria-label="Open settings">⚙️ Settings</button>
+<button class="btn" onclick="G.showQuests()" style="font-size:.78rem;opacity:0.7;" aria-label="View daily quests">📋 Quests <span id="questBadge" style="background:var(--accent);color:#fff;border-radius:8px;padding:1px 5px;font-size:.7rem;display:none;">!</span></button>
+<button class="btn" onclick="G.showLeaderboard()" style="font-size:.78rem;opacity:0.7;" aria-label="View ranked leaderboard">🏆 Ranked</button>
+<button class="btn" onclick="G.p2pTest()" style="font-size:.78rem;opacity:0.7;" aria-label="Test P2P connection">🧪 P2P Test</button>
 </div>
 </div>
 
@@ -379,9 +381,9 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
   <span id="battleTimer" style="color:var(--muted);font-size:.65rem;"></span>
 </div>
 <div id="roundHistoryBar" style="display:flex;gap:4px;justify-content:center;margin:2px 0 4px;"></div>
-<canvas id="cv"></canvas>
-<div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;"></div>
-<div id="battleLog"></div>
+<canvas id="cv" role="img" aria-label="Battle arena — tap to advance one tick"></canvas>
+<div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;" role="toolbar" aria-label="Spell bar"></div>
+<div id="battleLog" role="log" aria-label="Battle log"></div>
 <div id="compBonus" style="display:none;position:fixed;left:5px;top:70px;max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
 <div id="battleStats" style="display:none;position:fixed;right:5px;top:70px;max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
 <div id="killFeed" style="display:none;position:fixed;right:5px;top:130px;max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
@@ -425,17 +427,18 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="screen" id="forge">
 <h2>🔮 Forge <span id="forgeModeLabel">Custom Unit</span></h2>
 <div style="margin-bottom:8px;">
-<button class="btn" id="forgeModeUnit" onclick="G.setForgeMode('unit')" style="font-size:.78rem;padding:4px 10px;">⚔️ Unit</button>
-<button class="btn" id="forgeModeSpell" onclick="G.setForgeMode('spell')" style="font-size:.78rem;padding:4px 10px;">✨ Spell</button>
+<button class="btn" id="forgeModeUnit" onclick="G.setForgeMode('unit')" style="font-size:.78rem;padding:4px 10px;" aria-label="Forge mode: unit">⚔️ Unit</button>
+<button class="btn" id="forgeModeSpell" onclick="G.setForgeMode('spell')" style="font-size:.78rem;padding:4px 10px;" aria-label="Forge mode: spell">✨ Spell</button>
+<button class="btn" onclick="G.menu()" style="font-size:.78rem;padding:4px 10px;float:right;" aria-label="Back to menu">← Back</button>
 </div>
 <div class="detail" id="aiStatus" style="margin-bottom:8px;">AI: idle</div>
-<input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja...">
+<input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja..." aria-label="Enter a concept for your custom unit">
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;">
-<button class="btn primary" id="forgeGenBtn" onclick="G.forgeWithAd()">📺 Watch Ad to Generate</button>
-<button class="btn" id="forgeSkipBtn" onclick="G.forgeSkipAd()" style="display:none;">⏭ Skip Ad (template)</button>
+<button class="btn primary" id="forgeGenBtn" onclick="G.forgeWithAd()" aria-label="Watch an ad to generate a custom unit">📺 Watch Ad to Generate</button>
+<button class="btn" id="forgeSkipBtn" onclick="G.forgeSkipAd()" style="display:none;" aria-label="Skip ad and use template generation">⏭ Skip Ad (template)</button>
 </div>
 <div id="forgeModelProgress" style="display:none;margin:12px 0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;">
-  <div class="detail" id="forgeModelText" style="margin-bottom:8px;">Loading AI model... (one-time only)</div>
+  <div class="detail" id="forgeModelText" style="margin-bottom:8px;">Loading AI model... (~1s)</div>
   <div style="background:var(--bg);border-radius:6px;height:8px;margin:6px 0;overflow:hidden;">
     <div id="forgeModelFill" style="background:linear-gradient(90deg,var(--accent),var(--accent2));height:8px;border-radius:6px;width:0%;transition:width .3s;"></div>
   </div>
@@ -443,11 +446,11 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 </div>
 <div id="forgePreview" style="margin:12px 0;"></div>
 <div id="forgeActions" style="display:none;flex-direction:column;gap:6px;width:100%;max-width:280px;">
-<button class="btn primary" onclick="G.keepForge()">✓ KEEP</button>
-<button class="btn" onclick="G.forgeWithAd()">🎲 REROLL (Watch Ad)</button>
-<button class="btn" id="shareUnitBtn" onclick="G.shareForgeUnit()" style="display:none;">📤 Share Unit</button>
+<button class="btn primary" onclick="G.keepForge()" aria-label="Keep this forged unit">✓ KEEP</button>
+<button class="btn" onclick="G.forgeWithAd()" aria-label="Reroll and watch ad for a new unit">🎲 REROLL (Watch Ad)</button>
+<button class="btn" id="shareUnitBtn" onclick="G.shareForgeUnit()" style="display:none;" aria-label="Share this unit">📤 Share Unit</button>
 </div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← BACK</button>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;" aria-label="Back to menu">← BACK</button>
 </div>
 
 <div class="screen" id="deck">
@@ -3516,7 +3519,79 @@ const SpriteRenderer={
     }
   },
 
-  // Draw a shape without joint transform (absolute coords relative to unit center).
+  // Stroke a shape outline only (for silhouette outline pass).
+  _strokeShape(c,shape,channels,u){
+    const joint=shape.joint;
+    if(joint){
+      const chVal=channels[joint]||0;
+      const cfg=JOINT_CONFIG[joint]||{mode:"rotate"};
+      const mode=shape.jointMode||cfg.mode;
+      if(mode==="rotate"){
+        const maxAngle=(JOINT_ANGLES[joint]||30)*Math.PI/180;
+        let px,py;
+        if(shape.t==="rect"){px=shape.x+shape.w/2;py=shape.y;}
+        else{px=shape.cx||shape.x||0;py=shape.cy||shape.y||0;}
+        c.save();
+        c.translate(u.x+px,u.y+py);
+        c.rotate(chVal*maxAngle);
+        c.translate(-px,-py);
+        this._strokeShapeRaw(c,shape,u);
+        c.restore();
+      }else if(mode==="translate"){
+        const range=shape.jointRange||cfg.range||5;
+        const axis=shape.jointAxis||cfg.axis||"y";
+        const offset=chVal*range;
+        c.save();
+        if(axis==="x")c.translate(offset,0);
+        else if(axis==="y")c.translate(0,offset);
+        else c.translate(offset*0.7,offset*0.3);
+        this._strokeShapeRaw(c,shape,u);
+        c.restore();
+      }else if(mode==="scale"){
+        const range=shape.jointRange||cfg.range||0.1;
+        const axis=shape.jointAxis||cfg.axis||"both";
+        const sx=axis==="x"||axis==="both"?1+chVal*range:1;
+        const sy=axis==="y"||axis==="both"?1+chVal*range:1;
+        let cx,cy;
+        if(shape.t==="rect"){cx=shape.x+shape.w/2;cy=shape.y+shape.h/2;}
+        else{cx=shape.cx||shape.x||0;cy=shape.cy||shape.y||0;}
+        c.save();
+        c.translate(u.x+cx,u.y+cy);
+        c.scale(sx,sy);
+        c.translate(-cx,-cy);
+        this._strokeShapeRaw(c,shape,u);
+        c.restore();
+      }else{
+        this._strokeShapeRaw(c,shape,u);
+      }
+    }else{
+      this._strokeShapeRaw(c,shape,u);
+    }
+  },
+
+  // Stroke a shape without joint transform.
+  _strokeShapeRaw(c,shape,u){
+    const ox=u.x,oy=u.y;
+    switch(shape.t){
+      case "circle":
+        c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.stroke();break;
+      case "ellipse":
+        c.beginPath();c.ellipse(ox+shape.cx,oy+shape.cy,shape.rx,shape.ry,0,0,Math.PI*2);c.stroke();break;
+      case "rect":
+        c.strokeRect(ox+shape.x,oy+shape.y,shape.w,shape.h);break;
+      case "polygon":
+        if(!shape.pts||!shape.pts.length)break;
+        c.beginPath();
+        for(let i=0;i<shape.pts.length;i++){
+          const px=ox+shape.pts[i][0],py=oy+shape.pts[i][1];
+          if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+        }
+        c.closePath();c.stroke();break;
+      case "arc":
+        c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,shape.start,shape.end);c.stroke();break;
+      default:break;
+    }
+  },
   _drawShapeRaw(c,shape,u){
     const ox=u.x,oy=u.y;
     // Phase 32: apply colorblind filter to shape color (in-place remap).
@@ -3800,6 +3875,19 @@ const SpriteRenderer={
     }
     for(const shape of(recipe.shapes||[])){
       this.drawShape(c,shape,rm?{}:channels,u);
+    }
+    // Silhouette outline: draw a thin black outline around the entire sprite
+    // by re-stroking all shapes with a unified black stroke at slightly larger width.
+    if(state!=="death"&&recipe.shapes){
+      c.save();
+      c.globalAlpha=alpha*0.6;
+      c.strokeStyle="#000";
+      c.lineWidth=1.5;
+      for(const shape of recipe.shapes){
+        if(shape.t==="line")continue; // skip lines (they're already strokes)
+        this._strokeShape(c,shape,rm?{}:channels,u);
+      }
+      c.restore();
     }
     u.x=origX;
     // Phase 24f: draw face (eyes + expression) for humanoid-like units.
@@ -7980,6 +8068,9 @@ const G={
   // Phase 16: highlights picks that fill missing roles in current round army.
   draftCard(u){
     const card=document.createElement("div");
+    card.setAttribute("role","button");
+    card.setAttribute("tabindex","0");
+    card.setAttribute("aria-label",u._isSpell?"Spell: "+u.name:"Unit: "+u.n);
     // Phase 23: spell card rendering.
     if(u._isSpell){
       card.className="card rar-rare";
@@ -9123,8 +9214,8 @@ const G={
     const promptEl=$("forgePrompt");
     if(promptEl)promptEl.placeholder=mode==="spell"?"e.g. fireball, heal rain, frost nova...":"e.g. ice mage, fire dragon, ninja...";
     const uBtn=$("forgeModeUnit"),sBtn=$("forgeModeSpell");
-    if(uBtn)uBtn.style.opacity=mode==="unit"?"1":"0.5";
-    if(sBtn)sBtn.style.opacity=mode==="spell"?"1":"0.5";
+    if(uBtn){uBtn.style.opacity=mode==="unit"?"1":"0.5";uBtn.style.borderColor=mode==="unit"?"var(--accent)":"var(--border)";uBtn.style.boxShadow=mode==="unit"?"0 0 8px rgba(124,58,237,.4)":"none";}
+    if(sBtn){sBtn.style.opacity=mode==="spell"?"1":"0.5";sBtn.style.borderColor=mode==="spell"?"var(--accent)":"var(--border)";sBtn.style.boxShadow=mode==="spell"?"0 0 8px rgba(124,58,237,.4)":"none";}
   },
   forgeWithAd(){
     const promptEl=$("forgePrompt");
@@ -9444,7 +9535,7 @@ const G={
     if(!name||!name.trim())return;
     if(!this.save.presets)this.save.presets={};
     const key=name.trim();
-    if(this.save.presets[key]&&!confirm("Preset '"+key+"' already exists. Overwrite?"))return;
+    if(this.save.presets[key]){showConfirm("Preset '"+key+"' already exists. Overwrite?",()=>{this.save.presets[key]=this.save.loadout.slice();saveData(this.save);GameAudio.sfx("ui_click");toast("Preset saved");});return;}
     this.save.presets[key]=this.save.loadout.slice();
     saveData(this.save);
     GameAudio.sfx("ui_click");
@@ -10789,6 +10880,14 @@ document.addEventListener("keydown",e=>{
   if(e.key==="?"||(e.key==="/"&&e.shiftKey)){
     e.preventDefault();
     G.showKeyboardHelp();
+  }
+});
+
+// Accessibility: Enter/Space on role="button" elements triggers click.
+document.addEventListener("keydown",e=>{
+  if((e.key==="Enter"||e.key===" ")&&e.target&&e.target.getAttribute&&e.target.getAttribute("role")==="button"){
+    e.preventDefault();
+    e.target.click();
   }
 });
 
