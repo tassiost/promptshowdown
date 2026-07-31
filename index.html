@@ -126,6 +126,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 </div>
 <div id="arenaBadge" style="margin:10px 0;font-size:.9rem;font-weight:600;text-align:center;"></div>
 <div id="streakBadge" style="display:none;margin:4px 0;font-size:.85rem;font-weight:700;text-align:center;color:#fb923c;"></div>
+<div id="dailyBadge" style="display:none;margin:4px 0;font-size:.8rem;font-weight:600;text-align:center;color:#fbbf24;"></div>
 <div style="display:flex;gap:4px;justify-content:center;margin:4px 0;">
 <button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;">Easy</button>
 <button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;">Normal</button>
@@ -139,6 +140,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.shop()">🛒 SHOP</button>
 <button class="btn" onclick="G.codex()">📖 CODEX</button>
 <button class="btn" onclick="G.stats()">📊 STATS</button>
+<button class="btn" onclick="G.achievementsScreen()">🏆 ACHIEVEMENTS</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
@@ -266,6 +268,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="pill">💰 <span id="coinGain">+0</span></div>
 </div>
 <div id="matchMVP" style="display:none;margin:10px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--accent);text-align:center;"></div>
+<div id="matchDmgChart" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="matchRounds" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:12px;">
 <button class="btn primary" id="nextRound">Next Round</button>
@@ -348,6 +351,13 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="screen" id="stats">
 <h2>📊 Stats</h2>
 <div id="statsContent" style="max-width:320px;margin:0 auto;"></div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="achievements">
+<h2>🏆 Achievements</h2>
+<div id="achProgress" style="text-align:center;font-size:.8rem;color:var(--muted);margin-bottom:10px;"></div>
+<div id="achContent" style="max-width:360px;margin:0 auto;"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
@@ -6146,6 +6156,19 @@ const G={
     }
     // Difficulty selector highlight.
     this.updateDifficultyUI();
+    // Daily challenge indicator.
+    const dailyEl=$("dailyBadge");
+    if(dailyEl){
+      const today=new Date().toDateString();
+      if((this.save.lastDailyWin||"")!==today){
+        dailyEl.style.display="block";
+        dailyEl.innerHTML="🎁 Daily Challenge: Win a match for +100💰 bonus!";
+      }else{
+        dailyEl.style.display="block";
+        dailyEl.innerHTML="✅ Daily Challenge complete — come back tomorrow!";
+        dailyEl.style.color="var(--ok)";
+      }
+    }
     // Phase 12: forge button. Normally gated behind Training Yard completion
     // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
     const forgeBtn=$("forgeMenuBtn");
@@ -6846,6 +6869,7 @@ const G={
       vibrate([40,30,40]); // Phase 7: victory haptic
       this.save.wins=(this.save.wins||0)+1;
       this.save.matchWins=(this.save.matchWins||0)+1;
+      this.save._lastMatchWon=true;
       // Win streak tracking.
       this.save.winStreak=(this.save.winStreak||0)+1;
       if(this.save.winStreak>(this.save.bestStreak||0))this.save.bestStreak=this.save.winStreak;
@@ -6854,6 +6878,15 @@ const G={
         const streakBonus=Math.min(50,this.save.winStreak*5);
         coinGain+=streakBonus;
         this.save.coins=(this.save.coins||0)+streakBonus;
+      }
+      // Daily challenge: first win of the day gives bonus coins.
+      const today=new Date().toDateString();
+      if((this.save.lastDailyWin||"")!==today){
+        this.save.lastDailyWin=today;
+        const dailyBonus=100;
+        coinGain+=dailyBonus;
+        this.save.coins=(this.save.coins||0)+dailyBonus;
+        setTimeout(()=>toast(`🎁 Daily challenge complete! +${dailyBonus}💰`),600);
       }
       xpGain=50+this.playerLevel()*10;
       coinGain=20+F(R()*15);
@@ -6878,6 +6911,7 @@ const G={
       this.checkAchievements();
     }else{
       // Loss: reset win streak.
+      this.save._lastMatchWon=false;
       if(this.save.winStreak>0){
         this.save.winStreak=0;
         saveData(this.save);
@@ -6906,6 +6940,30 @@ const G={
     // Win streak notification.
     if(win&&this.save.winStreak>=3){
       setTimeout(()=>toast(`🔥 ${this.save.winStreak}-win streak! +${Math.min(50,this.save.winStreak*5)}💰 bonus`),800);
+    }
+    // Damage breakdown chart: bar chart of each player unit's damage.
+    const dmgEl=$("matchDmgChart");
+    if(dmgEl){
+      const playerTeam=connected&&role==="guest"?"enemy":"player";
+      const units=Battle.units.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
+        .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0));
+      if(units.length>0){
+        const maxDmg=Math.max(...units.map(u=>u.dmgDealt||0));
+        dmgEl.style.display="block";
+        let html="<div style='font-weight:700;font-size:.8rem;margin-bottom:8px;text-align:center;'>Damage Breakdown</div>";
+        for(const u of units){
+          const pct=Math.round((u.dmgDealt/maxDmg)*100);
+          const kills=u.kills||0;
+          html+=`<div style="display:flex;align-items:center;gap:6px;margin:4px 0;">`+
+            `<span style="color:${u.c};font-size:.75rem;width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.n}</span>`+
+            `<div style="flex:1;background:var(--border);border-radius:4px;height:14px;overflow:hidden;">`+
+            `<div style="width:${pct}%;height:100%;background:${u.c};border-radius:4px;"></div></div>`+
+            `<span style="font-size:.7rem;color:var(--muted);width:60px;text-align:right;">${Math.round(u.dmgDealt)}${kills>0?` · ${kills}☠`:""}</span></div>`;
+        }
+        dmgEl.innerHTML=html;
+      }else{
+        dmgEl.style.display="none";
+      }
     }
     // Round-by-round breakdown.
     const roundsEl=$("matchRounds");
@@ -6991,13 +7049,31 @@ const G={
   achievements:{
     firstWin:{name:"First Victory",desc:"Win your first match",check:G=>G.save.matchWins>=1},
     win10:{name:"Veteran",desc:"Win 10 matches",check:G=>G.save.matchWins>=10},
+    win25:{name:"Champion",desc:"Win 25 matches",check:G=>G.save.matchWins>=25},
     level5:{name:"Rising Hero",desc:"Reach player level 5",check:G=>G.playerLevel()>=5},
+    level10:{name:"Legendary",desc:"Reach player level 10",check:G=>G.playerLevel()>=10},
     rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100},
+    rich500:{name:"Tycoon",desc:"Hold 500 coins",check:G=>(G.save.coins||0)>=500},
     comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck()},
     arenaMaster:{name:"Arena Master",desc:"Unlock all arenas",check:G=>(G.save.arena||0)>=G.arenas.length-1},
     roleMaster:{name:"Role Master",desc:"Win with each role as last standing",check:G=>G._roleMasterCheck()},
     firstForge:{name:"First Forge",desc:"Create your first custom unit",check:G=>(G.save.collection||[]).some(u=>u.recipe&&!G.base.find(b=>b.n===u.n))},
-    fullCustom:{name:"Full Custom",desc:"Win with a 4-card custom-only loadout",check:G=>G._fullCustomCheck()}
+    fullCustom:{name:"Full Custom",desc:"Win with a 4-card custom-only loadout",check:G=>G._fullCustomCheck()},
+    streak3:{name:"On Fire",desc:"Win 3 matches in a row",check:G=>(G.save.bestStreak||0)>=3},
+    streak5:{name:"Unstoppable",desc:"Win 5 matches in a row",check:G=>(G.save.bestStreak||0)>=5},
+    streak10:{name:"Juggernaut",desc:"Win 10 matches in a row",check:G=>(G.save.bestStreak||0)>=10},
+    endless5:{name:"Endless Warrior",desc:"Reach endless level 5",check:G=>(G.save.endlessLevel||0)>=5},
+    endless10:{name:"Endless Legend",desc:"Reach endless level 10",check:G=>(G.save.endlessLevel||0)>=10},
+    hardWin:{name:"Hard Mode Hero",desc:"Win a match on Hard difficulty",check:G=>G._hardWinCheck()},
+    collector:{name:"Collector",desc:"Collect 20 unique units",check:G=>G.collectionUnits().length>=20},
+    collector50:{name:"Master Collector",desc:"Collect 50 unique units",check:G=>G.collectionUnits().length>=50},
+    damageDealer:{name:"Damage Dealer",desc:"Deal 10,000 total damage",check:G=>(G.save.stats?.totalDmg||0)>=10000},
+    exterminator:{name:"Exterminator",desc:"Get 100 total kills",check:G=>(G.save.stats?.totalKills||0)>=100},
+    spellmaster:{name:"Spellmaster",desc:"Cast 50 spells",check:G=>(G.save.stats?.totalSpells||0)>=50}
+  },
+  _hardWinCheck(){
+    // Check if the player won the most recent match on hard difficulty.
+    return (G.save.difficulty==="hard")&&(G.save._lastMatchWon===true);
   },
   _roleMasterCheck(){
     // Check if the player has won matches with each role as the last unit standing.
@@ -7731,6 +7807,32 @@ const G={
         `<div style="font-size:.7rem;color:var(--muted);">${c.label}</div></div>`;
     }
     html+="</div>";
+    el.innerHTML=html;
+  },
+
+  // Achievements screen: browse all achievements, locked/unlocked.
+  achievementsScreen(){
+    this.screen("achievements");
+    const a=this.save.achievements||{};
+    const keys=Object.keys(this.achievements);
+    const unlocked=keys.filter(k=>a[k]).length;
+    const progEl=$("achProgress");
+    if(progEl)progEl.textContent=`${unlocked} / ${keys.length} unlocked`;
+    const el=$("achContent");
+    if(!el)return;
+    let html="";
+    for(const key of keys){
+      const ach=this.achievements[key];
+      const isUnlocked=!!a[key];
+      const icon=isUnlocked?"🏆":"🔒";
+      const opacity=isUnlocked?"1":"0.5";
+      const borderColor=isUnlocked?"var(--ok)":"var(--border)";
+      const nameColor=isUnlocked?"var(--ok)":"var(--muted)";
+      html+=`<div style="background:var(--card);border:1px solid ${borderColor};border-radius:var(--radius);padding:10px;margin:6px 0;opacity:${opacity};display:flex;align-items:center;gap:10px;">`+
+        `<div style="font-size:1.5rem;flex-shrink:0;">${icon}</div>`+
+        `<div><div style="font-weight:700;color:${nameColor};font-size:.85rem;">${ach.name}</div>`+
+        `<div style="color:var(--muted);font-size:.75rem;">${ach.desc}</div></div></div>`;
+    }
     el.innerHTML=html;
   },
   codexTab(tab){
