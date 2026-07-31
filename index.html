@@ -125,11 +125,13 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="pill" id="netPill" style="display:none">🌐 <span id="netText">OFF</span></div>
 </div>
 <div id="arenaBadge" style="margin:10px 0;font-size:.9rem;font-weight:600;text-align:center;"></div>
+<div id="streakBadge" style="display:none;margin:4px 0;font-size:.85rem;font-weight:700;text-align:center;color:#fb923c;"></div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:8px;">
 <button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
 <button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;">🔮 FORGE</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.shop()">🛒 SHOP</button>
+<button class="btn" onclick="G.codex()">📖 CODEX</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
@@ -319,6 +321,19 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn primary" onclick="G.buyShopUnit()" id="buyBtn">🎲 Buy Random Unit (<span id="shopCost">50</span> coins)</button>
 <button class="btn" onclick="G.rerollShop()">🔄 New Offer (10 coins)</button>
 </div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="codex">
+<h2>📖 Codex</h2>
+<div style="display:flex;gap:4px;justify-content:center;margin:8px 0;flex-wrap:wrap;">
+<button class="btn" onclick="G.codexTab('abilities')" id="codexTabAbilities" style="font-size:.75rem;padding:4px 10px;">Abilities</button>
+<button class="btn" onclick="G.codexTab('roles')" id="codexTabRoles" style="font-size:.75rem;padding:4px 10px;">Roles</button>
+<button class="btn" onclick="G.codexTab('spells')" id="codexTabSpells" style="font-size:.75rem;padding:4px 10px;">Spells</button>
+<button class="btn" onclick="G.codexTab('movement')" id="codexTabMovement" style="font-size:.75rem;padding:4px 10px;">Movement</button>
+<button class="btn" onclick="G.codexTab('targeting')" id="codexTabTargeting" style="font-size:.75rem;padding:4px 10px;">Targeting</button>
+</div>
+<div id="codexContent" style="max-width:400px;margin:0 auto;"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
@@ -6096,6 +6111,18 @@ const G={
       const h1=document.querySelector("#menu h1");
       if(h1){h1.style.background="none";h1.style.webkitTextFillColor=arena.c;h1.style.color=arena.c;}
     }
+    // Win streak indicator on menu.
+    const streakEl=$("streakBadge");
+    if(streakEl){
+      const s=this.save.winStreak||0;
+      if(s>=2){
+        const flames="🔥".repeat(Math.min(s,10));
+        streakEl.style.display="block";
+        streakEl.innerHTML=`${flames} ${s}-WIN STREAK (best: ${this.save.bestStreak||0})`;
+      }else{
+        streakEl.style.display="none";
+      }
+    }
     // Phase 12: forge button. Normally gated behind Training Yard completion
     // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
     const forgeBtn=$("forgeMenuBtn");
@@ -6714,6 +6741,15 @@ const G={
       vibrate([40,30,40]); // Phase 7: victory haptic
       this.save.wins=(this.save.wins||0)+1;
       this.save.matchWins=(this.save.matchWins||0)+1;
+      // Win streak tracking.
+      this.save.winStreak=(this.save.winStreak||0)+1;
+      if(this.save.winStreak>(this.save.bestStreak||0))this.save.bestStreak=this.save.winStreak;
+      // Streak bonus coins.
+      if(this.save.winStreak>=3){
+        const streakBonus=Math.min(50,this.save.winStreak*5);
+        coinGain+=streakBonus;
+        this.save.coins=(this.save.coins||0)+streakBonus;
+      }
       xpGain=50+this.playerLevel()*10;
       coinGain=20+F(R()*15);
       this.save.xp=(this.save.xp||0)+xpGain;
@@ -6735,6 +6771,12 @@ const G={
       }
       saveData(this.save);
       this.checkAchievements();
+    }else{
+      // Loss: reset win streak.
+      if(this.save.winStreak>0){
+        this.save.winStreak=0;
+        saveData(this.save);
+      }
     }
     // Show match result screen.
     this.screen("result");
@@ -6755,6 +6797,10 @@ const G={
         const arena=this.arenas[this.save.arena];
         setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
       }
+    }
+    // Win streak notification.
+    if(win&&this.save.winStreak>=3){
+      setTimeout(()=>toast(`🔥 ${this.save.winStreak}-win streak! +${Math.min(50,this.save.winStreak*5)}💰 bonus`),800);
     }
     // Phase 16: post-match strategy hint.
     const hint=this.generateMatchHint(win);
@@ -7530,6 +7576,99 @@ const G={
     this.shop();
   },
 
+  // Codex: browse all abilities, roles, spells, movement, targeting.
+  _codexTab:"abilities",
+  codex(){
+    this.screen("codex");
+    this.codexTab(this._codexTab);
+  },
+  codexTab(tab){
+    this._codexTab=tab;
+    // Update tab button styles.
+    for(const t of ["abilities","roles","spells","movement","targeting"]){
+      const btn=$("codexTab"+t.charAt(0).toUpperCase()+t.slice(1));
+      if(btn)btn.className="btn"+(t===tab?" primary":"");
+    }
+    const content=$("codexContent");
+    if(!content)return;
+    let html="";
+    if(tab==="abilities"){
+      html+="<div style='text-align:center;color:var(--muted);font-size:.8rem;margin-bottom:10px;'>Passive abilities apply automatically. Triggered abilities fire on their trigger condition.</div>";
+      for(const ab of ABILITY_OPTS){
+        const desc=ABILITY_DESCRIPTIONS[ab]||"";
+        const isPassive=PASSIVE_ABILITIES.has(ab);
+        const color=isPassive?"var(--accent2)":"var(--accent)";
+        html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin:6px 0;">`+
+          `<div style="font-weight:700;color:${color};font-size:.85rem;">${ab}</div>`+
+          `<div style="color:var(--muted);font-size:.75rem;margin-top:2px;">${desc}</div></div>`;
+      }
+    }else if(tab==="roles"){
+      const roleDescs={
+        frontline:"Tanky units that hold the front and absorb damage. High HP, low damage.",
+        carry:"High-damage units that need protection. Squishy but deadly.",
+        support:"Healers and buffers that keep allies alive. Low combat stats.",
+        counter:"Aggressive units that dive enemy backlines. High speed, moderate damage.",
+        utility:"Flexible units with special abilities. Fill gaps in composition.",
+        assassin:"Fragile burst-damage units that target low-HP enemies. High crit.",
+        bruiser:"Durable fighters with moderate damage. Between frontline and carry.",
+      };
+      const roleColors={frontline:"#fb7185",carry:"#fbbf24",support:"#34d399",counter:"#a78bfa",utility:"#60a5fa",assassin:"#f472b6",bruiser:"#fb923c"};
+      for(const r of ROLE_OPTS){
+        html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin:6px 0;">`+
+          `<div style="font-weight:700;color:${roleColors[r]||"#fff"};font-size:.85rem;">${r}</div>`+
+          `<div style="color:var(--muted);font-size:.75rem;margin-top:2px;">${roleDescs[r]||""}</div></div>`;
+      }
+    }else if(tab==="spells"){
+      html+="<div style='text-align:center;color:var(--muted);font-size:.8rem;margin-bottom:10px;'>Spells are drafted alongside units (30% chance). Tap spell bar to cast manually during battle.</div>";
+      const spellDescs={
+        damage:"Instant damage to all targets in the area.",
+        damage_over_time:"Applies poison damage over time to targets.",
+        slow:"Slows enemy movement in the area.",
+        stun:"Stuns enemies in the area, preventing action.",
+        heal_allies:"Heals all allies in the area.",
+        shield_allies:"Grants temporary immunity to allies in the area.",
+        summon:"Summons temporary minions to fight.",
+        knockback:"Pushes enemies away from the spell center.",
+        buff_dmg:"Increases damage of allies in the area.",
+        buff_speed:"Increases movement speed of allies in the area.",
+      };
+      const triggerDescs={
+        battle_start:"Fires automatically at battle start.",
+        on_first_contact:"Fires when enemies first engage.",
+        delayed_3s:"Fires 3 seconds into the battle.",
+        when_ally_hurt:"Fires when an ally takes damage.",
+        periodic_5s:"Fires every 5 seconds.",
+      };
+      html+="<div style='font-weight:700;color:var(--accent);font-size:.8rem;margin:10px 0 4px;'>Effects</div>";
+      for(const [eff,desc] of Object.entries(spellDescs)){
+        html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:8px;margin:4px 0;">`+
+          `<span style="font-weight:600;color:var(--accent);font-size:.8rem;">${eff.replace(/_/g," ")}</span>`+
+          `<span style="color:var(--muted);font-size:.75rem;"> — ${desc}</span></div>`;
+      }
+      html+="<div style='font-weight:700;color:var(--accent2);font-size:.8rem;margin:10px 0 4px;'>Triggers</div>";
+      for(const [tr,desc] of Object.entries(triggerDescs)){
+        html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:8px;margin:4px 0;">`+
+          `<span style="font-weight:600;color:var(--accent2);font-size:.8rem;">${tr.replace(/_/g," ")}</span>`+
+          `<span style="color:var(--muted);font-size:.75rem;"> — ${desc}</span></div>`;
+      }
+    }else if(tab==="movement"){
+      for(const m of MOVEMENT_OPTS){
+        const desc=MOVEMENT_DESCRIPTIONS[m]||"";
+        html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin:6px 0;">`+
+          `<div style="font-weight:700;color:var(--accent);font-size:.85rem;">${m}</div>`+
+          `<div style="color:var(--muted);font-size:.75rem;margin-top:2px;">${desc}</div></div>`;
+      }
+    }else if(tab==="targeting"){
+      for(const t of TARGETING_OPTS){
+        const desc=TARGETING_DESCRIPTIONS[t]||"";
+        html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;margin:6px 0;">`+
+          `<div style="font-weight:700;color:var(--accent);font-size:.85rem;">${t.replace(/_/g," ")}</div>`+
+          `<div style="color:var(--muted);font-size:.75rem;margin-top:2px;">${desc}</div></div>`;
+      }
+    }
+    content.innerHTML=html;
+  },
+
   reset(){showConfirm("Reset progress?",()=>{localStorage.removeItem(SAVE_KEY);location.reload();});}
 };
 
@@ -7664,9 +7803,29 @@ document.addEventListener("keydown",e=>{
     }else if(e.key==="r"||e.key==="R"){
       const btn=$("rerollBtn");if(btn)btn.click();
     }
-  }else if(sid==="battle"&&e.key===" "){
-    e.preventDefault();
-    try{G.tick();}catch(err){}
+  }else if(sid==="battle"){
+    if(e.key===" "){
+      e.preventDefault();
+      try{G.tick();}catch(err){}
+    }else if(e.key==="p"||e.key==="P"){
+      e.preventDefault();
+      try{G.togglePause();}catch(err){}
+    }else if(e.key==="1"){
+      e.preventDefault();
+      if(Battle.speed!==1){Battle.speed=1;const b=$("speedBtn");if(b)b.textContent="1×";if(Battle.autoTimer)Battle.auto();}
+    }else if(e.key==="2"){
+      e.preventDefault();
+      if(Battle.speed!==2){Battle.speed=2;const b=$("speedBtn");if(b)b.textContent="2×";if(Battle.autoTimer)Battle.auto();}
+    }else if(e.key==="3"){
+      e.preventDefault();
+      if(Battle.speed!==4){Battle.speed=4;const b=$("speedBtn");if(b)b.textContent="4×";if(Battle.autoTimer)Battle.auto();}
+    }else if(e.key==="s"||e.key==="S"){
+      e.preventDefault();
+      try{G.skip();}catch(err){}
+    }else if(e.key==="a"||e.key==="A"){
+      e.preventDefault();
+      try{G.auto();}catch(err){}
+    }
   }else if(e.key==="Escape"){
     // Close any open modal/overlay first, else go to menu.
     const overlay=document.querySelector('div[style*="z-index: 9999"]');
