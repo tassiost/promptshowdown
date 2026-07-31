@@ -418,12 +418,26 @@ const SAVE_KEY="promptShowdownV4";
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
 const CURRENT_VERSION=12; // Phase 37: bumped for replays.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
+// E1: Debounced saveData — batches writes within 500ms.
+let _saveTimer=null;
 function saveData(data){
   try{
     const prev=localStorage.getItem(SAVE_KEY);
     if(prev)localStorage.setItem(SAVE_BACKUP_KEY,prev);
     localStorage.setItem(SAVE_KEY,JSON.stringify(data));
   }catch(e){showError("Save failed: "+(e&&e.message||e));}
+}
+function saveDataDebounced(data){
+  if(_saveTimer)clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(()=>{saveData(data);_saveTimer=null;},500);
+}
+function saveDataNow(data){
+  if(_saveTimer){clearTimeout(_saveTimer);_saveTimer=null;}
+  saveData(data);
+}
+// E2: structuredClone with fallback.
+function deepClone(x){
+  return typeof structuredClone!=="undefined"?structuredClone(x):JSON.parse(JSON.stringify(x));
 }
 // Phase 39: i18n — string table + t() helper.
 const STRINGS={
@@ -663,7 +677,7 @@ function unit(x={}){
     recipe:x.recipe||null // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
-function cloneUnit(u){return unit(JSON.parse(JSON.stringify(u)));}
+function cloneUnit(u){return unit(deepClone(u));}
 
 // Phase 1: small DOM helper with null guard.
 function $(id){return document.getElementById(id);}
@@ -2920,8 +2934,9 @@ const GameAudio={
 // Phase 30: fxType → base frequency for attack SFX.
 function fxTypeFreq(fxType){
   switch(fxType){
-    case "fire":return 2; case "frost":return 1.5; case "lightning":return 3;
-    case "poison":return 0.5; case "heal_glow":return 1.2; case "shadow":return 0.7;
+    case "fire":return 0; case "frost":return 200; case "lightning":return 400;
+    case "poison":return -100; case "heal_glow":return 300; case "shadow":return -50;
+    case "shockwave":return 100; case "fire_wall":return -50;
     default:return 0;
   }
 }
@@ -3506,10 +3521,17 @@ const Battle={
     this._bgParticles=[]; // clear ambient particles from previous battle
     const cv=$("cv");
     if(!cv){this.stop();return;}
-    cv.width=Math.min(400,innerWidth-20);
-    cv.height=550;
-    this.canvasH=cv.height;
+    // E3: devicePixelRatio handling for crisp rendering on retina displays.
+    const dpr=window.devicePixelRatio||1;
+    const dispW=Math.min(400,innerWidth-20);
+    const dispH=550;
+    cv.style.width=dispW+"px";
+    cv.style.height=dispH+"px";
+    cv.width=dispW*dpr;
+    cv.height=dispH*dpr;
+    this.canvasH=dispH;
     this.ctx=cv.getContext("2d");
+    this.ctx.scale(dpr,dpr);
     this.last=performance.now();
     cancelAnimationFrame(this.frame);
     this.frame=requestAnimationFrame(this.loop.bind(this));
@@ -3535,7 +3557,13 @@ const Battle={
       this._fpsFrames=0;this._fpsAccum=0;
     }
     this.update(dt);
-    this.render();
+    try{
+      this.render();
+    }catch(e){
+      showError("Render error: "+(e&&e.message||e));
+      this.stop();
+      return;
+    }
     this.checkEnd();
   },
 
@@ -4219,7 +4247,7 @@ const Battle={
     this.autoTimer=setInterval(()=>{
       if(!this.running){clearInterval(this.autoTimer);this.autoTimer=null;return;}
       this.tick();
-    },120);
+    },50);
   },
 
   skip(){
@@ -4297,10 +4325,16 @@ const Battle={
     let cv=$("cv");
     if(!cv)return;
     if(!this.ctx){
-      cv.width=Math.min(400,innerWidth-20);
-      cv.height=550;
-      this.canvasH=cv.height;
+      const dpr=window.devicePixelRatio||1;
+      const dispW=Math.min(400,innerWidth-20);
+      const dispH=550;
+      cv.style.width=dispW+"px";
+      cv.style.height=dispH+"px";
+      cv.width=dispW*dpr;
+      cv.height=dispH*dpr;
+      this.canvasH=dispH;
       this.ctx=cv.getContext("2d");
+      this.ctx.scale(dpr,dpr);
     }
     this.render();
   }
