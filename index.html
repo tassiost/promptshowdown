@@ -12,16 +12,16 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
   --bg:#0a0e1a;--bg2:#141b2e;--card:#1c2640;--card2:#283656;
-  --border:#3a4a6e;--text:#f0f4ff;--muted:#94a3c4;
-  --accent:#7c3aed;--accent2:#a78bfa;--accent-dim:#4c1d95;
-  --gold:#fbbf24;--gold2:#fcd34d;
+  --border:#4a5a7e;--text:#f0f4ff;--muted:#a4b3d4;
+  --accent:#8b4ff0;--accent2:#b79bfa;--accent-dim:#4c1d95;
+  --gold:#fcd34d;--gold2:#fde68a;
   --ok:#34d399;--warn:#fbbf24;--danger:#fb7185;
-  --rare:#60a5fa;--legendary:#fbbf24;--epic:#c084fc;
+  --rare:#60a5fa;--legendary:#fcd34d;--epic:#d084fc;
   --radius:14px;--radius-sm:10px;
   --shadow:0 4px 20px rgba(0,0,0,.5);
   --shadow-lg:0 8px 40px rgba(0,0,0,.6);
-  --glow-accent:0 0 20px rgba(124,58,237,.4);
-  --glow-gold:0 0 20px rgba(251,191,36,.4);
+  --glow-accent:0 0 24px rgba(139,79,240,.5);
+  --glow-gold:0 0 24px rgba(252,211,77,.5);
 }
 body{
   background:radial-gradient(ellipse at top,var(--bg2) 0%,var(--bg) 60%);
@@ -50,23 +50,37 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 .group{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 5px;}
 .pill{background:var(--card);border:1px solid var(--border);padding:6px 12px;border-radius:20px;font-size:.72rem;font-weight:600;color:var(--muted);}
 .card{
-  background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);padding:10px;margin:4px;
-  min-width:92px;text-align:center;border-radius:var(--radius-sm);cursor:pointer;
-  transition:all .15s ease;box-shadow:var(--shadow);position:relative;overflow:hidden;
+  background:linear-gradient(180deg,var(--card2),var(--card));border:2px solid var(--border);padding:12px 10px;margin:6px;
+  min-width:100px;text-align:center;border-radius:18px 18px 14px 14px;cursor:pointer;
+  transition:all .2s cubic-bezier(.34,1.56,.64,1);box-shadow:var(--shadow),inset 0 1px 0 rgba(255,255,255,.1);position:relative;overflow:hidden;
+  animation:cardPop .3s cubic-bezier(.34,1.56,.64,1);
 }
-.card::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent);pointer-events:none;}
-.card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg),var(--glow-accent);border-color:var(--accent2);}
-.card.selected{border-color:var(--ok);box-shadow:0 0 0 2px rgba(52,211,153,.4),var(--shadow-lg),0 0 16px rgba(52,211,153,.3);}
-.title{font-weight:800;font-size:.82rem;text-shadow:0 1px 2px rgba(0,0,0,.5);}
-.detail{font-size:.68rem;color:var(--muted);line-height:1.4;}
-/* Rarity borders */
+@keyframes cardPop{from{transform:scale(.7) translateY(20px);opacity:0;}to{transform:scale(1) translateY(0);opacity:1;}}
+/* Glossy top highlight */
+.card::before{content:"";position:absolute;top:0;left:0;right:0;height:45%;background:linear-gradient(180deg,rgba(255,255,255,.18),transparent);pointer-events:none;border-radius:18px 18px 0 0;}
+/* Wavy bottom edge */
+.card::after{content:"";position:absolute;bottom:-2px;left:0;right:0;height:8px;
+  background:radial-gradient(ellipse 10px 5px at 25% 0,var(--card) 50%,transparent 51%),
+             radial-gradient(ellipse 10px 5px at 75% 0,var(--card) 50%,transparent 51%);
+  background-size:20px 8px;background-repeat:repeat-x;pointer-events:none;}
+.card:hover{transform:translateY(-6px) scale(1.04);box-shadow:var(--shadow-lg),var(--glow-accent),inset 0 1px 0 rgba(255,255,255,.15);border-color:var(--accent2);}
+.card.selected{border-color:var(--ok);box-shadow:0 0 0 3px rgba(52,211,153,.4),var(--shadow-lg),0 0 20px rgba(52,211,153,.4);}
+.title{font-weight:900;font-size:.88rem;text-shadow:0 2px 3px rgba(0,0,0,.6);letter-spacing:-.02em;}
+.detail{font-size:.68rem;color:var(--muted);line-height:1.5;}
+/* Count badge — shows quantity (x2, +3) */
+.cardCount{position:absolute;top:-6px;right:-6px;background:linear-gradient(135deg,var(--gold),#f59e0b);color:#000;font-size:.7rem;font-weight:900;padding:3px 8px;border-radius:12px;box-shadow:0 2px 6px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.3);z-index:2;text-shadow:0 1px 0 rgba(255,255,255,.3);}
+/* Card cost icon */
+.cardCost{display:inline-flex;align-items:center;gap:2px;font-size:.65rem;font-weight:700;color:var(--gold);}
+.cardCost::before{content:"💰";font-size:.6rem;}
+/* Rarity borders — thicker, more vibrant, cartoon-style */
 .card.rar-common{border-color:var(--border);}
-.card.rar-rare{border-color:var(--rare);box-shadow:0 0 12px rgba(96,165,250,.3),var(--shadow);}
-.card.rar-legendary{border-color:var(--legendary);box-shadow:0 0 16px rgba(251,191,36,.4),var(--shadow);}
+.card.rar-rare{border-color:var(--rare);border-width:2px;box-shadow:0 0 16px rgba(96,165,250,.4),var(--shadow),inset 0 1px 0 rgba(96,165,250,.15);}
+.card.rar-legendary{border-color:var(--legendary);border-width:3px;box-shadow:0 0 24px rgba(251,191,36,.5),var(--shadow),inset 0 1px 0 rgba(251,191,36,.2);animation:cardPop .3s cubic-bezier(.34,1.56,.64,1),legendaryGlow 2s ease-in-out infinite;}
+@keyframes legendaryGlow{0%,100%{box-shadow:0 0 24px rgba(251,191,36,.5),var(--shadow),inset 0 1px 0 rgba(251,191,36,.2);}50%{box-shadow:0 0 36px rgba(251,191,36,.7),var(--shadow),inset 0 1px 0 rgba(251,191,36,.3);}}
 .rarityTag{font-size:.58rem;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.5);}
 .rarityTag.common{color:var(--muted);}
-.rarityTag.rare{color:var(--rare);text-shadow:0 0 8px rgba(96,165,250,.5);}
-.rarityTag.legendary{color:var(--legendary);text-shadow:0 0 8px rgba(251,191,36,.5);}
+.rarityTag.rare{color:var(--rare);text-shadow:0 0 10px rgba(96,165,250,.6),0 1px 2px rgba(0,0,0,.5);}
+.rarityTag.legendary{color:var(--legendary);text-shadow:0 0 12px rgba(251,191,36,.7),0 1px 2px rgba(0,0,0,.5);}
 /* Progression */
 .lvlBadge{display:inline-block;background:var(--warn);color:#000;font-size:.55rem;font-weight:800;padding:2px 6px;border-radius:4px;margin-left:4px;}
 .upRow{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);padding:10px 12px;margin:4px 0;border-radius:var(--radius-sm);font-size:.75rem;width:280px;box-shadow:var(--shadow);}
@@ -242,16 +256,33 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 </div>
 
 <div class="screen" id="draft">
-<h2>Draft</h2>
-<div id="livesHUD" style="font-size:.8rem;margin:6px;font-weight:600;"></div>
-<div id="draftDots" style="font-size:1.2rem;margin:6px;letter-spacing:4px;"></div>
-<div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:rgba(245,158,11,.1);border:1px solid var(--warn);text-align:center;font-weight:700;">⭐ COMEBACK BONUS — 4th draw!</div>
-<div class="detail" id="draftHint" style="margin-bottom:8px;">Pick 1 unit</div>
-<div id="draftTimerBar" style="display:none;height:4px;background:var(--bg);border-radius:2px;overflow:hidden;margin:4px 0 8px;max-width:280px;margin-left:auto;margin-right:auto;"><div id="draftTimerFill" style="height:100%;background:var(--accent);border-radius:2px;transition:width .1s linear;width:100%;"></div></div>
+<div style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));border-radius:10px;border:1px solid var(--border);gap:4px;margin-bottom:6px;">
+  <div style="display:flex;align-items:center;gap:6px;">
+    <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#4af,#26d);border:2px solid #4af;display:flex;align-items:center;justify-content:center;font-size:.7rem;">👑</div>
+    <div>
+      <div style="font-size:.68rem;font-weight:800;color:#4af;">You</div>
+      <div id="livesHUD" style="font-size:.58rem;letter-spacing:1px;line-height:1;"></div>
+    </div>
+  </div>
+  <div style="text-align:center;">
+    <div style="font-size:.55rem;color:var(--muted);font-weight:700;">PICK</div>
+    <div id="draftDots" style="font-size:1rem;letter-spacing:4px;"></div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;">
+    <div style="text-align:right;">
+      <div style="font-size:.68rem;font-weight:800;color:#f44;">Enemy</div>
+      <div id="livesHUDEnemy" style="font-size:.58rem;letter-spacing:1px;line-height:1;"></div>
+    </div>
+    <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#f44,#c22);border:2px solid #f44;display:flex;align-items:center;justify-content:center;font-size:.7rem;">💀</div>
+  </div>
+</div>
+<div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--warn);text-align:center;font-weight:800;letter-spacing:1px;animation:victoryPulse 1.5s ease-in-out infinite;">⭐ COMEBACK BONUS — 4th draw!</div>
+<div class="detail" id="draftHint" style="margin-bottom:8px;font-size:.78rem;font-weight:700;color:var(--accent2);">Pick 1 unit</div>
+<div id="draftTimerBar" style="display:none;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;margin:4px 0 8px;max-width:280px;margin-left:auto;margin-right:auto;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);"><div id="draftTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
 <div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
 <div id="draftCounterPicks" style="display:none;margin:4px 0;padding:8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;"></div>
 <div id="draftArmyPreview" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
-<div id="draftArea"></div>
+<div id="draftArea" style="display:flex;justify-content:center;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:12px 0;"></div>
 <div class="group">
 <button class="btn" id="rerollButton" onclick="G.reroll()">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
 </div>
@@ -259,18 +290,43 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 
 <div class="screen" id="scout">
 <h2>🔍 Opponent Scout</h2>
-<div id="livesHUDScout" style="font-size:.8rem;margin:6px;font-weight:600;"></div>
+<div id="livesHUDScout" style="display:flex;align-items:center;justify-content:center;gap:12px;margin:6px 0;font-size:.7rem;font-weight:700;">
+  <span style="color:#4af;">You <span id="scoutPlayerHearts"></span></span>
+  <span style="color:var(--muted);">VS</span>
+  <span style="color:#f44;"><span id="scoutEnemyHearts"></span> Enemy</span>
+</div>
 <div class="detail" style="margin-bottom:8px;">Enemy is fielding these units this round:</div>
 <div id="scoutArea" style="display:flex;gap:6px;justify-content:center;margin:12px 0;flex-wrap:wrap;"></div>
 <button class="btn primary" onclick="G.startBattle()">⚔️ To Battle</button>
 </div>
 
 <div class="screen" id="battle">
-<div style="width:100%;display:flex;justify-content:space-between;padding:6px 4px;font-size:.75rem;font-weight:600;">
-<span id="livesBattle" style="font-size:.8rem;"></span>
-<span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
-<span id="turn">T0</span>
-<span id="battleTimer" style="color:var(--muted);font-size:.7rem;"></span>
+<div id="battleHUD" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));border-radius:10px 10px 0 0;border:1px solid var(--border);border-bottom:none;gap:4px;">
+  <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
+    <div id="hudPlayerAvatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#4af,#26d);border:2px solid #4af;box-shadow:0 0 8px rgba(68,170,255,.4);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;">👑</div>
+    <div style="min-width:0;">
+      <div id="hudPlayerName" style="font-size:.72rem;font-weight:800;color:#4af;text-shadow:0 1px 2px rgba(0,0,0,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">You</div>
+      <div id="hudPlayerHearts" style="font-size:.6rem;letter-spacing:1px;line-height:1;">❤️❤️❤️</div>
+    </div>
+    <div id="hudPlayerLevel" style="background:linear-gradient(135deg,var(--gold),#f59e0b);color:#000;font-size:.5rem;font-weight:900;padding:1px 5px;border-radius:6px;flex-shrink:0;">Lv1</div>
+  </div>
+  <div style="text-align:center;flex-shrink:0;">
+    <div style="font-size:.6rem;color:var(--muted);font-weight:700;">ROUND</div>
+    <div id="hudRound" style="font-size:1rem;font-weight:900;color:var(--gold);text-shadow:0 0 8px rgba(252,211,77,.4);">1</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;justify-content:flex-end;">
+    <div id="hudEnemyLevel" style="background:linear-gradient(135deg,#f44,#c33);color:#fff;font-size:.5rem;font-weight:900;padding:1px 5px;border-radius:6px;flex-shrink:0;">Lv1</div>
+    <div style="min-width:0;text-align:right;">
+      <div id="hudEnemyName" style="font-size:.72rem;font-weight:800;color:#f44;text-shadow:0 1px 2px rgba(0,0,0,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Enemy</div>
+      <div id="hudEnemyHearts" style="font-size:.6rem;letter-spacing:1px;line-height:1;">❤️❤️❤️</div>
+    </div>
+    <div id="hudEnemyAvatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#f44,#c22);border:2px solid #f44;box-shadow:0 0 8px rgba(255,68,68,.4);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;">💀</div>
+  </div>
+</div>
+<div style="width:100%;display:flex;justify-content:space-between;padding:2px 8px;font-size:.65rem;font-weight:600;color:var(--muted);">
+  <span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
+  <span id="turn">T0</span>
+  <span id="battleTimer" style="color:var(--muted);font-size:.65rem;"></span>
 </div>
 <div id="roundHistoryBar" style="display:flex;gap:4px;justify-content:center;margin:2px 0 4px;"></div>
 <canvas id="cv"></canvas>
@@ -3205,18 +3261,19 @@ const SpriteRenderer={
         const h=shape.h!==undefined?shape.h:20;
         g=c.createLinearGradient(ox+x,oy+y,ox+x+w,oy+y+h);
       }
-      g.addColorStop(0,shape.c||"#888");
+      g.addColorStop(0,lighten(sanitizeHex(shape.c||"#888"),0.1));
       g.addColorStop(1,shape.c2);
       c.fillStyle=g;
     }else if(shape.c&&shape.fill!=="gradient"&&!shape.glow){
       // D1: auto gradient — lighter top, darker bottom for depth.
+      // V2: increased contrast (0.18 vs 0.12) for more vibrant cartoon look.
       const base=sanitizeHex(shape.c);
       if(shape.t==="circle"||shape.t==="ellipse"){
         const r=shape.r||shape.rx||4;
         g=c.createRadialGradient(ox+(shape.cx||0)-r*0.3,oy+(shape.cy||0)-r*0.3,1,
           ox+(shape.cx||0),oy+(shape.cy||0),r);
-        g.addColorStop(0,lighten(base,0.12));
-        g.addColorStop(1,darken(base,0.12));
+        g.addColorStop(0,lighten(base,0.18));
+        g.addColorStop(1,darken(base,0.15));
         c.fillStyle=g;
       }else{
         const x=shape.x!==undefined?shape.x:(shape.cx||0)-10;
@@ -3224,8 +3281,8 @@ const SpriteRenderer={
         const w=shape.w!==undefined?shape.w:20;
         const h=shape.h!==undefined?shape.h:20;
         g=c.createLinearGradient(ox+x,oy+y,ox+x,oy+y+h);
-        g.addColorStop(0,lighten(base,0.12));
-        g.addColorStop(1,darken(base,0.12));
+        g.addColorStop(0,lighten(base,0.18));
+        g.addColorStop(1,darken(base,0.15));
         c.fillStyle=g;
       }
     }else{
@@ -5179,6 +5236,45 @@ const Battle={
         c.arc(gx,gy,1.5,0,Math.PI*2);
         c.fill();
       }
+      // Lane formation bands — show role-based formation zones.
+      const canvasH=this.canvasH||h;
+      const laneBands=[
+        {yMin:30,yMax:80,color:"#ff4444",label:"Enemy Back",side:"enemy"},
+        {yMin:80,yMax:200,color:"#ff8844",label:"Enemy Front",side:"enemy"},
+        {yMin:350,yMax:540,color:"#4488ff",label:"Your Front",side:"player"},
+      ];
+      for(const lane of laneBands){
+        const ly=(lane.yMin+lane.yMax)/2*(canvasH/600);
+        const lh=(lane.yMax-lane.yMin)*(canvasH/600);
+        // Subtle colored band.
+        const lg=c.createLinearGradient(0,ly-lh/2,0,ly+lh/2);
+        lg.addColorStop(0,lane.color+"08");
+        lg.addColorStop(0.5,lane.color+"0d");
+        lg.addColorStop(1,lane.color+"08");
+        c.fillStyle=lg;
+        c.fillRect(0,ly-lh/2,w,lh);
+        // Dashed lane divider lines.
+        c.strokeStyle=lane.color+"15";
+        c.lineWidth=1;
+        c.setLineDash([6,4]);
+        c.beginPath();
+        c.moveTo(0,ly-lh/2);
+        c.lineTo(w,ly-lh/2);
+        c.moveTo(0,ly+lh/2);
+        c.lineTo(w,ly+lh/2);
+        c.stroke();
+        c.setLineDash([]);
+      }
+      // Center divider — mid-line between armies.
+      const midY=canvasH*0.5;
+      c.strokeStyle="rgba(255,255,255,.06)";
+      c.lineWidth=1;
+      c.setLineDash([8,8]);
+      c.beginPath();
+      c.moveTo(0,midY);
+      c.lineTo(w,midY);
+      c.stroke();
+      c.setLineDash([]);
     }
     // Ambient background particles — themed per arena.
     this._updateBgParticles(c,theme);
@@ -7020,7 +7116,25 @@ const G={
   updateLivesHUD(){
     const txt=`You ${this.livesHearts(Match.livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(Match.livesEnemy,DEFAULT_LIVES)}`;
     const draftHUD=$("livesHUD");
-    if(draftHUD)draftHUD.innerText=txt;
+    if(draftHUD)draftHUD.innerHTML=this.livesHearts(Match.livesPlayer,DEFAULT_LIVES);
+    const draftEnemyHUD=$("livesHUDEnemy");
+    if(draftEnemyHUD)draftEnemyHUD.innerHTML=this.livesHearts(Match.livesEnemy,DEFAULT_LIVES);
+    // New battle HUD: player/enemy hearts, names, levels, round.
+    const ph=$("hudPlayerHearts");
+    if(ph)ph.innerHTML=this.livesHearts(Match.livesPlayer,DEFAULT_LIVES);
+    const eh=$("hudEnemyHearts");
+    if(eh)eh.innerHTML=this.livesHearts(Match.livesEnemy,DEFAULT_LIVES);
+    const hr=$("hudRound");
+    if(hr)hr.textContent=Match.round||1;
+    const pl=$("hudPlayerLevel");
+    if(pl)pl.textContent="Lv"+(this.save.level||1);
+    const el=$("hudEnemyLevel");
+    if(el)el.textContent="Lv"+((this.arenas[this.save.arena||0]?.botLevel)||Math.max(1,(this.save.level||1)-1));
+    const pn=$("hudPlayerName");
+    if(pn)pn.textContent=this.save.name||"You";
+    const en=$("hudEnemyName");
+    if(en)en.textContent=connected?"Opponent":(this.arenas[this.save.arena||0]?.name||"Enemy");
+    // Legacy battleHUD compat (if element exists).
     const battleHUD=$("livesBattle");
     if(battleHUD)battleHUD.innerText=txt;
     // Round history bar: visual indicator of round wins/losses.
@@ -7093,12 +7207,10 @@ const G={
     let area=$("draftArea");
     if(!area)return;
     area.innerHTML="";
-    const group=document.createElement("div");
-    group.className="group";
+    // Cards are now direct children of #draftArea (flex container).
     for(const u of this.currentOffering){
-      group.appendChild(this.draftCard(u));
+      area.appendChild(this.draftCard(u));
     }
-    area.appendChild(group);
     // Progress dots: ● for done, ○ for remaining, ★ for comeback 4th draw.
     let dots="";
     for(let i=0;i<st.drawCount;i++){
@@ -7277,7 +7389,10 @@ const G={
     const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
     const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?`<br><span style="color:var(--muted);font-size:.65rem">${ABILITY_DESCRIPTIONS[u.ability]}</span>`:"";
     const roleLabel=u.role?`<br><span style="color:var(--muted)">${u.role}</span>`:"";
+    // Count badge: each pick deploys 3 copies.
+    const countBadge=`<div class="cardCount">×3</div>`;
     card.innerHTML=
+      countBadge+
       `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
       `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${abDesc}${roleLabel}${roleFillHint}</div>`;
@@ -7454,9 +7569,10 @@ const G={
     this.screen("scout");
     Quests.track("scout"); // Phase 33
     // Update lives HUD on scout screen too.
-    const txt=`You ${this.livesHearts(Match.livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(Match.livesEnemy,DEFAULT_LIVES)}`;
-    const hud=$("livesHUDScout");
-    if(hud)hud.innerText=txt;
+    const ph=$("scoutPlayerHearts");
+    if(ph)ph.innerHTML=this.livesHearts(Match.livesPlayer,DEFAULT_LIVES);
+    const eh=$("scoutEnemyHearts");
+    if(eh)eh.innerHTML=this.livesHearts(Match.livesEnemy,DEFAULT_LIVES);
     const area=$("scoutArea");
     if(!area)return;
     area.innerHTML="";
