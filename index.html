@@ -126,8 +126,14 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 </div>
 <div id="arenaBadge" style="margin:10px 0;font-size:.9rem;font-weight:600;text-align:center;"></div>
 <div id="streakBadge" style="display:none;margin:4px 0;font-size:.85rem;font-weight:700;text-align:center;color:#fb923c;"></div>
+<div style="display:flex;gap:4px;justify-content:center;margin:4px 0;">
+<button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;">Easy</button>
+<button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;">Normal</button>
+<button class="btn" onclick="G.setDifficulty('hard')" id="diffHard" style="font-size:.7rem;padding:3px 10px;">Hard</button>
+</div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:8px;">
 <button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
+<button class="btn" onclick="G.quickMatch()" style="font-size:.85rem;">⚡ QUICK MATCH</button>
 <button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;">🔮 FORGE</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.shop()">🛒 SHOP</button>
@@ -259,6 +265,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="pill">💰 <span id="coinGain">+0</span></div>
 </div>
 <div id="matchMVP" style="display:none;margin:10px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--accent);text-align:center;"></div>
+<div id="matchRounds" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:12px;">
 <button class="btn primary" id="nextRound">Next Round</button>
 <button class="btn" id="matchMenu" style="display:none;" onclick="G.menu()">Menu</button>
@@ -6123,6 +6130,8 @@ const G={
         streakEl.style.display="none";
       }
     }
+    // Difficulty selector highlight.
+    this.updateDifficultyUI();
     // Phase 12: forge button. Normally gated behind Training Yard completion
     // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
     const forgeBtn=$("forgeMenuBtn");
@@ -6190,7 +6199,17 @@ const G={
     // Phase 15: generate bot loadout from the current arena's bot pool.
     const arena=this.arenas[this.save.arena||0];
     Bot.generateLoadout(arena?arena.botPool:this.base.map(u=>u.n));
-    // Endless mode: scale bot unit stats based on endless level.
+    // Bot difficulty scaling: easy = -20% stats, normal = 0, hard = +20%.
+    const diff=this.save.difficulty||"normal";
+    const diffMod=diff==="easy"?0.8:diff==="hard"?1.2:1.0;
+    if(diffMod!==1.0){
+      for(const u of Bot.loadout){
+        u.h=Math.round(u.h*diffMod);
+        u.d=Math.round(u.d*diffMod);
+        u.mh=u.h;
+      }
+    }
+    // Endless mode: scale bot unit stats based on endless level (stacks with difficulty).
     const endlessLvl=this.save.endlessLevel||0;
     if(endlessLvl>0){
       for(const u of Bot.loadout){
@@ -6209,6 +6228,64 @@ const G={
     Match.start(lives,winner=>this.onMatchEnd(winner));
     // Override enemy lives for endless mode (after Match.start sets defaults).
     if(endlessLvl>0)Match.livesEnemy=botLives;
+    // Easy mode: bot gets -1 life. Hard mode: bot gets +1 life.
+    if(diff==="easy"&&Match.livesEnemy>1)Match.livesEnemy--;
+    if(diff==="hard")Match.livesEnemy++;
+  },
+
+  // Set bot difficulty level.
+  setDifficulty(level){
+    this.save.difficulty=level;
+    saveData(this.save);
+    this.updateDifficultyUI();
+  },
+  updateDifficultyUI(){
+    const diff=this.save.difficulty||"normal";
+    for(const d of ["easy","normal","hard"]){
+      const btn=$("diff"+d.charAt(0).toUpperCase()+d.slice(1));
+      if(btn)btn.className="btn"+(d===diff?" primary":"");
+    }
+  },
+
+  // Quick match: skip draft, random army, straight to battle.
+  quickMatch(){
+    const arena=this.arenas[this.save.arena||0];
+    Bot.generateLoadout(arena?arena.botPool:this.base.map(u=>u.n));
+    // Apply difficulty + endless scaling.
+    const diff=this.save.difficulty||"normal";
+    const diffMod=diff==="easy"?0.8:diff==="hard"?1.2:1.0;
+    const endlessLvl=this.save.endlessLevel||0;
+    for(const u of Bot.loadout){
+      u.h=Math.round(u.h*diffMod*(1+endlessLvl*0.15));
+      u.d=Math.round(u.d*diffMod*(1+endlessLvl*0.10));
+      u.mh=u.h;
+    }
+    const lives=arena?arena.lives:DEFAULT_LIVES;
+    let botLives=endlessLvl>0?lives+Math.floor(endlessLvl/5):lives;
+    if(diff==="easy"&&botLives>1)botLives--;
+    if(diff==="hard")botLives++;
+    // Generate random player army from loadout.
+    const pool=[...this.loadoutUnits()];
+    const randomPicks=[];
+    const used=new Set();
+    for(let i=0;i<3;i++){
+      let attempts=10;
+      while(attempts-->0){
+        const u=pool[F(R()*pool.length)];
+        if(u&&!used.has(u.n)){used.add(u.n);randomPicks.push(cloneUnit(u));break;}
+      }
+    }
+    // 30% chance to add a spell.
+    const spellbook=this.save.spellbook||[];
+    if(spellbook.length&&R()<0.3){
+      randomPicks.push({...spellbook[F(R()*spellbook.length)],_isSpell:true});
+    }
+    this.selected=randomPicks;
+    Match.start(lives,winner=>this.onMatchEnd(winner));
+    if(endlessLvl>0||diff!=="normal")Match.livesEnemy=botLives;
+    // Skip draft and scout — go straight to battle.
+    this.opponentPicks=Bot.draftRound(3);
+    this.showScout();
   },
 
   // Phase 9: called by Match.startRound() to start the sequential draft.
@@ -6801,6 +6878,20 @@ const G={
     // Win streak notification.
     if(win&&this.save.winStreak>=3){
       setTimeout(()=>toast(`🔥 ${this.save.winStreak}-win streak! +${Math.min(50,this.save.winStreak*5)}💰 bonus`),800);
+    }
+    // Round-by-round breakdown.
+    const roundsEl=$("matchRounds");
+    if(roundsEl&&Match.history.length>0){
+      roundsEl.style.display="block";
+      let html="<div style='font-weight:700;font-size:.8rem;margin-bottom:6px;text-align:center;'>Round History</div><div style='display:flex;gap:4px;justify-content:center;'>";
+      for(const r of Match.history){
+        const icon=r.winner==="player"?"✅":r.winner==="enemy"?"❌":"➖";
+        html+=`<span style="font-size:1rem;">${icon}</span>`;
+      }
+      html+="</div>";
+      roundsEl.innerHTML=html;
+    }else if(roundsEl){
+      roundsEl.style.display="none";
     }
     // Phase 16: post-match strategy hint.
     const hint=this.generateMatchHint(win);
