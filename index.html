@@ -4927,7 +4927,7 @@ const Battle={
       for(const u of this.units){
         if(u.h>0){
           u.h-=2;
-          if(u.h<=0){u.h=0;this.onUnitDeath(u,null);}
+          if(u.h<=0){u.h=0;u.lastAttacker={team:"environment",n:"Arena",id:"arena_hazard"};this.onUnitDeath(u,null);}
         }
       }
     }else if(arena.mechanic==="speed_boost"){
@@ -4944,7 +4944,7 @@ const Battle={
       for(const u of this.units){
         if(u.h>0){
           u.h-=3;
-          if(u.h<=0){u.h=0;this.onUnitDeath(u,null);}
+          if(u.h<=0){u.h=0;u.lastAttacker={team:"environment",n:"Arena",id:"arena_hazard"};this.onUnitDeath(u,null);}
         }
       }
     }
@@ -6858,6 +6858,7 @@ const G={
     // Phase 8: match/loadout/collection fields (defined in migrateSave v6).
     if(!this.save.matchWins)this.save.matchWins=0;
     if(!this.save.arena)this.save.arena=0;
+    this.save.arena=Math.min(Math.max(0,this.save.arena|0),this.arenas.length-1);
     if(!this.save.ranked)this.save.ranked={name:"",rating:1000,wins:0,losses:0,season:0,peakRating:1000};
     if(!this.save.loadout||!this.save.loadout.length)this.save.loadout=["Knight","Archer","Slash","Wizard"];
     if(!this.save.collection)this.save.collection=[];
@@ -8276,7 +8277,7 @@ const G={
     const total=playerScore+enemyScore;
     const winChance=total>0?Math.round(playerScore/total*100):50;
     // Color based on win chance.
-    const color=winChance>=60?"var(--ok)":winChance>=40?"var(--warn)":"var(--warn)";
+    const color=winChance>=60?"var(--ok)":winChance>=40?"var(--warn)":"var(--danger)";
     const label=winChance>=65?"Favored":winChance>=55?"Slight Edge":winChance>=45?"Even Match":winChance>=35?"Tough Fight":"Outmatched";
     const pred=document.createElement("div");
     pred.id="winPrediction";
@@ -8625,7 +8626,7 @@ const G={
         }
       }else{
         const arena=this.arenas[this.save.arena];
-        setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
+        if(arena)setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
       }
     }
     // Win streak notification.
@@ -10725,8 +10726,8 @@ function setupPWA(){
 
 // Phase 7: tap the battle canvas to advance one tick (touch control).
 document.addEventListener("pointerdown",e=>{
-  if(e.target&&e.target.id==="cv"){try{G.tick();}catch(err){/* ignore */}}
-});
+  if(e.target&&e.target.id==="cv"){e.preventDefault();try{G.tick();}catch(err){/* ignore */}}
+},{passive:false});
 
 // Battle debug toggle: press 'D' during battle to enable/disable verbose logging.
 // Keyboard shortcuts: 1/2/3 draft picks, Space battle tick, R reroll, Escape back.

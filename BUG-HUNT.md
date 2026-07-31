@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16 + Round 17)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16 + Round 17 + Round 18)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -79,12 +79,14 @@
 | **Round 16: E2E Quests/Ranked/Replays/Fusion/Screens** | 30+ | 0 | 0 |
 | **Round 17: Static Analysis (2 subagents)** | 60+ | 3 | 3 |
 | **Round 17: E2E Shop/Match/AI/Sprite/Bot/Keyboard/Memory** | 30+ | 0 | 0 |
+| **Round 18: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
+| **Round 18: E2E Combat/Arena/Touch/Tier/Leaderboard** | 30+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1830+** | **78** | **78** |
+| **Total** | **1930+** | **82** | **82** |
 
 ---
 
@@ -1294,3 +1296,49 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Reconnect overlay interval not cleaned on match end** — `cancelReconnect` is called in the disconnect handler which covers all paths.
 - **Model poll interval not cleaned on LLM cancel** — the interval checks `!llmLoading` which is set to false on cancel.
 - **P2P test wait timer not cleaned** — best-effort feature; timer self-terminates after timeout.
+
+---
+
+## Round 18 — Deep Static + E2E: Combat/Arena/Touch/TierList/Leaderboard (2026-07-31)
+
+**Focus:** Projectile system (ranged attacks, splash, chain lightning), status effects (poison, slow, shield, regen), critical hits (crit chance, ramp bonus), arena mechanics (hazards, environment kills), MVP/kill feed (kill attribution), match analysis (loss reason, recommendations, damage chart), touch/mobile (tap to tick, canvas touch, responsive), tier list, leaderboard, snapshot/replay integrity, win prediction.
+
+**Method:** Two parallel static analysis subagents (Projectiles/Status/Crit/Arena/MVP, Analysis/Touch/TierList/Leaderboard/Snapshot) + E2E testing via Playwright.
+
+### Round 18: Bugs Found + Fixed (4 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 80 | **Arena hazard damage doesn't set lastAttacker**: The `poison_aura` (District Z) and `damage_aura` (Void Rift) mechanics dealt damage to units but didn't set `u.lastAttacker` before calling `onUnitDeath`. Since `onUnitDeath` uses `u.lastAttacker` for kill attribution (ramp bonus, on_kill triggers, kill feed, MVP tracking), kills from arena hazards weren't attributed to anyone. | Medium | Added `u.lastAttacker={team:"environment",n:"Arena",id:"arena_hazard"}` before `onUnitDeath` calls in both hazard types. |
+| 81 | **Arena index out of bounds crash**: Multiple locations accessed `this.arenas[this.save.arena]` without bounds checking. If `save.arena` was corrupted (e.g., via save import), accessing properties like `.n` on undefined would crash. The arena unlock toast (line 8627) was particularly vulnerable — no null check before accessing `arena.n`. | High | Added arena index clamp in `initSave`: `this.save.arena=Math.min(Math.max(0,this.save.arena|0),this.arenas.length-1)`. Added null check on arena unlock toast: `if(arena)setTimeout(...)`. |
+| 82 | **Touch event on canvas doesn't preventDefault**: The `pointerdown` handler on the battle canvas called `G.tick()` but didn't call `e.preventDefault()`. On mobile devices, tapping the canvas during battle could cause the page to scroll unexpectedly. | Medium | Added `e.preventDefault()` before `G.tick()` and `{passive:false}` to the event listener options. |
+| 83 | **Win prediction color logic redundant**: The color assignment `winChance>=60?"var(--ok)":winChance>=40?"var(--warn)":"var(--warn)"` had two branches returning the same value (`"var(--warn)"`), making the `>=40` check redundant. Low win chance (<40%) showed the same color as medium (40-59%). | Low | Changed the third branch to `"var(--danger)"` (red) for low win chance, giving three distinct color tiers: green (>=60%), yellow (40-59%), red (<40%). |
+
+### Round 18: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Projectiles | ✅ Pass | 8 projectiles active, no dead targets. |
+| Status effects | ✅ Pass | No crashes; effects applied via abilities. |
+| Critical hits | ✅ Pass | Max crit 0.15, ramp tracking working. |
+| Kill feed | ✅ Pass | 5 entries with correct killer/victim teams. |
+| MVP tracking | ✅ Pass | Top damage: Archer 342 dmg (player team). |
+| Arena hazard (District Z) | ✅ Pass | No crash with poison_aura arena. |
+| Arena index bounds (999) | ✅ Pass | No crash on menu or start match with invalid arena. |
+| Combat: battle | ✅ Pass | 24 units (12v12), projectiles, kill feed, no NaN. |
+| Tier list | ✅ Pass | Screen activates correctly. |
+| Leaderboard | ✅ Pass | Modal appears with ranked data. |
+| Touch/mobile | ✅ Pass | Viewport meta tag present, canvas renders. |
+| Full bot match regression | ✅ Pass | Battle, 12 units, no NaN, 0 console errors. |
+
+### Round 18: Verified Non-Bugs (from subagent reports)
+
+- **Projectile homing to dead units** — by design. Projectiles travel to last known position; this is standard RTS behavior.
+- **Win prediction doesn't validate unit stats** — `unit()` factory clamps all stats to valid ranges; can't be undefined in normal flow.
+- **Tier list stat validation** — same as above; `unit()` factory prevents invalid stats.
+- **Battle.stop() doesn't call stopSnapshots()** — `onBattleEnd` calls `stopSnapshots()`; snapshot timer also self-terminates when `Battle.running` is false.
+- **Match analysis recommendations reference loadout** — by design; recommendations suggest loadout changes based on what roles are missing.
+- **Leaderboard doesn't validate ranked data** — `initSave` ensures `ranked` object exists with all fields.
+- **Snapshot doesn't check Battle.units exists** — `Battle.start` always initializes `units` array; can't be undefined during battle.
+- **Replay save doesn't validate Battle.units** — same as above.
+- **Tier list deduplication by name** — by design; prevents showing duplicate entries for the same unit.
