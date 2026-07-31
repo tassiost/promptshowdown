@@ -129,6 +129,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="arenaBadge" style="margin:10px 0;font-size:.9rem;font-weight:600;text-align:center;"></div>
 <div id="streakBadge" style="display:none;margin:4px 0;font-size:.85rem;font-weight:700;text-align:center;color:#fb923c;"></div>
 <div id="dailyBadge" style="display:none;margin:4px 0;font-size:.8rem;font-weight:600;text-align:center;color:#fbbf24;"></div>
+<div id="tipOfDay" style="margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.75rem;color:var(--muted);text-align:center;max-width:280px;"></div>
 <div style="display:flex;gap:4px;justify-content:center;margin:4px 0;">
 <button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;">Easy</button>
 <button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;">Normal</button>
@@ -197,6 +198,13 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="de">Deutsch (beta)</option><option value="fr">Français (beta)</option><option value="ja">日本語 (beta)</option>
 </select>
 </label>
+<h3 style="font-size:.9rem;margin:12px 0 8px;">Save Data</h3>
+<div style="display:flex;gap:6px;margin:8px 0;">
+<button class="btn" onclick="G.exportSave()" style="font-size:.78rem;flex:1;">📤 Export</button>
+<button class="btn" onclick="G.importSave()" style="font-size:.78rem;flex:1;">📥 Import</button>
+</div>
+<div style="font-size:.72rem;color:var(--muted);margin:4px 0;">Export your save as a text code. Import to restore on another device.</div>
+<textarea id="saveExportArea" style="display:none;width:100%;height:80px;font-size:.6rem;margin:8px 0;" readonly></textarea>
 </div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
@@ -369,6 +377,9 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="errorBody"></div>
 </div>
 
+<!-- Save indicator -->
+<div id="saveIndicator" style="position:fixed;bottom:8px;left:8px;background:rgba(11,17,32,.9);border:1px solid var(--ok);border-radius:var(--radius-sm);padding:4px 10px;font-size:.7rem;color:var(--ok);opacity:0;transition:opacity .3s ease;pointer-events:none;z-index:9998;">💾 Saved</div>
+
 <!-- Phase 6: achievement / event toast -->
 <div id="toast"></div>
 
@@ -502,6 +513,9 @@ function saveData(data){
       return;
     }
     localStorage.setItem(SAVE_KEY,json);
+    // Show brief save indicator.
+    const si=$("saveIndicator");
+    if(si){si.style.opacity="1";setTimeout(()=>{si.style.opacity="0";},800);}
   }catch(e){
     // J4: Quota exceeded — try IndexedDB fallback.
     try{idbPut(SAVE_KEY,JSON.stringify(data));}catch(e2){}
@@ -6172,12 +6186,41 @@ const G={
       const today=new Date().toDateString();
       if((this.save.lastDailyWin||"")!==today){
         dailyEl.style.display="block";
+        dailyEl.style.color="#fbbf24";
         dailyEl.innerHTML="🎁 Daily Challenge: Win a match for +100💰 bonus!";
       }else{
         dailyEl.style.display="block";
-        dailyEl.innerHTML="✅ Daily Challenge complete — come back tomorrow!";
         dailyEl.style.color="var(--ok)";
+        dailyEl.innerHTML="✅ Daily Challenge complete — come back tomorrow!";
       }
+    }
+    // Tip of the day (changes each day).
+    const tipEl=$("tipOfDay");
+    if(tipEl){
+      const tips=[
+        "💡 Frontline units absorb damage — always bring one!",
+        "💡 Carries deal high damage but need protection.",
+        "💡 Support units heal — they keep your army alive.",
+        "💡 Counter units dive enemy backlines to disrupt carries.",
+        "💡 Reroll draft cards if you don't like the options.",
+        "💡 Win 3 rounds to take the match. Adapt between rounds!",
+        "💡 Fuse duplicate units to level them up.",
+        "💡 Upgrade units with coins to boost their stats.",
+        "💡 Check the Codex to learn about abilities and roles.",
+        "💡 Win streaks give bonus coins — don't break the streak!",
+        "💡 Spells can turn the tide — tap the spell bar to cast.",
+        "💡 Hard mode gives tougher enemies but the same rewards.",
+        "💡 Endless mode starts after clearing all arenas.",
+        "💡 Press P to pause, 1/2/3 for speed, S to skip in battle.",
+        "💡 A balanced loadout has frontline + carry + support.",
+        "💡 Lifesteal units heal themselves — great for carries.",
+        "💡 Taunt forces enemies to attack your tank instead of carries.",
+        "💡 Executioner deals 3× damage to low-HP enemies.",
+        "💡 Ramp units get stronger with each kill.",
+        "💡 Chain lightning hits 3 enemies — great vs clusters.",
+      ];
+      const dayIdx=new Date().getDate();
+      tipEl.innerHTML=tips[dayIdx%tips.length];
     }
     // Phase 12: forge button. Normally gated behind Training Yard completion
     // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
@@ -7961,7 +8004,42 @@ const G={
     content.innerHTML=html;
   },
 
-  reset(){showConfirm("Reset progress?",()=>{localStorage.removeItem(SAVE_KEY);location.reload();});}
+  reset(){showConfirm("Reset progress?",()=>{localStorage.removeItem(SAVE_KEY);location.reload();});},
+
+  // Export save data as base64-encoded string.
+  exportSave(){
+    try{
+      const json=JSON.stringify(this.save);
+      const b64=btoa(unescape(encodeURIComponent(json)));
+      const code="PSV4:"+b64;
+      const area=$("saveExportArea");
+      if(area){
+        area.style.display="block";
+        area.value=code;
+        area.select();
+        document.execCommand("copy");
+        toast("Save code copied to clipboard!");
+      }
+    }catch(e){toast("Export failed: "+(e.message||e));}
+  },
+  // Import save data from a pasted code.
+  importSave(){
+    const code=prompt("Paste your save code (starts with PSV4:):");
+    if(!code)return;
+    try{
+      if(!code.startsWith("PSV4:")){toast("Invalid save code");return;}
+      const b64=code.slice(5);
+      const json=decodeURIComponent(escape(atob(b64)));
+      const data=JSON.parse(json);
+      if(!data.version){toast("Invalid save data");return;}
+      showConfirm("Import will overwrite current progress. Continue?",()=>{
+        this.save=data;
+        saveData(this.save);
+        toast("Save imported successfully!");
+        this.menu();
+      });
+    }catch(e){toast("Import failed: "+(e.message||e));}
+  }
 };
 
 // Phase 1/18: host/join assigned after G exists; setupNetwork now null-safe.
