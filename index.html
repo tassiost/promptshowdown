@@ -1107,7 +1107,7 @@ function unit(x={}){
     abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
     role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
-    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand"].includes(x.weaponType)?x.weaponType:"none",
+    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"].includes(x.weaponType)?x.weaponType:"none",
     // Phase 25: visual modifier fields (preserved for P2P + share + clone).
     bodyPlan:x.bodyPlan||null,
     headFeature:x.headFeature||"none",
@@ -1284,11 +1284,15 @@ function validateUnit(raw,arenaIndex){
 const COLOR_MAP={
   green:"#4a7",blue:"#48f",red:"#f44",purple:"#a4f",
   yellow:"#fd4",orange:"#f84",black:"#222",white:"#eee",
-  brown:"#a72",gray:"#888",pink:"#f6c",cyan:"#0ff"
+  brown:"#a72",gray:"#888",pink:"#f6c",cyan:"#0ff",
+  teal:"#07a",magenta:"#e4f",lime:"#bf4",indigo:"#6495ed",
+  coral:"#f80",lavender:"#e6e6fa",gold:"#ffd700",silver:"#c0c0c0"
 };
-const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",breath:"#f80",scythe:"#9f9",whip:"#a72",spear:"#aaa",rifle:"#666",wand:"#fd0",none:"#888"};
-const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",breath:"burst",scythe:"none",whip:"none",spear:"none",rifle:"projectile",wand:"flash",none:"none"};
-const SIZE_SCALE={small:0.7,medium:1.0,large:1.3};
+const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",breath:"#f80",scythe:"#9f9",whip:"#a72",spear:"#aaa",rifle:"#666",wand:"#fd0",none:"#888",axe:"#999",trident:"#7bb",crossbow:"#864",orb:"#f0f",dual_blades:"#ddd"};
+const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",breath:"burst",scythe:"none",whip:"none",spear:"none",rifle:"projectile",wand:"flash",none:"none",axe:"burst",trident:"none",crossbow:"projectile",orb:"flash",dual_blades:"none"};
+const SIZE_SCALE={tiny:0.5,small:0.7,medium:1.0,large:1.3,huge:1.6,colossal:2.0};
+// Per-body-plan base size multiplier — makes dragons bigger than humanoids, etc.
+const BODY_SIZE={humanoid:1.0,quadruped:1.1,dragon:1.25,serpent:0.9,bird:0.85,insect:0.8,crab:0.9,golem:1.2,ghost:0.95,fish:0.85,blob:0.9,flying:0.85,mechanical:1.05,structure:1.15,plant:1.05,undead:1.0,demon:1.05,"beast-man":1.1,aquatic:0.95,monopod:0.85,centaur:1.15,hydra:1.2,elemental:0.95,aberration:1.0,ooze:0.9,crystal:0.95,construct:1.0,angel:1.0,spider:0.9,wyvern:1.15,treant:1.2,kraken:1.15,gargoyle:1.0,wraith:0.95};
 
 // Phase 12: JSON schema for grammar-constrained generation (17 fields).
 const UNIT_SCHEMA={
@@ -1306,15 +1310,15 @@ const UNIT_SCHEMA={
     range:{type:"integer",minimum:30,maximum:250},
     speed:{type:"integer",minimum:30,maximum:120},
     ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"]},
-    bodyPlan:{type:"string",enum:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel"]},
-    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand"]},
+    bodyPlan:{type:"string",enum:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel","spider","wyvern","treant","kraken","gargoyle","wraith"]},
+    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"]},
     primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
     accentColor:{type:"string",enum:Object.keys(COLOR_MAP)},
-    sizeMod:{type:"string",enum:["small","medium","large"]},
+    sizeMod:{type:"string",enum:["tiny","small","medium","large","huge","colossal"]},
     // Phase 25: visual modifier fields.
-    headFeature:{type:"string",enum:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed","mask","eyepatch","tiara","antenna","frill","beak"]},
-    backFeature:{type:"string",enum:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent","wings_insect","wings_angel","jetpack","tentacles","fins","crystal_growth"]},
-    tailFeature:{type:"string",enum:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger","tail_fluffy","tail_barbed","tail_split"]},
+    headFeature:{type:"string",enum:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed","mask","eyepatch","tiara","antenna","frill","beak","hood","mohawk","goggles","third_eye","flower_crown","headphones"]},
+    backFeature:{type:"string",enum:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent","wings_insect","wings_angel","jetpack","tentacles","fins","crystal_growth","wings_bone","wings_moth","sail","quills","banner","scarab_shell"]},
+    tailFeature:{type:"string",enum:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger","tail_fluffy","tail_barbed","tail_split","tail_mace","tail_feather","tail_hook","tail_ribbon"]},
     aura:{type:"string",enum:["none","fire","frost","poison","lightning","holy","shadow","arcane","void","nature","blood","tech"]},
     eyeStyle:{type:"string",enum:["normal","glowing","slit","empty","visorglow","compound","closed","star","cross","spiral","visor","visor_red"]},
     pattern:{type:"string",enum:["none","stripes","spots","scales","runes","cracks","gradient_two_tone","circuit","tribal","stars","hexagons","marble"]},
@@ -1864,6 +1868,107 @@ const BODY_PLANS={
       move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
       death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
     }
+  }),
+  spider:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-4,rx:10,ry:7,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:0,cy:-10,r:5,c:c.head,fill:"gradient",c2:c.primary},
+      {t:"line",x1:-8,y1:-6,x2:-16,y2:0,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:-8,y1:-2,x2:-16,y2:4,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:8,y1:-6,x2:16,y2:0,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"line",x1:8,y1:-2,x2:16,y2:4,c:c.accent,w:2,joint:"leg_swing"},
+      {t:"circle",cx:-2,cy:-12,r:1.5,c:"#f00",glow:2},
+      {t:"circle",cx:2,cy:-12,r:1.5,c:"#f00",glow:2}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,leg_swing:0},{t:0.5,bob:0.3,leg_swing:0.2},{t:1,bob:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:180}]
+    }
+  }),
+  wyvern:c=>({
+    shapes:[
+      {t:"rect",x:-8,y:-6,w:16,h:10,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[8,-8],[16,-14],[14,-2]],c:c.head,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-4,-4],[-12,-14],[-10,-2]],c:c.accent,joint:"wing_flap"},
+      {t:"polygon",pts:[[4,-4],[12,-14],[10,-2]],c:c.accent,joint:"wing_flap"},
+      {t:"rect",x:-4,y:4,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:2,y:4,w:4,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"polygon",pts:[[-8,-2],[-16,-6],[-14,2]],c:c.accent,joint:"tail_wag"},
+      {t:"polygon",pts:[[-14,2],[-18,0],[-16,4]],c:c.accent,joint:"tail_wag"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0,wing_flap:0},{t:0.5,bob:1,tail_wag:0.5,wing_flap:0.3},{t:1,bob:0,tail_wag:0,wing_flap:0}],
+      move:[{t:0,leg_swing:0,bob:0,wing_flap:0.5},{t:0.5,leg_swing:1,bob:1,wing_flap:1},{t:1,leg_swing:0,bob:0,wing_flap:0.5}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  treant:c=>({
+    shapes:[
+      {t:"rect",x:-6,y:-8,w:12,h:16,c:c.primary,fill:"gradient",c2:c.accent,outline:2,oc:"#5a3"},
+      {t:"rect",x:-8,y:-12,w:6,h:8,c:c.accent,joint:"arm_raise"},
+      {t:"rect",x:2,y:-12,w:6,h:8,c:c.accent,joint:"arm_raise"},
+      {t:"rect",x:-4,y:8,w:3,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:1,y:8,w:3,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"circle",cx:-5,cy:-14,r:3,c:"#4a6",glow:2},
+      {t:"circle",cx:5,cy:-14,r:3,c:"#4a6",glow:2},
+      {t:"circle",cx:0,cy:-16,r:2,c:"#6b8",glow:3}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,arm_raise:0},{t:0.5,bob:0.3,arm_raise:0.1},{t:1,bob:0,arm_raise:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:0.5,bob:0.3},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  kraken:c=>({
+    shapes:[
+      {t:"ellipse",cx:0,cy:-6,rx:9,ry:7,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"circle",cx:0,cy:-12,r:5,c:c.head,fill:"gradient",c2:c.primary},
+      {t:"line",x1:-6,y1:0,x2:-12,y2:10,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"line",x1:-3,y1:0,x2:-6,y2:12,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"line",x1:0,y1:0,x2:0,y2:14,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"line",x1:3,y1:0,x2:6,y2:12,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"line",x1:6,y1:0,x2:12,y2:10,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"circle",cx:-2,cy:-13,r:1.5,c:"#f44",glow:2},
+      {t:"circle",cx:2,cy:-13,r:1.5,c:"#f44",glow:2}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:0.5},{t:1,bob:0,tail_wag:0}],
+      move:[{t:0,tail_wag:0,bob:0},{t:0.5,tail_wag:1,bob:0.5},{t:1,tail_wag:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  gargoyle:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-14,r:6,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-3,-18],[-5,-22],[-1,-20]],c:c.accent},
+      {t:"polygon",pts:[[3,-18],[5,-22],[1,-20]],c:c.accent},
+      {t:"rect",x:-5,y:-8,w:10,h:12,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-4,-6],[-12,-12],[-10,-2]],c:c.accent,joint:"wing_flap"},
+      {t:"polygon",pts:[[4,-6],[12,-12],[10,-2]],c:c.accent,joint:"wing_flap"},
+      {t:"rect",x:-4,y:4,w:3,h:8,c:c.primary,joint:"leg_swing"},
+      {t:"rect",x:1,y:4,w:3,h:8,c:c.primary,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,wing_flap:0},{t:0.5,bob:0.2,wing_flap:0.1},{t:1,bob:0,wing_flap:0}],
+      move:[{t:0,leg_swing:0,bob:0,wing_flap:0.5},{t:0.5,leg_swing:1,bob:0.5,wing_flap:1},{t:1,leg_swing:0,bob:0,wing_flap:0.5}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  wraith:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-14,r:6,c:c.primary,fill:"gradient",c2:c.accent,alpha:0.8},
+      {t:"polygon",pts:[[-6,-8],[-8,8],[-4,10],[0,8],[4,10],[8,8],[6,-8]],c:c.primary,fill:"gradient",c2:c.accent,alpha:0.7,joint:"tail_wag"},
+      {t:"line",x1:-4,y1:-6,x2:-8,y2:2,c:c.accent,w:2,alpha:0.6,joint:"arm_raise"},
+      {t:"line",x1:4,y1:-6,x2:8,y2:2,c:c.accent,w:2,alpha:0.6,joint:"arm_raise"},
+      {t:"circle",cx:-2,cy:-15,r:1.5,c:"#a4f",glow:4},
+      {t:"circle",cx:2,cy:-15,r:1.5,c:"#a4f",glow:4}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0,arm_raise:0},{t:0.5,bob:1,tail_wag:0.5,arm_raise:0.2},{t:1,bob:0,tail_wag:0,arm_raise:0}],
+      move:[{t:0,bob:0,tail_wag:0,arm_raise:0.3},{t:0.5,bob:1,tail_wag:1,arm_raise:0.8},{t:1,bob:0,tail_wag:0,arm_raise:0.3}],
+      death:[{t:0,alpha:0.8,rot:0},{t:1,alpha:0,rot:0}]
+    }
   })
 };
 const WEAPONS={
@@ -1893,6 +1998,16 @@ const WEAPONS={
     attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:0.5},{t:1,arm_raise:0}]},
   wand:{shape:{t:"line",x1:8,y1:-12,x2:10,y2:-22,c:"#a72",w:1,joint:"arm_raise"},
     attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
+  axe:{shape:{t:"polygon",pts:[[10,-14],[16,-18],[16,-10],[10,-14]],c:"#999",joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  trident:{shape:{t:"line",x1:8,y1:-8,x2:14,y2:-20,c:"#7bb",w:2,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  crossbow:{shape:{t:"rect",x:8,y:-12,w:8,h:3,c:"#864",joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:0.5},{t:1,arm_raise:0}]},
+  orb:{shape:{t:"circle",cx:10,cy:-14,r:5,c:"#f0f",glow:8,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
+  dual_blades:{shape:{t:"line",x1:9,y1:-8,x2:14,y2:-14,c:"#ddd",w:1,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:1},{t:0.5,arm_raise:0.3},{t:0.8,arm_raise:1},{t:1,arm_raise:0}]},
   none:{shape:null,attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]}
 };
 function scaleShape(s,scale){
@@ -1930,6 +2045,12 @@ const HEAD_FEATURES={
   antenna:c=>[{t:"line",x1:-3,y1:-22,x2:-5,y2:-28,c:c.accent,w:1},{t:"circle",cx:-5,cy:-28,r:2,c:c.accent,glow:3},{t:"line",x1:3,y1:-22,x2:5,y2:-28,c:c.accent,w:1},{t:"circle",cx:5,cy:-28,r:2,c:c.accent,glow:3}],
   frill:c=>[{t:"polygon",pts:[[-8,-20],[-4,-24],[0,-22],[4,-24],[8,-20]],c:c.accent,alpha:0.7}],
   beak:c=>[{t:"polygon",pts:[[-3,-20],[0,-26],[3,-20]],c:"#fa0"}],
+  hood:c=>[{t:"polygon",pts:[[-7,-18],[-8,-24],[0,-26],[8,-24],[7,-18]],c:c.accent,alpha:0.8}],
+  mohawk:c=>[{t:"polygon",pts:[[-1,-22],[-2,-28],[0,-30],[2,-28],[1,-22]],c:c.accent}],
+  goggles:c=>[{t:"rect",x:-7,y:-20,w:6,h:4,c:"#333",alpha:0.9},{t:"rect",x:1,y:-20,w:6,h:4,c:"#333",alpha:0.9},{t:"circle",cx:-4,cy:-18,r:1.5,c:"#0ff",glow:3},{t:"circle",cx:4,cy:-18,r:1.5,c:"#0ff",glow:3}],
+  third_eye:c=>[{t:"circle",cx:0,cy:-24,r:2.5,c:"#f0f",glow:6},{t:"circle",cx:0,cy:-24,r:1,c:"#fff"}],
+  flower_crown:c=>[{t:"circle",cx:-5,cy:-22,r:2.5,c:"#f6c"},{t:"circle",cx:0,cy:-23,r:2.5,c:"#fd4"},{t:"circle",cx:5,cy:-22,r:2.5,c:"#a4f"}],
+  headphones:c=>[{t:"arc",cx:0,cy:-20,r:7,start:0,end:Math.PI,c:"#222",w:3},{t:"rect",x:-8,y:-20,w:4,h:5,c:"#222"},{t:"rect",x:4,y:-20,w:4,h:5,c:"#222"}],
 };
 const BACK_FEATURES={
   none:()=>[],
@@ -1946,6 +2067,12 @@ const BACK_FEATURES={
   tentacles:c=>[{t:"line",x1:-6,y1:-6,x2:-10,y2:6,c:c.accent,w:3,joint:"tail_wag"},{t:"line",x1:6,y1:-6,x2:10,y2:6,c:c.accent,w:3,joint:"tail_wag"},{t:"line",x1:0,y1:-8,x2:0,y2:8,c:c.accent,w:3,joint:"tail_wag"}],
   fins:c=>[{t:"polygon",pts:[[-6,-8],[-10,-12],[-6,-4]],c:c.accent},{t:"polygon",pts:[[6,-8],[10,-12],[6,-4]],c:c.accent}],
   crystal_growth:c=>[{t:"polygon",pts:[[-4,-10],[-2,-18],[0,-12]],c:c.accent,glow:4},{t:"polygon",pts:[[0,-12],[2,-18],[4,-10]],c:c.accent,glow:4}],
+  wings_bone:c=>[{t:"polygon",pts:[[-5,-10],[-14,-16],[-12,-4],[-5,-6]],c:"#e8e8e8",alpha:0.7,joint:"wing_flap"},{t:"polygon",pts:[[5,-10],[14,-16],[12,-4],[5,-6]],c:"#e8e8e8",alpha:0.7,joint:"wing_flap"},{t:"line",x1:-10,y1:-12,x2:-6,y2:-8,c:"#aaa",w:1},{t:"line",x1:10,y1:-12,x2:6,y2:-8,c:"#aaa",w:1}],
+  wings_moth:c=>[{t:"ellipse",cx:-8,cy:-10,rx:8,ry:5,c:"#d8a8e8",alpha:0.7,joint:"wing_flap"},{t:"ellipse",cx:8,cy:-10,rx:8,ry:5,c:"#d8a8e8",alpha:0.7,joint:"wing_flap"},{t:"circle",cx:-8,cy:-10,r:2,c:"#4a0",alpha:0.5},{t:"circle",cx:8,cy:-10,r:2,c:"#4a0",alpha:0.5}],
+  sail:c=>[{t:"polygon",pts:[[-3,-8],[-8,-16],[0,-14],[8,-16],[3,-8]],c:c.accent,alpha:0.8}],
+  quills:c=>[{t:"line",x1:-4,y1:-8,x2:-6,y2:-16,c:c.accent,w:2},{t:"line",x1:-1,y1:-10,x2:-2,y2:-18,c:c.accent,w:2},{t:"line",x1:2,y1:-10,x2:2,y2:-18,c:c.accent,w:2},{t:"line",x1:5,y1:-8,x2:6,y2:-16,c:c.accent,w:2}],
+  banner:c=>[{t:"line",x1:0,y1:-12,x2:0,y2:-20,c:"#888",w:1},{t:"rect",x:-4,y:-20,w:8,h:10,c:c.accent,joint:"recoil"}],
+  scarab_shell:c=>[{t:"ellipse",cx:0,cy:-6,rx:8,ry:6,c:c.accent,fill:"gradient",c2:c.primary,alpha:0.85},{t:"line",x1:0,y1:-12,x2:0,y2:0,c:c.primary,w:1}],
 };
 const TAIL_FEATURES={
   none:()=>[],
@@ -1958,6 +2085,10 @@ const TAIL_FEATURES={
   tail_fluffy:c=>[{t:"circle",cx:0,cy:14,r:5,c:c.accent,alpha:0.8,joint:"tail_wag"}],
   tail_barbed:c=>[{t:"line",x1:0,y1:8,x2:0,y2:16,c:c.accent,w:2,joint:"tail_wag"},{t:"line",x1:0,y1:12,x2:-3,y2:10,c:c.accent,w:1},{t:"line",x1:0,y1:12,x2:3,y2:10,c:c.accent,w:1}],
   tail_split:c=>[{t:"line",x1:0,y1:8,x2:-4,y2:16,c:c.accent,w:2,joint:"tail_wag"},{t:"line",x1:0,y1:8,x2:4,y2:16,c:c.accent,w:2,joint:"tail_wag"}],
+  tail_mace:c=>[{t:"line",x1:0,y1:8,x2:0,y2:14,c:c.accent,w:3,joint:"tail_wag"},{t:"circle",cx:0,cy:16,r:4,c:c.accent,joint:"tail_wag"},{t:"line",x1:-2,y1:14,x2:-4,y2:12,c:c.accent,w:1,joint:"tail_wag"},{t:"line",x1:2,y1:14,x2:4,y2:12,c:c.accent,w:1,joint:"tail_wag"}],
+  tail_feather:c=>[{t:"polygon",pts:[[-2,8],[0,18],[2,8]],c:c.accent,joint:"tail_wag"},{t:"line",x1:0,y1:8,x2:0,y2:18,c:c.primary,w:1,joint:"tail_wag"}],
+  tail_hook:c=>[{t:"line",x1:0,y1:8,x2:0,y2:14,c:c.accent,w:3,joint:"tail_wag"},{t:"arc",cx:0,cy:14,r:4,start:0,end:Math.PI,c:c.accent,w:3,joint:"tail_wag"}],
+  tail_ribbon:c=>[{t:"line",x1:0,y1:8,x2:0,y2:20,c:c.accent,w:2,joint:"tail_wag",alpha:0.7},{t:"polygon",pts:[[-3,16],[0,22],[3,16]],c:c.accent,joint:"tail_wag",alpha:0.7}],
 };
 const AURA_MAP_VISUAL={
   none:null, fire:"#f64", frost:"#6cf", poison:"#6f4", lightning:"#ff4",
@@ -1984,13 +2115,15 @@ const RecipeAssembler={
     const weapon=WEAPON_COLOR[attrs.weaponType]||primary;
     const colors={primary,accent,head,weapon};
     const scale=SIZE_SCALE[attrs.sizeMod]||1.0;
+    const bodyBase=BODY_SIZE[attrs.bodyPlan]||1.0;
+    const totalScale=scale*bodyBase;
     const bodyFn=BODY_PLANS[attrs.bodyPlan]||BODY_PLANS.humanoid;
     const body=bodyFn(colors);
     const weaponTpl=WEAPONS[attrs.weaponType]||WEAPONS.none;
     // Phase 25: recipe metadata (defined early so shapes can reference pattern).
     const patternKey=PATTERN_MODIFIERS[attrs.pattern||"none"];
     const shapes=body.shapes.map(s=>{
-      const scaled=scaleShape(s,scale);
+      const scaled=scaleShape(s,totalScale);
       // Phase 25: apply pattern to body shapes.
       if(patternKey&&scaled.t!=="line"&&scaled.c){
         scaled.pattern=patternKey;
@@ -2001,16 +2134,16 @@ const RecipeAssembler={
     if(weaponTpl.shape){
       // Phase 25: apply weapon style modifiers.
       const ws=WEAPON_STYLE_MODIFIERS[attrs.weaponStyle||"standard"]||{};
-      const wShape={...scaleShape(weaponTpl.shape,scale),...ws};
+      const wShape={...scaleShape(weaponTpl.shape,totalScale),...ws};
       shapes.push(wShape);
     }
     // Phase 25: merge visual modifiers.
     const headFeat=HEAD_FEATURES[attrs.headFeature||"none"]||HEAD_FEATURES.none;
     const backFeat=BACK_FEATURES[attrs.backFeature||"none"]||BACK_FEATURES.none;
     const tailFeat=TAIL_FEATURES[attrs.tailFeature||"none"]||TAIL_FEATURES.none;
-    for(const s of headFeat(colors))shapes.push(scaleShape(s,scale));
-    for(const s of backFeat(colors))shapes.push(scaleShape(s,scale));
-    for(const s of tailFeat(colors))shapes.push(scaleShape(s,scale));
+    for(const s of headFeat(colors))shapes.push(scaleShape(s,totalScale));
+    for(const s of backFeat(colors))shapes.push(scaleShape(s,totalScale));
+    for(const s of tailFeat(colors))shapes.push(scaleShape(s,totalScale));
     // Phase 25: cap at 20 shapes (drop lowest-priority: tail, then back, then head).
     while(shapes.length>20)shapes.splice(shapes.length-1,1);
     return{
@@ -2036,6 +2169,19 @@ const RecipeAssembler={
 // the LLM is the source of creativity. Unrecognized prompts get a random template,
 // which keeps the fallback surprising rather than prescriptive.
 const TEMPLATES=[
+  // New weapon-specific templates (must be before generic warrior/guard/mage templates).
+  {kw:["axe","axeman","executioner","berserker axe","barbarian axe"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:120,hp:95,dmg:20,range:35,speed:80,ability:"ramp",bodyPlan:"humanoid",weaponType:"axe",primaryColor:"orange",accentColor:"red",sizeMod:"large",headFeature:"horns",aura:"fire",eyeStyle:"glowing"}},
+  {kw:["trident","spearman","poseidon","merfolk warrior","trident guard"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:100,hp:85,dmg:16,range:50,speed:70,ability:"thorns",bodyPlan:"aquatic",weaponType:"trident",primaryColor:"blue",accentColor:"cyan",sizeMod:"medium",aura:"frost",pattern:"scales"}},
+  {kw:["crossbow","sniper","marksman","arbalest"],a:{role:"carry",targeting:"enemy_backline",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,hp:50,dmg:20,range:180,speed:55,ability:"none",bodyPlan:"humanoid",weaponType:"crossbow",primaryColor:"brown",accentColor:"gray",sizeMod:"small"}},
+  {kw:["orb","crystal mage","gem caster","orb mage"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:60,hp:70,dmg:22,range:150,speed:40,ability:"chain_lightning",bodyPlan:"elemental",weaponType:"orb",primaryColor:"magenta",accentColor:"cyan",sizeMod:"medium",aura:"arcane",eyeStyle:"spiral",pattern:"hexagons",weaponStyle:"crystal"}},
+  {kw:["dual blade","blademaster","swordsman","duelist","dual blade master"],a:{role:"assassin",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"on_first_hit",moveSpeedMod:140,hp:60,dmg:18,range:30,speed:100,ability:"frenzy",bodyPlan:"humanoid",weaponType:"dual_blades",primaryColor:"cyan",accentColor:"white",sizeMod:"small",eyeStyle:"slit",weaponStyle:"ornate"}},
+  // New body plan templates.
+  {kw:["spider","arachnid","widow"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:130,hp:50,dmg:14,range:30,speed:110,ability:"poison",bodyPlan:"spider",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small",aura:"poison",eyeStyle:"compound",pattern:"stripes"}},
+  {kw:["wyvern","drake","wyrm"],a:{role:"carry",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:110,hp:80,dmg:18,range:80,speed:80,ability:"ramp",bodyPlan:"wyvern",weaponType:"breath",primaryColor:"orange",accentColor:"red",sizeMod:"large",headFeature:"horns_curved",backFeature:"wings_dragon",tailFeature:"tail_spade",aura:"fire",eyeStyle:"slit",pattern:"scales",weaponStyle:"glowing"}},
+  {kw:["kraken","leviathan","cephalopod"],a:{role:"frontline",targeting:"enemy_cluster",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:70,hp:130,dmg:14,range:60,speed:50,ability:"slow",bodyPlan:"kraken",weaponType:"claws",primaryColor:"purple",accentColor:"blue",sizeMod:"huge",aura:"frost",eyeStyle:"glowing",pattern:"scales"}},
+  {kw:["gargoyle","statue","guardian stone"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:60,hp:140,dmg:14,range:35,speed:40,ability:"shield",bodyPlan:"gargoyle",weaponType:"claws",primaryColor:"gray",accentColor:"cyan",sizeMod:"large",backFeature:"wings_bat",aura:"shadow",eyeStyle:"visorglow",pattern:"cracks"}},
+  {kw:["wraith","phantom","banshee","revenant"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:110,hp:55,dmg:16,range:50,speed:90,ability:"dodge",bodyPlan:"wraith",weaponType:"scythe",primaryColor:"purple",accentColor:"cyan",sizeMod:"medium",aura:"void",eyeStyle:"glowing",pattern:"runes",weaponStyle:"glowing"}},
+  // Original templates.
   {kw:["archer","bow","hunter","ranger"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:55,dmg:18,range:170,speed:65,ability:"none",bodyPlan:"humanoid",weaponType:"bow",primaryColor:"green",accentColor:"green",sizeMod:"medium"}},
   {kw:["tank","knight","warrior","guard","defender"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:80,hp:110,dmg:12,range:40,speed:50,ability:"shield",bodyPlan:"humanoid",weaponType:"shield",primaryColor:"blue",accentColor:"white",sizeMod:"large"}},
   {kw:["mage","wizard","sorcerer","warlock"],a:{role:"carry",targeting:"enemy_cluster",movement:"hold",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:50,hp:80,dmg:20,range:140,speed:40,ability:"splash",bodyPlan:"humanoid",weaponType:"staff",primaryColor:"purple",accentColor:"cyan",sizeMod:"medium",headFeature:"none",backFeature:"cape",tailFeature:"none",aura:"arcane",eyeStyle:"glowing",pattern:"runes",weaponStyle:"glowing"}},
@@ -2047,14 +2193,14 @@ const TEMPLATES=[
   {kw:["bomber","grenadier","suicide","explosive"],a:{role:"counter",targeting:"enemy_cluster",movement:"chase",attackCondition:"never",abilityTrigger:"on_death",moveSpeedMod:130,hp:50,dmg:30,range:40,speed:100,ability:"explode",bodyPlan:"mechanical",weaponType:"none",primaryColor:"gray",accentColor:"orange",sizeMod:"small"}},
   {kw:["turtle","shell","crab","tortoise"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:50,hp:150,dmg:8,range:30,speed:30,ability:"shield",bodyPlan:"quadruped",weaponType:"claws",primaryColor:"green",accentColor:"brown",sizeMod:"large"}},
   {kw:["wall","tower","turret","crystal","fortress"],a:{role:"frontline",targeting:"closest",movement:"hold",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:50,hp:200,dmg:15,range:120,speed:30,ability:"slow",bodyPlan:"structure",weaponType:"none",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
-  {kw:["dragon","wyvern","drake"],a:{role:"carry",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:90,dmg:20,range:60,speed:70,ability:"ramp",bodyPlan:"dragon",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large",headFeature:"horns_curved",backFeature:"wings_dragon",tailFeature:"tail_spade",aura:"fire",eyeStyle:"glowing",pattern:"scales",weaponStyle:"glowing"}},
+  {kw:["dragon","drake","elder dragon"],a:{role:"carry",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:90,dmg:20,range:60,speed:70,ability:"ramp",bodyPlan:"dragon",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large",headFeature:"horns_curved",backFeature:"wings_dragon",tailFeature:"tail_spade",aura:"fire",eyeStyle:"glowing",pattern:"scales",weaponStyle:"glowing"}},
   {kw:["snake","serpent","naga","eel"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:110,hp:60,dmg:16,range:40,speed:80,ability:"poison",bodyPlan:"serpent",weaponType:"claws",primaryColor:"green",accentColor:"yellow",sizeMod:"medium"}},
   {kw:["phoenix","eagle","harpy","bird"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:130,hp:55,dmg:16,range:120,speed:90,ability:"dodge",bodyPlan:"bird",weaponType:"claws",primaryColor:"orange",accentColor:"yellow",sizeMod:"small"}},
-  {kw:["spider","mantis","insect","centipede"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
+  {kw:["mantis","centipede","caterpillar","beetle"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
   {kw:["ant ","antman","formic"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
   {kw:["golem","construct","elemental"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:60,hp:160,dmg:16,range:40,speed:35,ability:"shield",bodyPlan:"golem",weaponType:"hammer",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
-  {kw:["ghost","wraith","specter","spirit"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,hp:50,dmg:14,range:50,speed:70,ability:"dodge",bodyPlan:"ghost",weaponType:"none",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
-  {kw:["fish","mermaid","kraken","octopus","squid"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:70,dmg:14,range:60,speed:60,ability:"slow",bodyPlan:"aquatic",weaponType:"claws",primaryColor:"blue",accentColor:"purple",sizeMod:"medium"}},
+  {kw:["ghost","specter","spirit","phantom"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,hp:50,dmg:14,range:50,speed:70,ability:"dodge",bodyPlan:"ghost",weaponType:"none",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
+  {kw:["fish","mermaid","octopus","squid","siren"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:70,dmg:14,range:60,speed:60,ability:"slow",bodyPlan:"aquatic",weaponType:"claws",primaryColor:"blue",accentColor:"purple",sizeMod:"medium"}},
   {kw:["skeleton","zombie","lich","undead"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_death",moveSpeedMod:70,hp:60,dmg:12,range:35,speed:50,ability:"spawn",bodyPlan:"undead",weaponType:"sword",primaryColor:"gray",accentColor:"green",sizeMod:"medium"}},
   {kw:["demon","devil","imp"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:65,dmg:18,range:35,speed:90,ability:"rage",bodyPlan:"demon",weaponType:"claws",primaryColor:"red",accentColor:"black",sizeMod:"medium"}},
   {kw:["minotaur","centaur","werewolf","beast-man"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:130,hp:100,dmg:18,range:35,speed:85,ability:"rage",bodyPlan:"beast-man",weaponType:"hammer",primaryColor:"brown",accentColor:"red",sizeMod:"large"}},
@@ -3618,7 +3764,7 @@ const SpriteRenderer={
   // Phase 24f: faces — eyes that track targets, blink, widen on attack.
   drawFace(c,u,channels,state){
     // Only draw faces for humanoid-like body plans.
-    const facedPlans=["humanoid","undead","demon","beast-man","ghost","flying","monopod"];
+    const facedPlans=["humanoid","undead","demon","beast-man","ghost","flying","monopod","angel","wraith","gargoyle","spider","kraken","wyvern","treant"];
     if(u.bodyPlan&&!facedPlans.includes(u.bodyPlan))return;
     // Phase 25: skip face if recipe says face:false or eyeStyle is closed.
     if(u.recipe&&(u.recipe.face===false||u.recipe.eyeStyle==="closed"))return;
@@ -3629,9 +3775,10 @@ const SpriteRenderer={
     // Phase 25: eye color from recipe.eyeColor or derived from fxType.
     const fxType=u.fxType||deriveFxType(u);
     let eyeColor,eyeGlow;
+    const eyeStyle=u.recipe?.eyeStyle||"normal";
     if(u.recipe&&u.recipe.eyeColor){
       eyeColor=u.recipe.eyeColor;
-      eyeGlow=u.recipe.eyeStyle==="glowing"||u.recipe.eyeStyle==="visorglow"?6:0;
+      eyeGlow=["glowing","visorglow","star","spiral"].includes(eyeStyle)?6:0;
     }else{
       eyeColor=u.bodyPlan==="undead"?"#4f4":fxType==="shadow"||fxType==="arcane"?"#f4f":"#000";
       eyeGlow=fxType==="shadow"||fxType==="arcane"||u.bodyPlan==="undead"?4:0;
@@ -3658,14 +3805,85 @@ const SpriteRenderer={
     c.save();
     if(eyeGlow){c.shadowBlur=eyeGlow;c.shadowColor=eyeColor;}
     c.fillStyle=eyeColor;
-    // Left eye.
-    c.beginPath();
-    c.ellipse(hx-3+dx,hy+dy,1.5*eyeScaleX,2*eyeScaleY,0,0,Math.PI*2);
-    c.fill();
-    // Right eye.
-    c.beginPath();
-    c.ellipse(hx+3+dx,hy+dy,1.5*eyeScaleX,2*eyeScaleY,0,0,Math.PI*2);
-    c.fill();
+    // Render eyes differently based on eye style.
+    switch(eyeStyle){
+      case "slit":
+        // Vertical slit pupils — cat/reptile eyes.
+        c.beginPath();c.ellipse(hx-3+dx,hy+dy,2*eyeScaleX,3*eyeScaleY,0,0,Math.PI*2);c.fill();
+        c.beginPath();c.ellipse(hx+3+dx,hy+dy,2*eyeScaleX,3*eyeScaleY,0,0,Math.PI*2);c.fill();
+        c.fillStyle="#000";
+        c.beginPath();c.ellipse(hx-3+dx,hy+dy,0.5,2.5*eyeScaleY,0,0,Math.PI*2);c.fill();
+        c.beginPath();c.ellipse(hx+3+dx,hy+dy,0.5,2.5*eyeScaleY,0,0,Math.PI*2);c.fill();
+        break;
+      case "compound":
+        // Compound eyes — multiple small circles per eye (insect).
+        for(let i=0;i<4;i++){
+          const a=i*Math.PI/2;
+          c.beginPath();c.arc(hx-4+Math.cos(a)*2+dx,hy+Math.sin(a)*2+dy,1.2,0,Math.PI*2);c.fill();
+          c.beginPath();c.arc(hx+4+Math.cos(a)*2+dx,hy+Math.sin(a)*2+dy,1.2,0,Math.PI*2);c.fill();
+        }
+        break;
+      case "visor":
+      case "visor_red":
+      case "visorglow":
+        // Single horizontal visor bar across both eyes.
+        c.fillRect(hx-7+dx,hy-1.5+dy,14*eyeScaleX,3);
+        if(eyeGlow){c.shadowBlur=0;}
+        c.fillStyle="#000";
+        c.fillRect(hx-7+dx,hy-1.5+dy,14*eyeScaleX,1);
+        break;
+      case "cross":
+        // X-shaped eyes (dazed/stunned look).
+        c.lineWidth=1.5;c.strokeStyle=eyeColor;
+        c.beginPath();c.moveTo(hx-4+dx,hy-2+dy);c.lineTo(hx-2+dx,hy+2+dy);
+        c.moveTo(hx-2+dx,hy-2+dy);c.lineTo(hx-4+dx,hy+2+dy);c.stroke();
+        c.beginPath();c.moveTo(hx+2+dx,hy-2+dy);c.lineTo(hx+4+dx,hy+2+dy);
+        c.moveTo(hx+4+dx,hy-2+dy);c.lineTo(hx+2+dx,hy+2+dy);c.stroke();
+        break;
+      case "star":
+        // Star-shaped glowing eyes.
+        c.lineWidth=1;c.strokeStyle=eyeColor;
+        for(const ox of [-3,3]){
+          c.beginPath();
+          for(let i=0;i<10;i++){
+            const a=i*Math.PI/5-Math.PI/2;
+            const r=i%2===0?2.5:1;
+            const px=hx+ox+Math.cos(a)*r*eyeScaleX+dx;
+            const py=hy+Math.sin(a)*r*eyeScaleY+dy;
+            if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+          }
+          c.closePath();c.fill();
+        }
+        break;
+      case "spiral":
+        // Spiral eyes (hypnotic).
+        c.lineWidth=1;c.strokeStyle=eyeColor;
+        for(const ox of [-3,3]){
+          c.beginPath();
+          for(let i=0;i<20;i++){
+            const a=i*0.5;
+            const r=i*0.15;
+            const px=hx+ox+Math.cos(a)*r*eyeScaleX+dx;
+            const py=hy+Math.sin(a)*r*eyeScaleY+dy;
+            if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+          }
+          c.stroke();
+        }
+        break;
+      case "empty":
+        // Hollow black eyes (undead/eldritch).
+        c.beginPath();c.arc(hx-3+dx,hy+dy,2.5*eyeScaleX,0,Math.PI*2);c.fill();
+        c.beginPath();c.arc(hx+3+dx,hy+dy,2.5*eyeScaleX,0,Math.PI*2);c.fill();
+        break;
+      default:
+        // Normal + glowing — two ellipses (original behavior).
+        c.beginPath();
+        c.ellipse(hx-3+dx,hy+dy,1.5*eyeScaleX,2*eyeScaleY,0,0,Math.PI*2);
+        c.fill();
+        c.beginPath();
+        c.ellipse(hx+3+dx,hy+dy,1.5*eyeScaleX,2*eyeScaleY,0,0,Math.PI*2);
+        c.fill();
+    }
     if(eyeGlow)c.shadowBlur=0;
     c.restore();
   },
@@ -3895,6 +4113,7 @@ const AURA_MAP={
   fire:"#f64", frost:"#6cf", poison:"#6f4", lightning:"#ff4",
   holy:"#fd8", shadow:"#a4f", arcane:"#a4f", explosion:"#f84",
   heal_glow:"#fd8", shockwave:"#fff", fire_wall:"#f84",
+  void:"#a0f", nature:"#4f8", blood:"#f44", tech:"#0ff",
 };
 function deriveFxType(u){
   if(u.ability==="ramp"&&u.weaponType==="breath")return"fire";
@@ -3995,6 +4214,7 @@ const BattleFX={
     const budget=MAX_PARTICLES-(Battle.particles?.length||0);
     if(budget<=0)return;
     const count=Math.min(2,budget);
+    const auraType=u.recipe?.aura||fxType||"none";
     for(let i=0;i<count;i++){
       const px=u.x+(Math.random()-0.5)*16;
       const py=u.y+(Math.random()-0.5)*4;
@@ -4014,6 +4234,26 @@ const BattleFX={
           vx=(Math.random()-0.5)*8; vy=-8-Math.random()*8; life=0.4+Math.random()*0.3; r=1.5+Math.random(); break;
         default:
           vy=-10; life=0.4;
+      }
+      // Unique aura particle behaviors for visual modifier auras.
+      if(auraType==="void"){
+        // Imploding particles — spiral inward then fade.
+        const ang=Math.random()*Math.PI*2;
+        const dist=12+Math.random()*6;
+        vx=-Math.cos(ang)*15; vy=-Math.sin(ang)*15;
+        life=0.4+Math.random()*0.2; r=1.5+Math.random();
+      }else if(auraType==="nature"){
+        // Falling leaves — drift down with sway.
+        vx=(Math.random()-0.5)*8; vy=5+Math.random()*8;
+        life=0.8+Math.random()*0.4; r=2+Math.random();
+      }else if(auraType==="blood"){
+        // Dripping droplets — fall straight down, heavier.
+        vx=(Math.random()-0.5)*3; vy=15+Math.random()*10;
+        life=0.5+Math.random()*0.3; r=1.5+Math.random();
+      }else if(auraType==="tech"){
+        // Digital squares — jittery, short-lived, rectangular look.
+        vx=(Math.random()-0.5)*20; vy=(Math.random()-0.5)*20;
+        life=0.15+Math.random()*0.1; r=1+Math.random();
       }
       Battle.particles.push({x:px,y:py,vx,vy,life,maxLife:life,c:color,r});
     }
