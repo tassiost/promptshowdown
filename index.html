@@ -884,6 +884,15 @@ function lighten(hex,amt){
   const b=Math.min(255,Math.round((n&255)+amt*255));
   return"#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
 }
+function darken(hex,amt){
+  let h=hex.slice(1);
+  if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  const n=parseInt(h,16);
+  const r=Math.max(0,Math.round(((n>>16)&255)-amt*255));
+  const g=Math.max(0,Math.round(((n>>8)&255)-amt*255));
+  const b=Math.max(0,Math.round((n&255)-amt*255));
+  return"#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
 function deriveAtkSpd(a){
   const base=a.role==="carry"?1.2:a.role==="frontline"?0.8:1.0;
   return clamp(base+(a.speed-60)*0.005,0.5,2.5);
@@ -2516,9 +2525,9 @@ const SpriteRenderer={
     // Phase 24b: per-shape alpha.
     const prevAlpha=c.globalAlpha;
     if(shape.alpha!==undefined)c.globalAlpha=shape.alpha;
-    // Phase 24b: gradient fill support.
+    // Phase 24b: gradient fill support + D1: auto gradient shading for flat colors.
+    let g;
     if(shape.fill==="gradient"&&shape.c2){
-      let g;
       if(shape.t==="circle"){
         g=c.createRadialGradient(ox+shape.cx-(shape.r||4)*0.3,oy+shape.cy-(shape.r||4)*0.3,1,
           ox+shape.cx,oy+shape.cy,shape.r||4);
@@ -2532,6 +2541,26 @@ const SpriteRenderer={
       g.addColorStop(0,shape.c||"#888");
       g.addColorStop(1,shape.c2);
       c.fillStyle=g;
+    }else if(shape.c&&shape.fill!=="gradient"&&!shape.glow){
+      // D1: auto gradient — lighter top, darker bottom for depth.
+      const base=sanitizeHex(shape.c);
+      if(shape.t==="circle"||shape.t==="ellipse"){
+        const r=shape.r||shape.rx||4;
+        g=c.createRadialGradient(ox+(shape.cx||0)-r*0.3,oy+(shape.cy||0)-r*0.3,1,
+          ox+(shape.cx||0),oy+(shape.cy||0),r);
+        g.addColorStop(0,lighten(base,0.12));
+        g.addColorStop(1,darken(base,0.12));
+        c.fillStyle=g;
+      }else{
+        const x=shape.x!==undefined?shape.x:(shape.cx||0)-10;
+        const y=shape.y!==undefined?shape.y:(shape.cy||0)-10;
+        const w=shape.w!==undefined?shape.w:20;
+        const h=shape.h!==undefined?shape.h:20;
+        g=c.createLinearGradient(ox+x,oy+y,ox+x,oy+y+h);
+        g.addColorStop(0,lighten(base,0.12));
+        g.addColorStop(1,darken(base,0.12));
+        c.fillStyle=g;
+      }
     }else{
       c.fillStyle=shape.c||"#888";
     }
@@ -2635,20 +2664,43 @@ const SpriteRenderer={
     if(rot){c.translate(u.x,u.y);c.rotate(rot*Math.PI/180);c.translate(-u.x,-u.y);}
     // Draw shapes (with bob offset applied via temporary y adjustment).
     const saveY=u.y;
-    u.y=saveY+bobY;
-    // Phase 24b: drop shadow — soft ellipse under the unit.
+    // D4: hit reaction — recoil away from attacker.
+    let reactX=0,reactY=0;
+    if(u.hitReact>0){
+      const dir=u.hitReactDir||{x:0,y:0};
+      reactX=dir.x*3*u.hitReact;
+      reactY=dir.y*3*u.hitReact;
+      u.hitReact-=0.015;
+    }
+    u.y=saveY+bobY+reactY;
+    const drawX=u.x+reactX;
+    const origX=u.x;
+    u.x=drawX;
+    // D3: team-colored ground decal (flat ellipse at feet).
+    if(state!=="death"){
+      c.save();
+      c.globalAlpha=0.15*alpha;
+      c.fillStyle=u.team==="player"?"#4af":"#f44";
+      c.beginPath();
+      c.ellipse(drawX,saveY+(u.z||10)*0.85,(u.z||10)*1.1,(u.z||10)*0.35,0,0,Math.PI*2);
+      c.fill();
+      c.restore();
+    }
+    // Phase 24b: drop shadow — soft blurred ellipse under the unit (D2).
     if(!recipe.noShadow&&state!=="death"){
       c.save();
-      c.globalAlpha=0.25*alpha;
+      c.globalAlpha=0.3*alpha;
       c.fillStyle="#000";
+      if(c.filter!==undefined){c.filter="blur(3px)";}
       c.beginPath();
-      c.ellipse(u.x,u.y+(u.z||10)*0.8,(u.z||10)*0.9,(u.z||10)*0.3,0,0,Math.PI*2);
+      c.ellipse(drawX,saveY+(u.z||10)*0.8,(u.z||10)*0.9,(u.z||10)*0.3,0,0,Math.PI*2);
       c.fill();
       c.restore();
     }
     for(const shape of(recipe.shapes||[])){
       this.drawShape(c,shape,rm?{}:channels,u);
     }
+    u.x=origX;
     // Phase 24f: draw face (eyes + expression) for humanoid-like units.
     if(recipe.face!==false&&state!=="death"){
       this.drawFace(c,u,channels,state);
@@ -3681,6 +3733,11 @@ const Battle={
       console.log("[DMG] t="+this.time.toFixed(2)+" "+attacker.n+"→"+target.n+"["+target.team+"] d="+dmg.toFixed(1)+(crit?" CRIT":"")+" hp:"+hpBefore.toFixed(0)+"→"+target.h.toFixed(0));
     }
     target.hasBeenHit=true; // Phase 10: for on_first_hit trigger
+    // D4: hit reaction — recoil away from attacker.
+    const dx=target.x-attacker.x,dy=target.y-attacker.y;
+    const dd=Math.hypot(dx,dy)||1;
+    target.hitReact=0.15;
+    target.hitReactDir={x:dx/dd,y:dy/dd};
     // Phase 17: FX on hit.
     if(crit){
       BattleFX.onCrit(target);
@@ -3782,6 +3839,27 @@ const Battle={
       }
     }
     u.deathT=0;
+    // D5: body-plan-specific death FX.
+    const bp=u.recipe?.bodyPlan||u.bodyPlan;
+    if(bp==="golem"||bp==="construct"){
+      // Shatter: spawn colored rect particles.
+      for(let i=0;i<8;i++){
+        Battle.particles.push({x:u.x+(Math.random()-0.5)*20,y:u.y+(Math.random()-0.5)*20,
+          vx:(Math.random()-0.5)*80,vy:-30-Math.random()*40,life:0.5,maxLife:0.6,c:u.c,r:3+Math.random()*3});
+      }
+    }else if(bp==="ghost"||bp==="wraith"||bp==="undead"){
+      // Dissolve: fade + rise particles.
+      for(let i=0;i<6;i++){
+        Battle.particles.push({x:u.x+(Math.random()-0.5)*15,y:u.y+(Math.random()-0.5)*15,
+          vx:0,vy:-20-Math.random()*15,life:0.6,maxLife:0.7,c:u.c,r:2+Math.random()*2});
+      }
+    }else if(bp==="blob"||bp==="slime"||bp==="monopod"){
+      // Flatten: quick scale Y to 0 is handled by death animation; spawn puddle particles.
+      for(let i=0;i<5;i++){
+        Battle.particles.push({x:u.x+(Math.random()-0.5)*18,y:u.y+5,
+          vx:(Math.random()-0.5)*20,vy:0,life:0.4,maxLife:0.5,c:u.c,r:4+Math.random()*2});
+      }
+    }
     BattleFX.onDeath(u); // Phase 17: death burst FX
     GameAudio.sfx("death"); // Phase 30
     // Phase 16: track death order for post-match hint.
