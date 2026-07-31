@@ -130,6 +130,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="streakBadge" style="display:none;margin:4px 0;font-size:.85rem;font-weight:700;text-align:center;color:#fb923c;"></div>
 <div id="dailyBadge" style="display:none;margin:4px 0;font-size:.8rem;font-weight:600;text-align:center;color:#fbbf24;"></div>
 <div id="tipOfDay" style="margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.75rem;color:var(--muted);text-align:center;max-width:280px;"></div>
+<div id="unitSpotlight" style="display:none;margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--accent);border-radius:var(--radius-sm);font-size:.72rem;text-align:center;max-width:280px;"></div>
 <div style="display:flex;gap:4px;justify-content:center;margin:4px 0;">
 <button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;">Easy</button>
 <button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;">Normal</button>
@@ -146,6 +147,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.achievementsScreen()">🏆 ACHIEVEMENTS</button>
 <button class="btn" onclick="G.replaysScreen()">🎬 HISTORY</button>
 <button class="btn" onclick="G.tierList()">📊 TIER LIST</button>
+<button class="btn" onclick="G.profile()">👤 PROFILE</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
@@ -404,6 +406,12 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="screen" id="stats">
 <h2>📊 Stats</h2>
 <div id="statsContent" style="max-width:320px;margin:0 auto;"></div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="profile">
+<h2>👤 Profile</h2>
+<div id="profileContent" style="max-width:320px;margin:0 auto;"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
@@ -4053,7 +4061,7 @@ const SPELL_SHAPE={
 };
 // Phase 23: spell effect — applies the effect to affected units.
 const SPELL_EFFECT={
-  damage(units,spec){units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false);});},
+  damage(units,spec){units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
   damage_over_time(units,spec){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;});},
   slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
   stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
@@ -4479,7 +4487,7 @@ const Battle={
       if(u.poison>0){
         u.poison-=dt;
         u.poisonTick-=dt;
-        if(u.poisonTick<=0){u.h-=u.poisonDmg||3;u.poisonTick=0.5;}
+        if(u.poisonTick<=0){u.h-=u.poisonDmg||3;u.poisonTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");}
         if(u.h<=0){u.poison=0;}
       }
       if(u.slow>0)u.slow-=dt;
@@ -5247,9 +5255,9 @@ const Battle={
   },
 
   // Spawn a floating damage number.
-  spawnDmgNum(x,y,val,team,crit){
+  spawnDmgNum(x,y,val,team,crit,type){
     if(!this.damageNums)this.damageNums=[];
-    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,team,crit:!!crit,vy:-40});
+    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,team,crit:!!crit,type:type||"normal",vy:-40});
     if(this.damageNums.length>40)this.damageNums.shift();
   },
 
@@ -5275,7 +5283,11 @@ const Battle={
       c.fillStyle=color;
       c.strokeStyle="rgba(0,0,0,0.8)";
       c.lineWidth=3;
-      const txt=d.crit?"💥"+d.val:""+d.val;
+      let prefix=d.crit?"💥":"";
+      if(d.type==="ability")prefix+="✨";
+      else if(d.type==="spell")prefix+="🔮";
+      else if(d.type==="poison")prefix+="☠️";
+      const txt=prefix+d.val;
       c.strokeText(txt,d.x,d.y);
       c.fillText(txt,d.x,d.y);
     }
@@ -6567,6 +6579,26 @@ const G={
       ];
       const dayIdx=new Date().getDate();
       tipEl.innerHTML=tips[dayIdx%tips.length];
+    }
+    // Unit spotlight: rotates daily, shows a featured unit from collection.
+    const spotEl=$("unitSpotlight");
+    if(spotEl){
+      const coll=this.collectionUnits();
+      if(coll.length>0){
+        const dayIdx=new Date().getDate();
+        const featured=coll[dayIdx%coll.length];
+        const mastery=this.save.unitMastery?.[featured.n];
+        const masteryText=mastery&&mastery.kills>0?` · ${mastery.kills} kills`:"";
+        const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+        const abIcon=abIcons[featured.ability]||"";
+        const abText=featured.ability&&featured.ability!=="none"?`${abIcon} ${featured.ability}`:"No ability";
+        spotEl.style.display="block";
+        spotEl.innerHTML=`<span style="color:var(--accent);font-weight:700;">⭐ Unit Spotlight:</span> `+
+          `<span style="color:${featured.c};font-weight:700;">${featured.n}</span> `+
+          `<span style="color:var(--muted);">(${featured.role||"unknown"}) · ${featured.h} HP · ${featured.d} DMG · ${abText}${masteryText}</span>`;
+      }else{
+        spotEl.style.display="none";
+      }
     }
     // Phase 12: forge button. Normally gated behind Training Yard completion
     // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
@@ -8744,6 +8776,108 @@ const G={
   codex(){
     this.screen("codex");
     this.codexTab(this._codexTab);
+  },
+
+  // Player profile screen: comprehensive overview.
+  profile(){
+    this.screen("profile");
+    const el=$("profileContent");
+    if(!el)return;
+    const s=this.save.stats||{totalDmg:0,totalKills:0,totalMatches:0,totalWins:0,totalSpells:0};
+    const wr=s.totalMatches>0?Math.round(s.totalWins/s.totalMatches*100):0;
+    const lvl=this.playerLevel();
+    const arena=this.arenas[this.save.arena||0];
+    const endlessLvl=this.save.endlessLevel||0;
+    const coll=this.collectionUnits();
+    const achievements=this.save.achievements||{};
+    const achCount=Object.keys(achievements).filter(k=>achievements[k]).length;
+    const achTotal=Object.keys(this.achievements).length;
+    const mastery=this.save.unitMastery||{};
+    const masteryUnits=Object.keys(mastery).filter(n=>mastery[n].kills>=5);
+    // Player title based on level.
+    let title="Rookie";
+    if(lvl>=10)title="Legend";
+    else if(lvl>=7)title="Champion";
+    else if(lvl>=5)title="Veteran";
+    else if(lvl>=3)title="Warrior";
+    // Badges/achievements summary.
+    let html="";
+    // Header with title.
+    html+=`<div style="text-align:center;margin:10px 0;padding:16px;background:var(--card);border:1px solid var(--accent);border-radius:var(--radius);">`;
+    html+=`<div style="font-size:2rem;">${lvl>=10?"👑":lvl>=5?"⭐":"🎮"}</div>`;
+    html+=`<div style="font-size:1.2rem;font-weight:700;color:var(--accent);margin:4px 0;">${title}</div>`;
+    html+=`<div style="font-size:.8rem;color:var(--muted);">Level ${lvl} · ${this.save.xp||0} XP</div>`;
+    html+=`</div>`;
+    // Key stats grid.
+    html+="<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;'>";
+    const cards=[
+      {label:"Total Wins",value:this.save.matchWins||0,icon:"🏆",color:"var(--ok)"},
+      {label:"Win Rate",value:wr+"%",icon:"📈",color:wr>=50?"var(--ok)":"var(--warn)"},
+      {label:"Best Streak",value:this.save.bestStreak||0,icon:"🔥",color:"#fb923c"},
+      {label:"Endless Level",value:endlessLvl,icon:"♾️",color:"#f0f"},
+      {label:"Collection",value:coll.length,icon:"📦",color:"var(--accent)"},
+      {label:"Achievements",value:achCount+"/"+achTotal,icon:"🏅",color:"var(--accent2)"},
+      {label:"Coins",value:this.save.coins||0,icon:"💰",color:"#fbbf24"},
+      {label:"Mastery Units",value:masteryUnits.length,icon:"⚔️",color:"var(--accent2)"},
+    ];
+    for(const c of cards){
+      html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center;">`+
+        `<div style="font-size:1.3rem;">${c.icon}</div>`+
+        `<div style="font-size:1rem;font-weight:700;color:${c.color};margin:2px 0;">${c.value}</div>`+
+        `<div style="font-size:.65rem;color:var(--muted);">${c.label}</div></div>`;
+    }
+    html+="</div>";
+    // Current arena.
+    html+=`<div style="background:var(--card);border:1px solid ${arena?.c||"var(--border)"};border-radius:var(--radius);padding:10px;margin:8px 0;text-align:center;">`+
+      `<div style="font-size:.75rem;color:var(--muted);">Current Arena</div>`+
+      `<div style="font-size:.9rem;font-weight:700;color:${arena?.c}">⚔️ ${arena?.n||"Unknown"}</div>`+
+      (endlessLvl>0?`<div style="font-size:.7rem;color:#f0f;">Endless Level ${endlessLvl}</div>`:"")+
+      `</div>`;
+    // Top mastery units.
+    const topMastery=Object.entries(mastery)
+      .filter(([n,m])=>m.kills>0)
+      .sort((a,b)=>b[1].kills-a[1].kills)
+      .slice(0,3);
+    if(topMastery.length>0){
+      html+="<div style='margin:10px 0;font-weight:700;font-size:.85rem;'>⚔️ Top Units by Kills</div>";
+      html+="<div style='display:flex;flex-direction:column;gap:4px;'>";
+      for(const [name,m] of topMastery){
+        const unit=coll.find(u=>u.n===name);
+        const color=unit?.c||"var(--text)";
+        let badge="";
+        if(m.kills>=100)badge="👑 Master";
+        else if(m.kills>=50)badge="⭐ Expert";
+        else if(m.kills>=20)badge="🏅 Adept";
+        else if(m.kills>=5)badge="🎯 Novice";
+        html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--card);border-radius:var(--radius-sm);">`+
+          `<span style="color:${color};font-weight:700;font-size:.78rem;">${name}</span>`+
+          `<span style="font-size:.7rem;color:var(--muted);">${badge} · ${m.kills} kills · ${m.matches} matches</span></div>`;
+      }
+      html+="</div>";
+    }
+    // Lifetime damage and kills.
+    html+=`<div style="display:flex;gap:8px;margin:10px 0;">`+
+      `<div style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center;">`+
+      `<div style="font-size:1rem;">💥</div>`+
+      `<div style="font-size:.9rem;font-weight:700;color:#fb7185;">${Math.round(s.totalDmg||0).toLocaleString()}</div>`+
+      `<div style="font-size:.6rem;color:var(--muted);">Lifetime Damage</div></div>`+
+      `<div style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center;">`+
+      `<div style="font-size:1rem;">💀</div>`+
+      `<div style="font-size:.9rem;font-weight:700;color:#fca5a5;">${s.totalKills||0}</div>`+
+      `<div style="font-size:.6rem;color:var(--muted);">Lifetime Kills</div></div>`+
+      `<div style="flex:1;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:10px;text-align:center;">`+
+      `<div style="font-size:1rem;">✨</div>`+
+      `<div style="font-size:.9rem;font-weight:700;color:var(--accent2);">${s.totalSpells||0}</div>`+
+      `<div style="font-size:.6rem;color:var(--muted);">Spells Cast</div></div></div>`;
+    // Prediction accuracy.
+    const ps=this.save.predStats;
+    if(ps&&ps.total>0){
+      const acc=Math.round(ps.correct/ps.total*100);
+      html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:8px;margin:8px 0;text-align:center;">`+
+        `<span style="font-size:.7rem;color:var(--muted);">🔮 Prediction Accuracy: </span>`+
+        `<span style="font-size:.75rem;font-weight:700;color:${acc>=70?"var(--ok)":acc>=50?"var(--warn)":"#fb7185"};">${acc}% (${ps.correct}/${ps.total})</span></div>`;
+    }
+    el.innerHTML=html;
   },
 
   // Stats screen: show global battle statistics.
