@@ -2524,7 +2524,8 @@ function setupNetwork(id){
         Battle.stop();
         G.stopSnapshots();
         toast(t("host_disconnected"));
-        G.onMatchEnd("player");
+        // Don't award a win on disconnect — return to menu without rewards.
+        G.menu();
       }
     };
     return true;
@@ -4534,7 +4535,7 @@ const Battle={
       if(u.poison>0){
         u.poison-=dt;
         u.poisonTick-=dt;
-        if(u.poisonTick<=0){u.h-=u.poisonDmg||3;u.poisonTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");}
+        if(u.poisonTick<=0&&u.h>0){u.h-=u.poisonDmg||3;u.poisonTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");}
         if(u.h<=0){u.poison=0;}
       }
       if(u.slow>0)u.slow-=dt;
@@ -4675,7 +4676,7 @@ const Battle={
     const target=TARGETING[u.targeting](u,targetEnemies,allies);
     u.target=target; // Phase 24f: store target for eye tracking
     MOVEMENT[u.movement](u,target,dt);
-    if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
+    if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&target.h>0&&dist(u,target)<=u.r){
       if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+dist(u,target).toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
       this.attack(u,target,enemies);
       u.cool=(1/u.a)*(u.frenzyT>0?0.5:1); // cooldown = 1 / attacks_per_second (frenzy halves)
@@ -4774,13 +4775,13 @@ const Battle={
     // splash: AoE damage to enemies near target (50% damage)
     if(attacker.ability==="splash"){
       for(let e of enemies){
-        if(e!==target&&e.h>0&&dist(target,e)<40)e.h-=dmg*0.5;
+        if(e!==target&&e.h>0&&dist(target,e)<40){e.h-=dmg*0.5;e.lastAttacker=attacker;}
       }
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
     if(attacker.ability==="poison"){target.poison=3.0;target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
     // thorns: reflect 30% of damage back to attacker
-    if(target.ability==="thorns"&&attacker.h>0){attacker.h-=dmg*0.3;this.log(target.n+" thorns "+attacker.n);}
+    if(target.ability==="thorns"&&attacker.h>0){attacker.h-=dmg*0.3;attacker.lastAttacker=target;this.log(target.n+" thorns "+attacker.n);}
     // Phase 20: track last attacker for ramp-on-kill and kill feed.
     target.lastAttacker=attacker;
     if(attacker.ability==="ramp")target.lastAttacker=attacker;
@@ -9599,7 +9600,7 @@ const G={
       const data=JSON.parse(json);
       if(!data.version){toast("Invalid save data");return;}
       showConfirm("Import will overwrite current progress. Continue?",()=>{
-        this.save=data;
+        this.save=migrateSave(data);
         saveData(this.save);
         toast("Save imported successfully!");
         this.menu();
