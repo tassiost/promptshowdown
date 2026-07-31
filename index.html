@@ -6852,7 +6852,7 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden)Analytics.flushNow();
 });
 // Phase 35: flush analytics on page unload.
-window.addEventListener("beforeunload",()=>Analytics.flushNow());
+window.addEventListener("beforeunload",()=>{Analytics.flushNow();if(G.save)saveDataNow(G.save);});
 
 // Phase 30: delegated UI click sound for all buttons.
 document.addEventListener("click",e=>{
