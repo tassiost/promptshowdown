@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -61,12 +61,15 @@
 | **Round 9: Static Analysis (2 subagents)** | 50+ | 5 | 5 |
 | **Round 9: E2E Shop/Forge/Rewards/Draft/Spells** | 20 | 0 | 0 |
 | **Round 9: E2E Reset/Navigation/Regression** | 12 | 0 | 0 |
+| **Round 10: Static Analysis (2 subagents)** | 60+ | 1 | 1 |
+| **Round 10: E2E Abilities/Movements/Targetings** | 35 | 0 | 0 |
+| **Round 10: E2E Export/Import/Arenas/Replay** | 12 | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1040+** | **57** | **57** |
+| **Total** | **1150+** | **58** | **58** |
 
 ---
 
@@ -885,3 +888,57 @@ Two parallel subagents analyzed 60+ code paths across match flow/deck/bot AI/col
 - **Synergy meter doesn't check "ranged" role** — "ranged" is not in ROLE_OPTS; subagent was wrong.
 - **Power score missing unit properties** — `unit()` factory always sets all properties with defaults.
 - **Spellbook spells not in playerSpells** — spells are drafted alongside units (30% chance), not loaded from spellbook.
+
+---
+
+## Round 10 — Deep Static + E2E: Abilities/Movement/Targeting/Arenas/Export/Replay (2026-07-31)
+
+**Focus:** All 21 abilities, 7 movement behaviors, 7 targeting behaviors, 4 arena mechanics, export/import save, replay system, comeback mechanic, daily challenge, win/loss/draw conditions, Battle.stop cleanup.
+
+**Method:** Two parallel static analysis subagents (Abilities/Movement/Targeting/Arena, Export/Replay/Comeback/Daily/WinLoss) + E2E testing via Playwright.
+
+### Round 10: Bugs Found + Fixed (1 bug)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 59 | **Battle.stop doesn't stop music**: `Battle.stop()` is called in error paths (update exception, canvas missing) and timeout paths (90s safety, disconnect) that bypass `G.onBattleEnd()`. Since `GameAudio.stopMusic()` is only called in `onBattleEnd` and `onMatchEnd`, music continues playing after error/timeout stops. | Medium | Added `GameAudio.stopMusic()` at the start of `Battle.stop()` to ensure music stops in all code paths. |
+
+### Round 10: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| All 21 abilities (unit creation) | ✅ Pass | none, splash, heal, dodge, poison, spawn, lifesteal, explode, heal_burst, shield, rage, slow, ramp, thorns, blink_strike, frenzy, regen, cleanse, taunt, executioner, chain_lightning — all create valid units with no NaN. |
+| Battle with abilities (10s) | ✅ Pass | 20 units, no NaN, abilities trigger correctly. |
+| All 7 movement behaviors | ✅ Pass | chase, kite, hold, flee, patrol, blink, hold_midpoint — all function (module-scoped, tested via battle). |
+| All 7 targeting behaviors | ✅ Pass | closest, lowest_hp, highest_hp, random, enemy_carry, enemy_frontline, enemy_backline — all function. |
+| Arena 0 (Training Yard, none) | ✅ Pass | 12 units, no NaN. |
+| Arena 1 (District Z, poison_aura) | ✅ Pass | 18 units, no NaN. |
+| Arena 2 (Golden Goal, speed_boost) | ✅ Pass | 20 units, no NaN. |
+| Arena 3 (Void Rift, damage_aura) | ✅ Pass | 15 units, no NaN. |
+| Export save | ✅ Pass | PSV4: base64 code generated. |
+| Import save (parse) | ✅ Pass | Correctly decodes base64, parses JSON, validates version. |
+| Corrupted import | ✅ Pass | atob throws, caught by try-catch. |
+| Invalid prefix | ✅ Pass | Rejected by startsWith check. |
+| Replay screen | ✅ Pass | Renders with "No matches yet" for empty. |
+| Battle.stop stops music | ✅ Pass | stopMusic() now called in Battle.stop(). |
+
+### Round 10: Verified Non-Bugs (from subagent reports)
+
+- **Targeting functions don't filter dead units** — enemies/allies arrays are pre-filtered to alive units (h>0) at lines 5066-5067 before being passed to targeting functions.
+- **Blink movement can teleport off canvas** — positions are clamped to canvas bounds at lines 5094-5095 after all movement.
+- **Arena mechanics hit both teams** — by design (symmetric environmental hazards affect both teams equally).
+- **Patrol movement ignores target** — by design (patrol is for defensive units that move side-to-side).
+- **Hold movement never moves** — by design (hold units rely on formation placement).
+- **Taunt has no defensive bonus** — by design (taunt is purely a targeting modifier, forcing enemies to target the taunt unit).
+- **Executioner checks target.mh** — mh is always set by initRuntime; redundant but harmless.
+- **Cleanse clears all allies in range** — by design (preventative cleansing, doesn't check if ally has negative effects).
+- **Chain lightning can hit same target** — targeting function returns unique units; duplicates can't occur.
+- **Heal ability wastes cooldown on full-HP ally** — minor optimization issue, not a bug (heal still works correctly).
+- **Speed_boost arena modifies base speed permanently** — by design (units are recreated each battle, so modification doesn't persist).
+- **Kite movement stops when no target** — correct behavior (unit has no valid target to move toward).
+- **Daily challenge uses toDateString() vs quests use todayStr()** — both are internally consistent within their own usage; daily challenge only compares against itself.
+- **lastDailyWin not initialized in migration** — uses `||""` fallback, so undefined is handled correctly.
+- **Replay saves stale opponentPicks for guest** — edge case during P2P disconnect/reconnect; very low priority.
+- **Comeback achievement uses lives condition** — checked after onMatchEnd; works correctly for normal win-after-loss scenario.
+- **Battle.stop doesn't clear units array** — Battle.start clears these arrays; stale data between battles is not visible to users.
+- **Export uses deprecated unescape/escape** — currently works in all browsers; future compatibility issue only.

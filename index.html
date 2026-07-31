@@ -5957,6 +5957,8 @@ const Battle={
     this.running=false;
     cancelAnimationFrame(this.frame);
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    // Stop battle music in all code paths (error, timeout, disconnect).
+    GameAudio.stopMusic();
     // Clean up visual state so it doesn't leak into the next battle.
     this.particles=[];
     this.shakeAmount=0;
