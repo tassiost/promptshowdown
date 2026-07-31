@@ -4528,7 +4528,7 @@ const SPELL_SHAPE={
 };
 // Phase 23: spell effect — applies the effect to affected units.
 const SPELL_EFFECT={
-  damage(units,spec){units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
+  damage(units,spec,team){units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;u.lastAttacker={team:team,n:"Spell",id:team+"_spell"};if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
   damage_over_time(units,spec){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;});},
   slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
   stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
@@ -4637,7 +4637,7 @@ const Spell={
         const allyZone=tgt.startsWith("ally");
         const affected=allyZone?units.filter(u=>u.team===z.team):units.filter(u=>u.team!==z.team);
         if(z.spec.effect==="damage"){
-          affected.forEach(u=>{u.h-=z.spec.magnitude||10;u.lastAttacker=null;});
+          affected.forEach(u=>{u.h-=z.spec.magnitude||10;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};});
         }else if(z.spec.effect==="damage_over_time"){
           // Apply poison status (DoT) — uses Math.max to avoid overwriting higher poison.
           affected.forEach(u=>{u.poison=Math.max(u.poison||0,3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;});
