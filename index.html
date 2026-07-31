@@ -3357,8 +3357,9 @@ const Match={
   // Called by G.onBattleEnd after a round's battle finishes.
   onRoundEnd(winner){
     this.history.push({round:this.round,winner});
-    if(winner==="player")this.livesEnemy--;
-    else if(winner==="enemy")this.livesPlayer--;
+    if(winner==="player")this.livesEnemy=Math.max(0,this.livesEnemy-1);
+    else if(winner==="enemy")this.livesPlayer=Math.max(0,this.livesPlayer-1);
+    else if(winner==="draw"){this.livesEnemy=Math.max(0,this.livesEnemy-1);this.livesPlayer=Math.max(0,this.livesPlayer-1);}
     // Check match end
     if(this.livesPlayer<=0||this.livesEnemy<=0){
       const matchWinner=this.livesPlayer<=0&&this.livesEnemy<=0?"draw":
@@ -6301,10 +6302,10 @@ const QUEST_POOL=[
 ];
 const STREAK_REWARDS={1:10,3:50,7:100,14:200,30:500};
 const Quests={
-  todayStr(){return new Date().toISOString().slice(0,10);},
+  todayStr(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");},
   yesterdayStr(){
     const d=new Date();d.setDate(d.getDate()-1);
-    return d.toISOString().slice(0,10);
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
   },
   checkStreak(){
     const q=G.save.quests;
@@ -6673,6 +6674,7 @@ const G={
     if(!this.save.arena)this.save.arena=0;
     if(!this.save.loadout||!this.save.loadout.length)this.save.loadout=["Knight","Archer","Slash","Wizard"];
     if(!this.save.collection)this.save.collection=[];
+    if(this.save._lastMatchWon===undefined)this.save._lastMatchWon=false;
     saveData(this.save);
     this.wins();
     // Phase 31: show onboarding for first-time players.
@@ -6723,17 +6725,17 @@ const G={
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
-  playerLevel(){return 1+F(this.save.xp/100);},
+  playerLevel(){return 1+Math.max(0,F((this.save.xp||0)/100));},
   // Phase 6: per-unit upgrade level (0 if none).
   unitLevel(name){return this.save.upgrades[name]||0;},
   // Phase 6: apply upgrade bonuses to a cloned unit (+10% hp/d per level).
   // Capped at level 10 (200% bonus) to prevent runaway stats.
   applyUpgrades(u){
-    const lvl=Math.min(this.unitLevel(u.n),10);
+    const lvl=Math.max(0,Math.min(this.unitLevel(u.n),10));
     return this._applyUpgradeLevel(u,lvl);
   },
   _applyUpgradeLevel(u,lvl){
-    lvl=Math.min(lvl,10);
+    lvl=Math.max(0,Math.min(lvl,10));
     if(lvl>0){
       u.h=F(u.h*(1+0.1*lvl));
       u.d=F(u.d*(1+0.1*lvl));
@@ -9173,10 +9175,12 @@ const G={
     const name=prompt("Preset name (e.g. 'Aggressive', 'Tank'):");
     if(!name||!name.trim())return;
     if(!this.save.presets)this.save.presets={};
-    this.save.presets[name.trim()]=this.save.loadout.slice();
+    const key=name.trim();
+    if(this.save.presets[key]&&!confirm("Preset '"+key+"' already exists. Overwrite?"))return;
+    this.save.presets[key]=this.save.loadout.slice();
     saveData(this.save);
     GameAudio.sfx("ui_click");
-    toast("💾 Preset '"+name.trim()+"' saved!");
+    toast("💾 Preset '"+key+"' saved!");
     this._renderPresetList();
   },
   // Load a preset — shows a list of saved presets to choose from.
@@ -9222,9 +9226,10 @@ const G={
     this._renderPresetList();
   },
   clearLoadout(){
-    this.save.loadout=["","","",""];
+    this.save.loadout=["Knight","Archer","Slash","Wizard"];
     saveData(this.save);
     this.deck();
+    toast("Loadout reset to defaults");
   },
 
   // Phase 13/16: deck screen = 4 loadout slots + synergy meter + collection.
@@ -10014,7 +10019,9 @@ const G={
     if(tab==="collection"){
       units=this.collectionUnits();
     }else{
-      units=this.collectionUnits();
+      units=[...this.base.map(u=>({...u})),...(this.save.collection||[]).map(u=>({...u}))];
+      // Deduplicate by name (base units may also be in collection).
+      const seen=new Set();units=units.filter(u=>{if(seen.has(u.n))return false;seen.add(u.n);return true;});
     }
     // Compute power score for each unit.
     const scored=units.map(u=>{
