@@ -424,8 +424,18 @@ function saveData(data){
   try{
     const prev=localStorage.getItem(SAVE_KEY);
     if(prev)localStorage.setItem(SAVE_BACKUP_KEY,prev);
-    localStorage.setItem(SAVE_KEY,JSON.stringify(data));
-  }catch(e){showError("Save failed: "+(e&&e.message||e));}
+    const json=JSON.stringify(data);
+    // J4: If localStorage is near quota, fall back to IndexedDB.
+    if(!localStorageQuotaOK()){
+      idbPut(SAVE_KEY,json);
+      return;
+    }
+    localStorage.setItem(SAVE_KEY,json);
+  }catch(e){
+    // J4: Quota exceeded — try IndexedDB fallback.
+    try{idbPut(SAVE_KEY,JSON.stringify(data));}catch(e2){}
+    showError("Save failed: "+(e&&e.message||e)+" — using IndexedDB fallback");
+  }
 }
 function saveDataDebounced(data){
   if(_saveTimer)clearTimeout(_saveTimer);
@@ -438,6 +448,42 @@ function saveDataNow(data){
 // E2: structuredClone with fallback.
 function deepClone(x){
   return typeof structuredClone!=="undefined"?structuredClone(x):JSON.parse(JSON.stringify(x));
+}
+// J4: IndexedDB fallback for when localStorage is near quota.
+let _idbDB=null;
+function idb(){
+  if(_idbDB)return _idbDB;
+  try{
+    _idbDB=indexedDB.open("promptshowdown",1);
+    _idbDB.onupgradeneeded=e=>{e.target.result.createObjectStore("kv");};
+    return _idbDB;
+  }catch(e){return null;}
+}
+function idbPut(key,val){
+  const db=idb();if(!db)return;
+  db.onsuccess=()=>{
+    const tx=db.result.transaction("kv","readwrite");
+    tx.objectStore("kv").put(val,key);
+  };
+}
+function idbGet(key,cb){
+  const db=idb();if(!db){cb(null);return;}
+  db.onsuccess=()=>{
+    try{
+      const tx=db.result.transaction("kv","readonly");
+      const req=tx.objectStore("kv").get(key);
+      req.onsuccess=()=>cb(req.result||null);
+      req.onerror=()=>cb(null);
+    }catch(e){cb(null);}
+  };
+}
+function localStorageQuotaOK(){
+  try{
+    const test="_quota_test_"+Date.now();
+    localStorage.setItem(test,"x".repeat(102400)); // 100KB test
+    localStorage.removeItem(test);
+    return true;
+  }catch(e){return false;}
 }
 // Phase 39: i18n — string table + t() helper.
 const STRINGS={
@@ -1834,6 +1880,41 @@ async function reaskFields(name,attrs,flagged){
     if(val!==null)attrs[field]=val;
   }
   return attrs;
+}
+
+// J1: Batch LLM field generation — ask for multiple fields in one JSON call.
+// Groups fields into batches to reduce 24 sequential calls to 3-4.
+const FIELD_BATCHES=[
+  ["name","role","bodyPlan","weaponType","primaryColor","accentColor","sizeMod"],
+  ["targeting","movement","ability","abilityTrigger","attackCondition","hp","dmg","range","speed","moveSpeedMod"],
+  ["headFeature","backFeature","tailFeature","aura","eyeStyle","pattern","weaponStyle"],
+];
+async function askFieldsBatch(fields,name,attrs){
+  if(!llmReady)return null;
+  try{
+    const ctx={};
+    for(const f of Object.keys(attrs)){if(attrs[f]!==undefined&&attrs[f]!==null&&attrs[f]!=="")ctx[f]=attrs[f];}
+    const sys=`You are designing a game unit for a top-down auto-battler. So far the unit is:\n${JSON.stringify(ctx)}\nAnswer with a JSON object containing exactly these keys: ${fields.join(", ")}. Values must be valid for each field (enums as lowercase strings, numbers as integers).`;
+    const fieldDescs=fields.map(f=>{
+      if(ENUM_FIELDS[f])return `${f}: one of [${ENUM_FIELDS[f].join(", ")}]`;
+      if(INT_FIELDS[f]){const[min,max]=INT_FIELDS[f];return `${f}: integer ${min}-${max}`;}
+      if(f==="name")return `${f}: short name (max 20 chars)`;
+      if(f==="primaryColor"||f==="accentColor")return `${f}: hex color like #abc or #aabbcc`;
+      return `${f}: value`;
+    }).join("\n");
+    const user=`Concept: "${name}"\n${fieldDescs}\nReturn JSON only.`;
+    const answer=await llm.generate(sys+"\n\n"+user,{},256);
+    const parsed=JSON.parse(answer);
+    for(const f of fields){
+      if(parsed[f]!==undefined){
+        if(ENUM_FIELDS[f]&&ENUM_FIELDS[f].includes(String(parsed[f]).toLowerCase()))attrs[f]=String(parsed[f]).toLowerCase();
+        else if(INT_FIELDS[f]&&typeof parsed[f]==="number")attrs[f]=clamp(Math.round(parsed[f]),INT_FIELDS[f][0],INT_FIELDS[f][1]);
+        else if(f==="name")attrs[f]=String(parsed[f]).slice(0,20);
+        else if(f==="primaryColor"||f==="accentColor")attrs[f]=sanitizeHex(parsed[f]);
+      }
+    }
+    return attrs;
+  }catch(e){return null;}
 }
 
 // Phase 12: main generation orchestrator (per-field micro-prompts).
@@ -4054,21 +4135,46 @@ const Battle={
   },
 
   // Push overlapping units apart so they don't stack on one pixel.
+  // J2: Spatial partitioning via uniform grid hash — O(n) instead of O(n²).
   separate(all){
-    for(let i=0;i<all.length;i++){
-      const a=all[i];if(a.h<=0)continue;
-      for(let j=i+1;j<all.length;j++){
-        const b=all[j];if(b.h<=0)continue;
-        const dx=b.x-a.x, dy=b.y-a.y;
-        const d=Math.hypot(dx,dy);
-        const minD=Math.max(a.z,b.z);
-        if(d<minD){
-          let nx,ny;
-          if(d>0.001){nx=dx/d;ny=dy/d;}
-          else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
-          const push=(minD-Math.max(d,0.001))/2;
-          a.x-=nx*push;a.y-=ny*push;
-          b.x+=nx*push;b.y+=ny*push;
+    const cellSize=60;
+    const grid=new Map();
+    const key=(x,y)=>Math.floor(x/cellSize)+","+Math.floor(y/cellSize);
+    // Bin units into cells.
+    for(const u of all){
+      if(u.h<=0)continue;
+      const k=key(u.x,u.y);
+      if(!grid.has(k))grid.set(k,[]);
+      grid.get(k).push(u);
+    }
+    // Check collisions within same + adjacent cells.
+    const checked=new Set();
+    for(const [k,cell] of grid){
+      const [cx,cy]=k.split(",").map(Number);
+      // Check this cell + 4 adjacent (right, down, down-right, up-right) to avoid double-checks.
+      const neighbors=[[0,0],[1,0],[0,1],[1,1],[1,-1]];
+      for(const [dx,dy] of neighbors){
+        const nk=cx+dx+","+cy+dy;
+        const ncell=grid.get(nk);
+        if(!ncell)continue;
+        for(const a of cell){
+          for(const b of ncell){
+            if(a===b)continue;
+            const pairKey=a.id<b.id?a.id+"-"+b.id:b.id+"-"+a.id;
+            if(checked.has(pairKey))continue;
+            checked.add(pairKey);
+            const ddx=b.x-a.x, ddy=b.y-a.y;
+            const d=Math.hypot(ddx,ddy);
+            const minD=Math.max(a.z,b.z);
+            if(d<minD){
+              let nx,ny;
+              if(d>0.001){nx=ddx/d;ny=ddy/d;}
+              else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
+              const push=(minD-Math.max(d,0.001))/2;
+              a.x-=nx*push;a.y-=ny*push;
+              b.x+=nx*push;b.y+=ny*push;
+            }
+          }
         }
       }
     }
@@ -4364,6 +4470,24 @@ const Battle={
       projectiles:this.projectiles,
       winner:this.winner,
       recentCrits:this.recentCrits||[]
+    };
+  },
+  // J3: Compressed snapshot for P2P — only essential fields per unit.
+  compressedSnapshot(){
+    const cu=this.units.map(u=>({
+      i:u.id,n:u.n,x:Math.round(u.x),y:Math.round(u.y),
+      h:Math.round(u.h),mh:Math.round(u.mh),t:u.team,
+      s:u.animState,c:u.c,z:u.z,r:u.r
+    }));
+    const cp=this.projectiles.map(p=>({
+      x:Math.round(p.x),y:Math.round(p.y),tx:Math.round(p.tx),ty:Math.round(p.ty),
+      c:p.c,d:Math.round(p.d),t:p.team
+    }));
+    return{
+      time:Math.round(this.time*100)/100,
+      units:cu,projectiles:cp,
+      winner:this.winner,
+      rc:(this.recentCrits||[]).slice(-5)
     };
   },
 
@@ -5710,7 +5834,7 @@ const G={
     this.stopSnapshots();
     this.snapTimer=setInterval(()=>{
       if(!Battle.running){this.stopSnapshots();return;}
-      const snap=Battle.snapshot();
+      const snap=Battle.compressedSnapshot(); // J3: compressed for bandwidth
       snap.round=Match.round;
       snap.livesPlayer=Match.livesPlayer;
       snap.livesEnemy=Match.livesEnemy;
@@ -5964,6 +6088,16 @@ const G={
   // Phase 5/10: guest applies a host snapshot and renders it (no local sim).
   applyRemoteSnapshot(snap){
     if(!snap)return;
+    // J3: Handle compressed snapshots (units have short keys).
+    if(snap.units&&snap.units[0]&&snap.units[0].i!==undefined){
+      snap={...snap,units:snap.units.map(u=>({
+        id:u.i,n:u.n,x:u.x,y:u.y,h:u.h,mh:u.mh,team:u.t,
+        animState:u.s,c:u.c,z:u.z,r:u.r,
+        prevH:u.h,deathT:u.h<=0?0:undefined
+      })),projectiles:(snap.projectiles||[]).map(p=>({
+        x:p.x,y:p.y,tx:p.tx,ty:p.ty,c:p.c,d:p.d,team:p.t,dead:false,life:1
+      })),recentCrits:snap.rc||[]};
+    }
     Battle.applySnapshot(snap);
     Battle.projectiles=snap.projectiles||[];
     Battle.time=snap.time||0;
