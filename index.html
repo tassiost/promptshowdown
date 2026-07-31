@@ -2082,7 +2082,11 @@ function networkReceive(data){
         if(!G.save.spellbook.some(s=>s.name===data.d.name)){G.save.spellbook.push(data.d);saveData(G.save);G.wins();}
       }else{
         let u=unit(data.d);
-        if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);saveData(G.save);G.wins();}
+        if(!G.save.collection)G.save.collection=[];
+        if(!G.save.collection.some(x=>x.n===u.n)){G.save.collection.push(u);}
+        if(!G.save.ai)G.save.ai=[];
+        if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);}
+        saveData(G.save);G.wins();
       }
     }
     // Phase 18: extended protocol for match/round management.
@@ -2309,11 +2313,13 @@ const Match={
     this.round++;
     // Phase 18: send round_start to guest with draw index + opponent picks.
     if(connected&&role==="host"){
-      const drawCount=this.comebackEligible()?4:3;
+      // Guest gets comeback if host won last round (guest lost).
+      const guestComeback=this.history.length>0&&this.history[this.history.length-1].winner==="player";
+      const guestDrawCount=guestComeback?4:3;
       // Send host's actual picks from previous round (or empty for round 1).
       const hostPicks=this.round>1&&G.prevPlayerPicks?G.prevPlayerPicks:[];
       const opponentPicks=serializeUnitsForPeer(hostPicks);
-      transmit("round_start",{drawIndex:drawCount,opponentPicks});
+      transmit("round_start",{drawIndex:guestDrawCount,opponentPicks});
     }
     // G.start handles the draft UI; Match just tracks state.
     G.startRoundDraft();
@@ -2736,14 +2742,15 @@ const GameAudio={
   // SFX synthesizer — plays a named sound via oscillators/noise.
   sfx(name,opts={}){
     if(!this.ctx||!this.enabled)return;
-    const c=this.ctx,t=c.currentTime;
+    const c=this.ctx;
     const pitch=opts.pitch||0;
     const make=(type,f0,f1,dur,gain,filter)=>{
+      const t2=c.currentTime;
       const osc=c.createOscillator();osc.type=type;
-      osc.frequency.setValueAtTime(f0*Math.pow(1.06,pitch),t);
-      osc.frequency.exponentialRampToValueAtTime(Math.max(1,f1*Math.pow(1.06,pitch)),t+dur);
-      const g=c.createGain();g.gain.setValueAtTime(gain,t);
-      g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+      osc.frequency.setValueAtTime(f0*Math.pow(1.06,pitch),t2);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1,f1*Math.pow(1.06,pitch)),t2+dur);
+      const g=c.createGain();g.gain.setValueAtTime(gain,t2);
+      g.gain.exponentialRampToValueAtTime(0.001,t2+dur);
       let node=osc;
       if(filter){
         const f=c.createBiquadFilter();f.type=filter.type||"lowpass";
@@ -2751,18 +2758,19 @@ const GameAudio={
         osc.connect(f);f.connect(g);
       }else{osc.connect(g);}
       g.connect(this.sfxGain);
-      osc.start(t);osc.stop(t+dur);
+      osc.start(t2);osc.stop(t2+dur);
     };
     const noise=(dur,gain,filterFreq,filterType)=>{
+      const tN=c.currentTime;
       const buf=c.createBuffer(1,c.sampleRate*dur,c.sampleRate);
       const d=buf.getChannelData(0);
       for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
       const src=c.createBufferSource();src.buffer=buf;
       const f=c.createBiquadFilter();f.type=filterType||"lowpass";f.frequency.value=filterFreq||800;
-      const g=c.createGain();g.gain.setValueAtTime(gain,t);
-      g.gain.exponentialRampToValueAtTime(0.001,t+dur);
+      const g=c.createGain();g.gain.setValueAtTime(gain,tN);
+      g.gain.exponentialRampToValueAtTime(0.001,tN+dur);
       src.connect(f);f.connect(g);g.connect(this.sfxGain);
-      src.start(t);src.stop(t+dur);
+      src.start(tN);src.stop(tN+dur);
     };
     switch(name){
       case "attack_melee":make("square",200,80,0.08,0.15,{type:"lowpass",freq:600});break;
@@ -3337,6 +3345,9 @@ const Battle={
   zones:[],          // Phase 23: persistent spell zones
   debug:false,       // toggle battle debug logging
   _debugT:0,         // debug log accumulator
+  bgTheme:"forest",  // arena background theme
+  bgImage:null,      // optional loaded background Image (future sprite backgrounds)
+  _bgParticles:[],   // ambient background particles (embers, snow, spores, etc.)
 
   // Attach runtime-only combat fields to a unit (not persisted).
   initRuntime(u){
@@ -3401,6 +3412,10 @@ const Battle={
     this.running=true;
     this.winner=null;
     this.onEnd=onEnd||null;
+    // Set background theme from current arena.
+    const arena=G.arenas?.[G.save?.arena||0];
+    this.bgTheme=arena?.bgTheme||"forest";
+    this._bgParticles=[]; // clear ambient particles from previous battle
     const cv=$("cv");
     if(!cv){this.stop();return;}
     cv.width=Math.min(400,innerWidth-20);
@@ -3763,13 +3778,135 @@ const Battle={
     }
   },
 
+  // Background theme palettes — each arena gets a distinct atmosphere.
+  // Colors: [topGradient, midGradient, bottomGradient, groundColor, groundAccent, ambientParticleColor]
+  _bgThemes:{
+    forest: {top:"#0a1a0a",mid:"#0d2410",bot:"#040a05",ground:"#1a2a14",accent:"#2a4a20",ambient:"#5a8a3a",ambientType:"leaf"},
+    plague: {top:"#1a1208",mid:"#241808",bot:"#0a0804",ground:"#2a1e10",accent:"#3a2818",ambient:"#8a6a3a",ambientType:"spore"},
+    desert: {top:"#1a0e04",mid:"#2a1808",bot:"#0a0602",ground:"#3a2410",accent:"#4a3218",ambient:"#fa8a3a",ambientType:"sand"},
+    void:   {top:"#0a0418",mid:"#120828",bot:"#04020a",ground:"#1a0e2a",accent:"#2a1840",ambient:"#a48aff",ambientType:"ember"},
+  },
+
+  drawBackground(c){
+    const w=c.canvas.width,h=c.canvas.height;
+    const theme=this._bgThemes[this.bgTheme]||this._bgThemes.forest;
+    // If a sprite background image is loaded, draw it with parallax.
+    if(this.bgImage&&this.bgImage.complete){
+      const shake=this.shakeAmount||0;
+      const px=shake>0?(Math.random()-0.5)*shake:0;
+      const py=shake>0?(Math.random()-0.5)*shake*0.5:0;
+      c.drawImage(this.bgImage,px,py,w,h);
+      // Dark gradient overlay at bottom for depth.
+      const grad=c.createLinearGradient(0,h*0.6,0,h);
+      grad.addColorStop(0,"rgba(0,0,0,0)");
+      grad.addColorStop(1,"rgba(0,0,0,0.5)");
+      c.fillStyle=grad;
+      c.fillRect(0,0,w,h);
+    }else{
+      // Procedural gradient background.
+      const grad=c.createLinearGradient(0,0,0,h);
+      grad.addColorStop(0,theme.top);
+      grad.addColorStop(0.5,theme.mid);
+      grad.addColorStop(1,theme.bot);
+      c.fillStyle=grad;
+      c.fillRect(0,0,w,h);
+      // Arena-colored radial glow at center.
+      const arena=G.arenas?.[G.save?.arena||0];
+      if(arena){
+        const rg=c.createRadialGradient(w/2,h*0.45,0,w/2,h*0.45,w*0.6);
+        rg.addColorStop(0,arena.c+"10");
+        rg.addColorStop(1,"rgba(0,0,0,0)");
+        c.fillStyle=rg;
+        c.fillRect(0,0,w,h);
+      }
+      // Ground line — subtle horizontal band where units stand.
+      const groundY=h*0.72;
+      const gg=c.createLinearGradient(0,groundY-20,0,groundY+30);
+      gg.addColorStop(0,"rgba(0,0,0,0)");
+      gg.addColorStop(0.5,theme.ground+"40");
+      gg.addColorStop(1,theme.ground+"20");
+      c.fillStyle=gg;
+      c.fillRect(0,groundY-20,w,50);
+      // Ground accent line.
+      c.strokeStyle=theme.accent+"30";
+      c.lineWidth=1;
+      c.beginPath();
+      c.moveTo(0,groundY);
+      c.lineTo(w,groundY);
+      c.stroke();
+      // Decorative ground dots — sparse texture.
+      c.fillStyle=theme.accent+"20";
+      for(let i=0;i<12;i++){
+        const gx=(i*37+13)%w;
+        const gy=groundY+((i*23+7)%30)-5;
+        c.beginPath();
+        c.arc(gx,gy,1.5,0,Math.PI*2);
+        c.fill();
+      }
+    }
+    // Ambient background particles — themed per arena.
+    this._updateBgParticles(c,theme);
+  },
+
+  _updateBgParticles(c,theme){
+    const w=c.canvas.width,h=c.canvas.height;
+    // Spawn ambient particles (budget: 15 max).
+    if(this._bgParticles.length<15&&Math.random()<0.3){
+      const type=theme.ambientType;
+      const p={x:Math.random()*w,y:h+10,c:theme.ambient,life:1,type};
+      switch(type){
+        case "leaf":
+          p.vx=(Math.random()-0.5)*15;p.vy=-8-Math.random()*12;p.r=2+Math.random()*1.5;p.life=4+Math.random()*2;break;
+        case "spore":
+          p.vx=(Math.random()-0.5)*8;p.vy=-3-Math.random()*5;p.r=1.5+Math.random();p.life=5+Math.random()*3;break;
+        case "sand":
+          p.vx=10+Math.random()*20;p.vy=(Math.random()-0.5)*5;p.r=1+Math.random();p.life=3+Math.random()*2;break;
+        case "ember":
+          p.vx=(Math.random()-0.5)*10;p.vy=-15-Math.random()*20;p.r=1.5+Math.random();p.life=2+Math.random()*1.5;break;
+      }
+      p.maxLife=p.life;
+      this._bgParticles.push(p);
+    }
+    // Update + draw.
+    const dt=0.016;
+    for(const p of this._bgParticles){
+      p.x+=p.vx*dt;
+      p.y+=p.vy*dt;
+      p.life-=dt;
+      if(p.type==="leaf")p.x+=Math.sin(p.life*2)*0.5; // sway
+      if(p.type==="ember")p.vy-=5*dt; // accelerate upward
+    }
+    this._bgParticles=this._bgParticles.filter(p=>p.life>0&&p.y>-20&&p.y<h+20&&p.x>-20&&p.x<w+20);
+    // Draw behind units (already on canvas, before unit draw).
+    for(const p of this._bgParticles){
+      const a=Math.min(1,p.life/p.maxLife)*0.6;
+      c.globalAlpha=a;
+      c.fillStyle=p.c;
+      c.beginPath();
+      c.arc(p.x,p.y,p.r,0,Math.PI*2);
+      c.fill();
+    }
+    c.globalAlpha=1;
+  },
+
+  // Load a sprite background image from a URL (for future sprite-based backgrounds).
+  // When loaded, drawBackground() will use it instead of the procedural gradient.
+  loadBgImage(url){
+    if(!url){this.bgImage=null;return;}
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>{this.bgImage=img;};
+    img.onerror=()=>{this.bgImage=null;};
+    img.src=url;
+  },
+
   render(){
     let c=this.ctx;
     if(!c)return;
     // Phase 10: update canvasH if canvas resized mid-battle.
     if(c.canvas.height!==this.canvasH)this.canvasH=c.canvas.height;
-    c.fillStyle="#080810";
-    c.fillRect(0,0,c.canvas.width,c.canvas.height);
+    // Themed background (gradient + ground line + ambient particles).
+    this.drawBackground(c);
     // Phase 17: apply screen shake transform.
     const shake=this.shakeAmount||0;
     if(shake>0){
@@ -4273,12 +4410,16 @@ const G={
   // botPool = unit names the bot drafts from (themed per arena).
   arenas:[
     {n:"Training Yard",c:"#4a4",lives:3,unlock:0,maxHp:100,maxDmg:30,
+     bgTheme:"forest",
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Wizard"]},
     {n:"District Z",c:"#8a4",lives:3,unlock:3,maxHp:130,maxDmg:35,
+     bgTheme:"plague",
      botPool:["Plague","Cultist","Berserker","Knight","Archer","Assassin"]},
     {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,maxHp:160,maxDmg:45,
+     bgTheme:"desert",
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber"]},
     {n:"Void Rift",c:"#a4f",lives:4,unlock:15,maxHp:200,maxDmg:50,
+     bgTheme:"void",
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserk","Shielder","Healer","Tank"]},
   ],
   // Phase 10/11: starter roster with Behaviour Composition API fields + recipes.
@@ -4542,7 +4683,7 @@ const G={
   // Phase 37: share forged unit via URL.
   shareUnit(u){
     try{
-      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,role:u.role,ability:u.ability,weaponType:u.weaponType,bodyPlan:u.bodyPlan,c:u.c,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
+      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,a:u.a,z:u.z,crit:u.crit,ability:u.ability,rar:u.rar,cost:u.cost,targeting:u.targeting,movement:u.movement,attackCondition:u.attackCondition,abilityTrigger:u.abilityTrigger,moveSpeedMod:u.moveSpeedMod,role:u.role,weaponType:u.weaponType,bodyPlan:u.bodyPlan,c:u.c,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
       const compressed=LZString?LZString.compressToEncodedURIComponent(data):encodeURIComponent(data);
       const url=location.origin+location.pathname+"?unit="+compressed;
       if(navigator.share){
@@ -5332,7 +5473,7 @@ const G={
     const r=this.save.ranked;
     if(r){
       const oldRating=r.rating;
-      r.rating=this.computeElo(r.rating,1000,win,true); // bot ~1000
+      r.rating=this.computeElo(r.rating,1000,win,!connected);
       if(r.rating>r.peakRating)r.peakRating=r.rating;
       if(win)r.wins++;else r.losses++;
     }

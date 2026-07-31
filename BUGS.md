@@ -36,7 +36,7 @@ function lighten(hex,amt){
 **Impact:** P2P multiplayer: forged units sent to peer render incorrectly (shapes with cx/cy misplaced or invisible). Share URLs may also be affected.
 **Fix:** Use unique short keys: `cx:"cx"`, `cy:"cy"` (or `cx:"kx"`, `cy:"ky"`).
 
-### BUG-003 � `unit()` drops visual modifier fields (P2P + share + clone)
+### BUG-003 🟢 `unit()` drops visual modifier fields (P2P + share + clone)
 **File:** index.html:611-635
 **Found:** 2026-07-30
 **Repro:** Forge a unit with visual modifiers → serialize for P2P → deserialize on peer. The peer's unit has no `headFeature`, `backFeature`, `tailFeature`, `aura`, `eyeStyle`, `pattern`, `weaponStyle`, or `bodyPlan`.
@@ -63,40 +63,40 @@ Also add them to `shareUnit`'s data payload.
 
 ## Medium
 
-### BUG-004 � Spell persistent zones hardcoded to enemies only
+### BUG-004 🟢 Spell persistent zones hardcoded to enemies only
 **File:** index.html:3185-3186
 **Found:** 2026-07-30
 **Description:** `tickZones` always applies zone effects to `u.team!==z.team` (enemies). Ally-targeted persistent zones (e.g., healing zone, shield zone) would damage allies instead of helping them.
 **Impact:** Any spell with `shape:"persistent_zone"` and `target:"ally_*"` will target enemies instead. Currently no such spell exists in templates, but LLM-forged spells could produce them.
 **Fix:** Check `z.spec.target` to determine ally vs enemy filtering.
 
-### BUG-005 � Movement functions don't check if target is dead
+### BUG-005 🟢 Movement functions don't check if target is dead
 **File:** index.html:2136-2161
 **Found:** 2026-07-30
 **Description:** `chase`, `flee`, `hold_midpoint`, `kite` check `if(target)` but not `if(target.h>0)`. Units could chase/flee dead targets.
 **Note:** In practice, the targeting functions pre-filter dead units (line 3350-3351), so `target` should always be alive. However, a unit could die between targeting and movement in the same frame (if another unit kills it first in the loop). Low real-world impact.
 **Fix:** Add `target&&target.h>0` checks in movement functions.
 
-### BUG-006 � Shape cap too low (14) drops visual features
+### BUG-006 🟢 Shape cap too low (14) drops visual features
 **File:** index.html:1346-1347
 **Found:** 2026-07-30
 **Description:** `while(shapes.length>14)shapes.splice(shapes.length-1,1)` drops from the END. Shapes are added: body → weapon → head features → back features → tail features. So it drops tail first, then back, then head, then weapon. The comment says "drop lowest-priority: pattern, then back, then head" but pattern (body shapes) is never dropped.
 **Impact:** Complex units with many features lose tail/back features. Not critical but suboptimal priority.
 **Fix:** Drop in priority order: tail → back → head → weapon (current order is tail → back → head → weapon, which is actually reasonable). Or increase cap. Low severity.
 
-### BUG-007 � `G.screen()` leaves blank page if target doesn't exist
+### BUG-007 🟢 `G.screen()` leaves blank page if target doesn't exist
 **File:** index.html:4204-4212
 **Found:** 2026-07-30
 **Description:** If `$(id)` returns null, all screens lose `active` class and none gets it. Player sees blank page.
 **Fix:** Fall back to menu screen: `if(!target)target=$("menu");`
 
-### BUG-008 � All-spell draft picks → empty army → instant loss
+### BUG-008 🟢 All-spell draft picks → empty army → instant loss
 **File:** index.html:4841-4855
 **Found:** 2026-07-30
 **Description:** If all draft picks are spells (20% chance each, ~0.8% for 3 picks), `buildArmy()` returns empty array. Battle starts with 0 player units → instant loss.
 **Fix:** Guarantee at least 1 unit in draft, or auto-fill with base units if army is empty.
 
-### BUG-009 � `migrateSave` keeps empty loadout array
+### BUG-009 🟢 `migrateSave` keeps empty loadout array
 **File:** index.html:547
 **Found:** 2026-07-30
 **Description:** `if(s.loadout)` is truthy for `[]`. Empty loadout → player can't field units. Only triggers with corrupt save data.
@@ -106,31 +106,31 @@ Also add them to `shareUnit`'s data payload.
 
 ## Low
 
-### BUG-010 � Poison ticks after unit death
+### BUG-010 🟢 Poison ticks after unit death
 **File:** index.html:3320-3324
 **Found:** 2026-07-30
 **Description:** Poison continues ticking on dead units (h<=0) until duration expires. Harmless (dead units are skipped in main loop) but wastes computation.
 **Fix:** Add `if(u.h<=0)continue;` before poison tick.
 
-### BUG-011 � `eyeStyle:"closed"` doesn't skip eye drawing
+### BUG-011 🟢 `eyeStyle:"closed"` doesn't skip eye drawing
 **File:** index.html:2516-2535
 **Found:** 2026-07-30
 **Description:** `EYE_STYLES.closed = null` but `drawFace` doesn't check for `eyeStyle==="closed"` to skip eyes. It only checks `recipe.face===false`. Units with `eyeStyle:"closed"` still draw eyes.
 **Fix:** Add `if(u.recipe?.eyeStyle==="closed")return;` in `drawFace`.
 
-### BUG-012 � `GameAudio.stopMusic` doesn't disconnect gain nodes
+### BUG-012 🟢 `GameAudio.stopMusic` doesn't disconnect gain nodes
 **File:** index.html:2713-2717
 **Found:** 2026-07-30
 **Description:** `stopMusic` stops oscillators but doesn't disconnect gain nodes (`bg`, `g`). Minor memory leak in audio graph.
 **Fix:** Store gain nodes and disconnect them in `stopMusic`.
 
-### BUG-013 � Quest streak doesn't update across midnight
+### BUG-013 🟢 Quest streak doesn't update across midnight
 **File:** index.html:3833-3848
 **Found:** 2026-07-30
 **Description:** `checkStreak()` only runs during `G.init()`. If a session spans midnight, streak won't increment until next restart.
 **Fix:** Check streak on each match end or periodically.
 
-### BUG-014 � Double-forge race condition
+### BUG-014 🟢 Double-forge race condition
 **File:** index.html:5304
 **Found:** 2026-07-30
 **Description:** Rapidly clicking "Watch Ad" + "Skip" could call `_doForge` twice. Second call overwrites `pendingForgeUnit`.
@@ -211,37 +211,37 @@ Also add them to `shareUnit`'s data payload.
 
 ## Round 3 — 2026-07-30 (deep bug hunt)
 
-### BUG-024 🔴 Attack cooldown inverted (fast attackers attack slower)
+### BUG-024 🟢 Attack cooldown inverted (fast attackers attack slower)
 **File:** index.html:3441
 **Found:** 2026-07-30
 **Description:** `u.cool=u.a` set cooldown to the attack speed value directly. But `a` is attacks-per-second, so cooldown should be `1/a`. With the old code, a unit with `a=2` (fast) got a 2s cooldown (slow), and a unit with `a=0.5` (slow) got a 0.5s cooldown (fast). This inverted attack speeds for all units.
 **Fix:** Changed to `u.cool=1/u.a`.
 
-### BUG-025 🔴 Slow status has no effect on movement speed
+### BUG-025 🟢 Slow status has no effect on movement speed
 **File:** index.html:2146-2174
 **Found:** 2026-07-30
 **Description:** The `slow` debuff (`u.slow`) was tracked and decremented, and a visual ring was drawn, but movement functions used `u.s*(u.moveSpeedMod/100)*dt` without checking `u.slow`. Slowed units moved at full speed.
 **Fix:** Added `effSpeed(u)` helper that halves speed when `u.slow>0`. All movement functions now use `effSpeed(u)`.
 
-### BUG-026 🟡 `spell_use` quest never tracked (impossible to complete)
+### BUG-026 🟢 `spell_use` quest never tracked (impossible to complete)
 **File:** index.html:3877, 3142-3165
 **Found:** 2026-07-30
 **Description:** The "Use a spell in battle" quest (`type:"spell_use"`) was defined in `QUEST_POOL` but `Quests.track("spell_use")` was never called anywhere. The quest was impossible to complete.
 **Fix:** Added `Quests.track("spell_use")` in `Spell.fire()`.
 
-### BUG-027 🟡 `Quests.track` ignores `data` parameter for value-based quests
+### BUG-027 🟢 `Quests.track` ignores `data` parameter for value-based quests
 **File:** index.html:3918-3928
 **Found:** 2026-07-30
 **Description:** `track(event,data)` always incremented progress by 1, ignoring `data`. For `round_reach` quests, `track("round_reach",5)` was called but only incremented by 1, requiring 5 matches reaching round 5 instead of 1.
 **Fix:** `track` now uses `data` as the increment amount when provided.
 
-### BUG-028 🟡 `analyticsOptOut` saved to wrong path (opt-out doesn't work)
+### BUG-028 🟢 `analyticsOptOut` saved to wrong path (opt-out doesn't work)
 **File:** index.html:4559-4564, 495
 **Found:** 2026-07-30
 **Description:** `saveSetting('analyticsOptOut',val)` stored the value at `this.save.settings.analyticsOptOut`, but `Analytics.track` checks `G.save?.analyticsOptOut` (top-level). The opt-out setting was never read, so analytics were always sent.
 **Fix:** `saveSetting` now stores `analyticsOptOut` at the top level of save data.
 
-### BUG-029 🟡 `deserializeUnitsFromPeer` converts spells to broken units
+### BUG-029 🟢 `deserializeUnitsFromPeer` converts spells to broken units
 **File:** index.html:1499-1508
 **Found:** 2026-07-30
 **Description:** When spells (with `_isSpell:true`) were sent via `serializeUnitsForPeer` in `round_deck` messages, `deserializeUnitsFromPeer` called `unit(d)` on them. `unit()` doesn't preserve `_isSpell`, so spells became regular units with default stats. The host would then try to build an army from these broken "units".
@@ -473,37 +473,37 @@ Also add them to `shareUnit`'s data payload.
 
 ## Round 7 — 2026-07-31
 
-### BUG-065 🔴 P2P race condition: host receives guest deck before host army is ready
+### BUG-065 🟢 P2P race condition: host receives guest deck before host army is ready
 **File:** index.html:2059-2065, 5056-5066
 **Found:** 2026-07-31
 **Description:** In P2P, if the guest finished drafting before the host, the guest's `deck` message arrived while `G.pendingHostArmy` was still stale from the previous round (or undefined for round 1). The host would call `startHostBattle` with the wrong army, causing an incorrect battle.
 **Fix:** Store the guest's deck in `_pendingGuestDeck` and only call `startHostBattle` when both `pendingHostArmy` and `_pendingGuestDeck` are ready. Clear both at the start of each draft round.
 
-### BUG-066 🔴 P2P guest loses when host disconnects (should win)
+### BUG-066 🟢 P2P guest loses when host disconnects (should win)
 **File:** index.html:1960
 **Found:** 2026-07-31
 **Description:** When the host disconnected mid-match, `onPeerLeave` called `G.onMatchEnd("enemy")` for the guest. From the guest's perspective, "enemy" = host, so `winner==="player"` was false → guest loses. This is wrong — the guest should win by default when the host disconnects.
 **Fix:** Changed to `G.onMatchEnd("player")` so the guest wins on host disconnect.
 
-### BUG-067 🔴 Host forfeit doesn't notify guest
+### BUG-067 🟢 Host forfeit doesn't notify guest
 **File:** index.html:2337-2340
 **Found:** 2026-07-31
 **Description:** `Match.forfeit()` didn't send `match_end` to the guest. The guest would be stuck waiting indefinitely after the host forfeited.
 **Fix:** Added `transmit("match_end",{winner:"enemy"})` in `forfeit()` when the host forfeits, so the guest receives the match end notification.
 
-### BUG-068 🟡 Persistent zones with "damage" effect do nothing
+### BUG-068 🟢 Persistent zones with "damage" effect do nothing
 **File:** index.html:3273
 **Found:** 2026-07-31
 **Description:** `tickZones` only handled `damage_over_time`, `slow`, and `heal_over_time` effects. A persistent zone with `effect:"damage"` (e.g., a fire wall) would never deal damage — the initial `Spell.fire` skips effect application for persistent zones, and `tickZones` didn't handle the `damage` effect.
 **Fix:** `tickZones` now treats `"damage"` the same as `"damage_over_time"` — applies `magnitude` damage to affected units once per tick.
 
-### BUG-069 🟡 P2P scout screen shows bot picks instead of real opponent picks
+### BUG-069 🟢 P2P scout screen shows bot picks instead of real opponent picks
 **File:** index.html:5085-5103, 2297-2300
 **Found:** 2026-07-31
 **Description:** `generateScoutPicks` always generated bot picks for both host and guest in P2P, overwriting any real opponent picks. The guest's `opponent_picks` message handler would set the correct picks, but `generateScoutPicks` in `battle()` would overwrite them. Additionally, `Match.startRound` sent bot placeholder picks to the guest instead of the host's actual previous-round picks.
 **Fix:** `generateScoutPicks` now skips bot generation for P2P guests (keeps picks from `round_start`/`opponent_picks` messages). `Match.startRound` now sends the host's actual previous-round picks (`G.prevPlayerPicks`) instead of bot placeholder picks.
 
-### BUG-070 🟡 Disconnect "Continue vs Bot" loses custom opponent units
+### BUG-070 🟢 Disconnect "Continue vs Bot" loses custom opponent units
 **File:** index.html:1953, 1977-1992
 **Found:** 2026-07-31
 **Description:** `showDisconnectPrompt` received only opponent pick names (strings), then resolved them via `G.base.find(b=>b.n===n)`. Custom (LLM-forged) units aren't in `G.base`, so they'd be filtered out with `.filter(Boolean)`, leaving the bot with fewer units than expected.
@@ -525,31 +525,31 @@ Also add them to `shareUnit`'s data payload.
 
 ## Round 8 — 2026-07-31
 
-### BUG-073 🔴 P2P guest double round-end / match-end
+### BUG-073 🟢 P2P guest double round-end / match-end
 **File:** index.html:5244-5249
 **Found:** 2026-07-31
 **Description:** When the guest received a snapshot with `winner` set, `applyRemoteSnapshot` called `onBattleEnd`, which called `Match.onRoundEnd` — decrementing lives and pushing to history. Then the host's `round_end` message arrived and set `Match.livesPlayer`/`Match.livesEnemy` (overwriting the decremented values), but `Match.history` still had a duplicate entry. If the match ended, `Match.onRoundEnd` called `onMatchEnd`, and then the `match_end` message also called `onMatchEnd` — double match end.
 **Fix:** Guest's `onBattleEnd` now returns early for P2P guests. The host sends `round_end`/`match_end` messages that handle all state updates and UI transitions for the guest.
 
-### BUG-074 🟡 Spell with "center" target hits both allies and enemies
+### BUG-074 🟢 Spell with "center" target hits both allies and enemies
 **File:** index.html:3229-3233
 **Found:** 2026-07-31
 **Description:** `Spell.fire` only filtered affected units by team for targets starting with "ally" or "enemy". The "center" target (which targets the middle of the battlefield) fell through — both allies and enemies would be affected by damage spells.
 **Fix:** Changed the filter to a binary ally/enemy split: ally targets filter to allies, all other targets (including "center") default to enemies only.
 
-### BUG-075 🟡 damage_over_time spell overwrites higher poison damage from unit abilities
+### BUG-075 🟢 damage_over_time spell overwrites higher poison damage from unit abilities
 **File:** index.html:3181
 **Found:** 2026-07-31
 **Description:** `SPELL_EFFECT.damage_over_time` set `u.poisonDmg=spec.magnitude||10`, overwriting any existing poison damage. If a unit ability (poison) had already applied higher poison damage (`attacker.d*0.3`), the spell would reduce it.
 **Fix:** Changed to `u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10)` to preserve the higher damage value, matching the unit ability's behavior.
 
-### BUG-076 🟡 Shared unit loses color on import
+### BUG-076 🟢 Shared unit loses color on import
 **File:** index.html:4521
 **Found:** 2026-07-31
 **Description:** `shareUnit` serialized `primaryColor:u.c` but not `c` (the hex color field). On import, `unit()` looks for `x.c`, not `x.primaryColor`, so the imported unit would default to `#0ff` (cyan) instead of its original color.
 **Fix:** Added `c:u.c` to the serialized data alongside `primaryColor:u.c`.
 
-### BUG-077 🟡 P2P guest match hint uses wrong team for death log
+### BUG-077 🟢 P2P guest match hint uses wrong team for death log
 **File:** index.html:5372
 **Found:** 2026-07-31
 **Description:** `generateMatchHint` filtered `deathLog` for `d.team==="player"`. In P2P, the guest's units are team "enemy" in snapshots, so the guest's death log entries have `team:"enemy"`. The hint never found player deaths for the guest, so death-order-based strategy hints never appeared.
@@ -571,31 +571,31 @@ Also add them to `shareUnit`'s data payload.
 
 ## Round 9 — 2026-07-31
 
-### BUG-080 🔴 P2P guest Match.round never increments past 1
+### BUG-080 🟢 P2P guest Match.round never increments past 1
 **File:** index.html:2089-2102
 **Found:** 2026-07-31
 **Description:** The guest's `Match.round` was only incremented once by `Match.start` (via `match_start` handler). For subsequent rounds, the host calls `Match.startRound` (incrementing round and sending `round_start`), but the guest's `round_start` handler only called `G.startRoundDraft()` without incrementing `Match.round`. This caused quest tracking (`round_reach` for 5 rounds), comeback checks, and replay data to be incorrect for the guest.
 **Fix:** Refactored `match_start` handler to initialize match state without calling `Match.start` (avoiding the premature `startRound` call). The `round_start` handler now increments `Match.round` for every round, matching the host's increment.
 
-### BUG-081 🔴 P2P guest Match.history never populated
+### BUG-081 🟢 P2P guest Match.history never populated
 **File:** index.html:2112-2121
 **Found:** 2026-07-31
 **Description:** The `round_end` handler for the guest set lives and showed the result screen but never pushed to `Match.history`. The `match_end` handler also didn't push the final round. This meant `Match.history` was always empty for the guest, breaking quest tracking (`round_reach`), comeback achievement checks, replay data, and bot comeback logic on disconnect.
 **Fix:** `round_end` handler now pushes `{round, winner}` to `Match.history` (with translated winner). `match_end` handler also pushes the final round if not already recorded.
 
-### BUG-082 🟡 P2P host sends bot opponent_picks, overwriting guest's real picks
+### BUG-082 🟢 P2P host sends bot opponent_picks, overwriting guest's real picks
 **File:** index.html:5097
 **Found:** 2026-07-31
 **Description:** `generateScoutPicks` for the host generated bot picks and sent them via `transmit("opponent_picks", ...)`. This overwrote the guest's `opponentPicks` that were correctly set from the `round_start` message (host's actual previous-round picks). The guest's scout screen would show random bot picks instead of the host's real picks.
 **Fix:** Removed the `transmit("opponent_picks", ...)` call from the host's `generateScoutPicks`. The host's bot picks are only used locally as placeholders for the scout screen. The guest already has the correct opponent picks from `round_start`.
 
-### BUG-083 🟡 Persistent zones with heal_allies effect do nothing
+### BUG-083 🟢 Persistent zones with heal_allies effect do nothing
 **File:** index.html:3285
 **Found:** 2026-07-31
 **Description:** `tickZones` checked for `"heal_over_time"` effect, which doesn't exist in `SPELL_ENUM.effect`. The actual enum value is `"heal_allies"`. A persistent zone with `heal_allies` effect would silently do nothing — no healing applied.
 **Fix:** Changed the check to `"heal_allies"||"heal_over_time"` to handle both the real enum value and the hypothetical one.
 
-### BUG-084 🟡 Persistent zones missing shield_allies, stun, buff_dmg, buff_speed handling
+### BUG-084 🟢 Persistent zones missing shield_allies, stun, buff_dmg, buff_speed handling
 **File:** index.html:3285-3294
 **Found:** 2026-07-31
 **Description:** `tickZones` only handled `damage`, `damage_over_time`, `slow`, and `heal_allies`/`heal_over_time`. Persistent zones with `shield_allies`, `stun`, `buff_dmg`, or `buff_speed` effects would silently do nothing.
@@ -613,7 +613,7 @@ Also add them to `shareUnit`'s data payload.
 **Description:** `RECIPE_MINIFY` mapped both `"arc"` and `"arm_raise"` to `"ar"`. `RECIPE_EXPAND` (the reverse map) would have `"ar"` map to `"arm_raise"` (last entry wins), losing the `"arc"` mapping. This is currently dead code (both are values, not keys, in recipe shapes), but could cause issues if the minify function were ever extended to map values.
 **Fix:** Changed `"arm_raise"` mapping from `"ar"` to `"am"`.
 
-### BUG-087 🔴 Kite movement dead zone exceeds attack range — units stare instead of fighting
+### BUG-087 🟢 Kite movement dead zone exceeds attack range — units stare instead of fighting
 **File:** index.html:2255-2261
 **Found:** 2026-07-31
 **Description:** The `kite` movement function had a dead zone between `r*0.5` and `r*1.1` where the unit doesn't move. But the attack range is `r` (checked in `act()` as `dist(u,target)<=u.r`). Between `r` and `r*1.1`, the unit is too far to attack but the kite behavior says "don't move." Two kite units (e.g., Wizard with r=160) would converge to distance ~176, just outside attack range, and stare at each other forever.
