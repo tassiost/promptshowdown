@@ -6442,8 +6442,7 @@ function hideSplash(){
 }
 
 // Phase 7: register a PWA manifest via a blob URL (single-file friendly).
-// A full service worker needs a separate file, so we skip SW here and rely
-// on the manifest + meta tags for installability/add-to-homescreen.
+// H1: Inline service worker for offline play via Blob URL.
 function setupPWA(){
   try{
     const manifest={
@@ -6451,7 +6450,7 @@ function setupPWA(){
       short_name:"Showdown",
       description:"AI-forged auto-battler with P2P multiplayer.",
       start_url:window.location.href,
-      display:"fullscreen",
+      display:"standalone",
       background_color:"#080810",
       theme_color:"#080810",
       icons:[{
@@ -6467,6 +6466,30 @@ function setupPWA(){
     let link=document.querySelector('link[rel="manifest"]');
     if(!link){link=document.createElement("link");link.rel="manifest";document.head.appendChild(link);}
     link.href=url;
+    // H1: Register inline service worker for offline caching.
+    if("serviceWorker" in navigator){
+      const swCode=`
+        const CACHE="promptshowdown-v1";
+        self.addEventListener("install",e=>{
+          e.waitUntil(caches.open(CACHE).then(c=>c.addAll([self.registration.scope])));
+          self.skipWaiting();
+        });
+        self.addEventListener("activate",e=>{self.clients.claim();});
+        self.addEventListener("fetch",e=>{
+          if(e.request.method!=="GET")return;
+          e.respondWith(
+            caches.match(e.request).then(r=>r||fetch(e.request).then(resp=>{
+              const cp=resp.clone();
+              caches.open(CACHE).then(c=>c.put(e.request,cp));
+              return resp;
+            }).catch(()=>caches.match(e.request)))
+          );
+        });
+      `;
+      const swBlob=new Blob([swCode],{type:"application/javascript"});
+      const swUrl=URL.createObjectURL(swBlob);
+      navigator.serviceWorker.register(swUrl).catch(()=>{/* SW registration best-effort */});
+    }
   }catch(e){/* PWA setup is best-effort */}
 }
 
@@ -6526,6 +6549,23 @@ window.addEventListener("beforeunload",()=>Analytics.flushNow());
 document.addEventListener("click",e=>{
   if(e.target&&e.target.classList&&e.target.classList.contains("btn"))GameAudio.sfx("ui_click");
 });
+
+// H3: Canvas responds to orientation change and resize.
+function resizeCanvas(){
+  const cv=$("cv");
+  if(!cv||!Battle.ctx)return;
+  const dpr=window.devicePixelRatio||1;
+  const dispW=Math.min(400,innerWidth-20);
+  const dispH=550;
+  cv.style.width=dispW+"px";
+  cv.style.height=dispH+"px";
+  cv.width=dispW*dpr;
+  cv.height=dispH*dpr;
+  Battle.canvasH=dispH;
+  Battle.ctx.scale(dpr,dpr);
+}
+window.addEventListener("resize",resizeCanvas);
+window.addEventListener("orientationchange",()=>setTimeout(resizeCanvas,100));
 
 // Phase 1 + Phase 7: kick off module load + init. Errors surface in the panel.
 // Phase 4: preload AI in the background once modules are available.
