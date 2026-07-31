@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Showdown is a single-file auto-battler (`index.html`, ~3800 lines) with AI unit generation, P2P multiplayer, and progression. This document covers all major systems.
+Prompt Showdown is a single-file auto-battler (`index.html`, ~7000 lines) with AI unit generation, P2P multiplayer, and progression. This document covers all major systems.
 
 ## Table of Contents
 
@@ -25,59 +25,64 @@ Prompt Showdown is a single-file auto-battler (`index.html`, ~3800 lines) with A
 ## File Structure
 
 ```
-index.html          ~3800 lines, single file
-├── CSS             lines 11-99    (CSS variables, components, screens)
+index.html          ~7000 lines, single file
+├── CSS             lines 11-99    (CSS variables, components, screens, spell bar)
 ├── HTML            lines 101-243  (10 screens + splash + error panel)
-└── JavaScript      lines 245-3798 (ES module, all game logic)
+└── JavaScript      lines 245-6900 (ES module, all game logic)
     ├── Imports     lines 245-284  (web-llm, trystero, lz-string)
     ├── Save        lines 285-410  (loadData, saveData, migration)
     ├── Unit        lines 416-442  (unit() factory, cloneUnit)
     ├── LLM Init    lines 443-559  (WebGPU detection, model load, cancel)
-    ├── LLM Gen     lines 560-698  (color maps, schema, validation rules)
+    ├── LLM Gen     lines 560-698  (color maps, schema, validation rules, descriptions)
     ├── Recipes     lines 699-905  (assembler, template fallback, P2P serialization)
     ├── LLM Cache   lines 906-1233 (IndexedDB, field generation, unit generation)
     ├── Networking  lines 1234-1433 (Trystero, message protocol, disconnect)
     ├── Behaviour   lines 1434-1612 (targeting, movement, abilities, Match)
-    ├── Sprites     lines 1613-1770 (SpriteRenderer, joints, animations)
+    ├── Spells      lines 3790-4040 (Spell.fire, triggers, zones, targets, shapes, effects)
+    ├── Sprites     lines 1613-1770 (SpriteRenderer, joints, animations, patterns)
     ├── Battle FX   lines 1774-1914 (particles, hit flashes, screen shake)
-    ├── Battle      lines 1915-2463 (simulation, rendering, snapshots)
+    ├── Battle      lines 1915-5000 (simulation, rendering, spell bar, snapshots)
     ├── Bot         lines 2464-2604 (bot opponent, sprite recipes)
-    ├── Game (G)    lines 2605-3717 (screens, progression, forge, deck)
-    └── Exports     lines 3718-3798 (window globals, PWA, event listeners)
+    ├── Game (G)    lines 2605-6900 (screens, progression, forge, deck)
+    └── Exports     lines 6800-6900 (window globals, PWA, event listeners)
 ```
 
 ---
 
 ## CSS & UI
 
-### Design System (lines 11-22)
+### Design System (lines 13-25)
 
-CSS variables define the palette:
+CSS variables define the palette (purple/gold Draft Showdown style):
 
 | Variable | Value | Usage |
 |----------|-------|-------|
-| `--bg` | `#0b1120` | Background gradient start |
-| `--bg2` | `#131c31` | Background gradient end |
-| `--card` | `#1a2440` | Card/panel background |
-| `--card2` | `#212e4f` | Hover background |
-| `--border` | `#2a3a5e` | Borders |
-| `--text` | `#e2e8f0` | Primary text |
-| `--muted` | `#8395b8` | Secondary text |
-| `--accent` | `#6366f1` | Indigo (buttons, highlights) |
-| `--accent2` | `#818cf8` | Light indigo |
-| `--ok` | `#10b981` | Emerald (success, selected) |
-| `--warn` | `#f59e0b` | Amber (warnings, level badges) |
-| `--danger` | `#f43f5e` | Red (destructive actions) |
-| `--rare` | `#3b82f6` | Blue (rare rarity) |
-| `--legendary` | `#f59e0b` | Amber (legendary rarity) |
+| `--bg` | `#0a0e1a` | Background gradient start |
+| `--bg2` | `#141b2e` | Background gradient end |
+| `--card` | `#1c2640` | Card/panel background |
+| `--card2` | `#283656` | Hover background |
+| `--border` | `#3a4a6e` | Borders |
+| `--text` | `#f0f4ff` | Primary text |
+| `--muted` | `#94a3c4` | Secondary text |
+| `--accent` | `#7c3aed` | Purple (buttons, highlights) |
+| `--accent2` | `#a78bfa` | Light purple |
+| `--gold` | `#fbbf24` | Gold (title gradient, level badges) |
+| `--ok` | `#34d399` | Emerald (success, selected) |
+| `--warn` | `#fbbf24` | Amber (warnings) |
+| `--danger` | `#fb7185` | Red (destructive actions) |
+| `--rare` | `#60a5fa` | Blue (rare rarity) |
+| `--legendary` | `#fbbf24` | Gold (legendary rarity) |
+| `--epic` | `#c084fc` | Purple (epic rarity) |
 
 ### Components
 
-- **Buttons** (`.btn`): Full-width, rounded 8px, hover lift, gradient primary with glow shadow
-- **Cards** (`.card`): Rounded 8px, soft shadow, hover lift, rarity-based glow
+- **Buttons** (`.btn`): Full-width, gradient background, rounded 10px, hover lift with glow shadow, text shadows
+- **Cards** (`.card`): Gradient background with inner highlight, rounded 10px, soft shadow, hover lift with accent glow, rarity-based glow
+- **Spell buttons** (`.spellBtn`): Purple gradient, cooldown overlay with countdown number, icon + name
 - **Pills** (`.pill`): Rounded 20px badges for stats
 - **Inputs** (`.input`, `#forgePrompt`): Rounded, focus border highlight
 - **Screen transitions**: Fade-in + slide-up animation (`@keyframes fadeIn`)
+- **Title**: Gold-to-purple gradient text with glow
 
 ---
 
@@ -98,8 +103,8 @@ Pick 1 unit per draw (3 draws, or 4 with comeback bonus). Shows lives HUD, progr
 ### Scout (`#scout`, lines 156-162)
 Preview opponent's picks with sprite previews before battle.
 
-### Battle (`#battle`, lines 164-178)
-Canvas-based combat. HUD shows lives, HP counts, turn counter. Controls: Tick (manual advance), Auto (play continuously), Skip (forfeit). Battle log overlay.
+### Battle (`#battle`, lines 164-180)
+Canvas-based combat. HUD shows lives, HP counts, turn counter. Spell bar below canvas shows clickable spell buttons with cooldown overlays. Controls: Tick (manual advance), Auto (play continuously), Skip (forfeit). Battle log overlay.
 
 ### Result (`#result`, lines 180-192)
 Round outcome with title, lives display, match hint, rewards (XP + coins), Next Round / Menu buttons.
@@ -176,20 +181,27 @@ The central object that orchestrates all game flow.
 - `running` — Active flag
 - `winner` — Battle winner (null while ongoing)
 - `canvasH` — Canvas height (550)
+- `spells` — Auto-fire spell entries `{spec, team, fired, lastFire}`
+- `zones` — Persistent spell zones
+- `playerSpells` — Manually-castable player spells `{spec, cooldown, maxCD}`
 
 **Key methods:**
 | Method | Purpose |
 |--------|---------|
 | `initRuntime(u)` | Attach combat fields (cool, abCool, poison, slow, stun, animState) |
-| `start(units, enemies, onEnd)` | Initialize battle |
+| `start(units, enemies, onEnd, spells)` | Initialize battle (spells separated into auto-fire + manual cast lists) |
 | `loop(time)` | Main game loop (adaptive frame budget) |
-| `update(dt)` | Simulation step (status effects → movement → attacks → abilities → projectiles → collision) |
+| `update(dt)` | Simulation step (spells → status effects → movement → attacks → abilities → projectiles → collision) |
 | `act(u, enemies, allies, dt)` | Unit AI via Behaviour Composition API |
 | `attack(attacker, target, enemies)` | Melee/ranged attack logic |
 | `triggerAbility(u, allies, enemies)` | Execute abilities |
 | `updateProjectiles(dt)` | Move and collide projectiles |
 | `separate(units)` | Collision separation |
 | `render()` | Draw all units, projectiles, particles |
+| `_renderSpellBar()` | Render clickable spell buttons with cooldown overlays |
+| `_castPlayerSpell(idx)` | Cast a player spell manually (sets cooldown) |
+| `fireSpell(spec, team)` | Fire a spell (wrapper around Spell.fire) |
+| `_spellCooldown(spec)` | Compute cooldown based on effect power (3-10s) |
 | `getSnapshot()` | Serialize state for P2P |
 | `applySnapshot(s)` | Deserialize + fire FX from deltas (guest) |
 | `renderOnly()` | Render without simulation (guest mode) |
@@ -258,6 +270,7 @@ Fields are queried in order, with each answer added to the context for subsequen
 
 ```
 name → role → bodyPlan → weaponType → primaryColor → accentColor → sizeMod →
+headFeature → backFeature → tailFeature → aura → eyeStyle → pattern → weaponStyle →
 targeting → movement → ability → abilityTrigger → attackCondition →
 hp → dmg → range → speed → moveSpeedMod
 ```
@@ -284,16 +297,23 @@ Carries are squishy: 15-60 HP. Pick any number 10-200 that fits.
 
 | Field | Options | Count |
 |-------|---------|-------|
-| `role` | frontline, carry, support, counter, utility | 5 |
-| `targeting` | nearest, lowest_hp, enemy_carry, enemy_support, enemy_frontline, enemy_backline, lowest_ally, highest_hp_ally, random, self | 10 |
-| `movement` | chase, hold, kite, flee, patrol, hold_midpoint | 6 |
-| `attackCondition` | always, only_if_target_low, only_if_ally_near, only_if_safe | 4 |
-| `abilityTrigger` | on_cooldown, on_low_hp, on_enemy_near, on_ally_damaged, on_death, on_spawn, passive | 7 |
-| `ability` | none, splash, heal, dodge, poison, explode, shield, spawn, lifesteal, rage, counter, heal_burst | 12 |
-| `bodyPlan` | humanoid, beast, quad, serpent, flyer, blob | 6 |
-| `weaponType` | sword, bow, staff, dagger, claws, hammer, shield, breath, none | 9 |
+| `role` | frontline, carry, support, counter, utility, assassin, bruiser | 7 |
+| `targeting` | nearest, lowest_hp, enemy_carry, enemy_support, enemy_frontline, enemy_backline, lowest_ally, highest_hp_ally, random, self, taunt, random_ally, highest_hp_enemy | 13 |
+| `movement` | chase, hold, kite, flee, patrol, hold_midpoint, blink, strafe | 8 |
+| `attackCondition` | always, only_if_target_low, only_if_ally_near, only_if_safe, only_if_near_allies, only_if_far_from_enemies, only_if_target_high_hp | 7 |
+| `abilityTrigger` | on_cooldown, on_low_hp, on_enemy_near, on_ally_damaged, on_death, on_spawn, passive, on_kill, periodic_3s, on_first_hit | 10 |
+| `ability` | none, splash, heal, dodge, poison, explode, shield, spawn, lifesteal, rage, counter, heal_burst, thorns, blink_strike, frenzy, regen, cleanse, taunt, executioner, chain_lightning, slow | 21 |
+| `bodyPlan` | humanoid, quadruped, dragon, serpent, bird, insect, crab, golem, ghost, fish, blob, flying, mechanical, structure, plant, undead, demon, beast-man, aquatic, monopod, centaur, hydra, elemental, aberration, ooze, crystal, construct, angel | 28 |
+| `weaponType` | sword, bow, staff, dagger, claws, hammer, shield, breath, none, scythe, whip, spear, rifle, wand | 14 |
 | `primaryColor` / `accentColor` | red, blue, green, purple, orange, cyan, pink, lime, gold, white, black, brown | 12 |
 | `sizeMod` | small, medium, large | 3 |
+| `headFeature` | none, helmet, horns, crown, hood, hat, antenna, frill, mask, eyepatch, tiara, beak | 12 |
+| `backFeature` | none, wings, cape, spikes, shell, jetpack, wings_insect, wings_angel, tentacles, fins, crystal_growth | 11 |
+| `tailFeature` | none, tail, tail_fluffy, tail_barbed, tail_split | 5 |
+| `aura` | none, fire, frost, lightning, poison, holy, shadow, void, nature, blood, tech | 11 |
+| `eyeStyle` | normal, glowing, visor, scar, star, cross, spiral, visor_red | 8 |
+| `pattern` | none, stripes, spots, circuit, tribal, stars, hexagons, marble | 8 |
+| `weaponStyle` | plain, engraved, glowing, rusted, crystal, bone, molten | 7 |
 
 ### Stat Fields (line 1090)
 
@@ -334,10 +354,7 @@ generateUnit(prompt, arenaIndex)
 
 ### Template Fallback (lines 886-905)
 
-When LLM is unavailable, 11 archetype templates are used:
-- archer, tank, mage, assassin, healer, engineer, vampire, berserker, bomber, turtle, wall
-- Keyword matching (e.g., "dragon" → random template)
-- ±20% param variation for variety
+When LLM is unavailable, archetype templates are used (keyword-matched with ±20% param variation for variety).
 
 ---
 
@@ -443,16 +460,18 @@ On mid-match disconnect, host sees a prompt:
 
 ```
 Battle.update(dt):
-  1. Update status effects (poison damage, slow/stun timers)
-  2. For each unit: act(u, enemies, allies, dt)
+  1. Spell trigger checks (auto-fire) + zone ticking + player spell cooldown ticks
+  2. Update status effects (poison damage, slow/stun timers)
+  3. For each unit: act(u, enemies, allies, dt)
      a. Check attackCondition
      b. Move according to movement pattern
      c. Attack if in range and condition met
      d. Trigger ability if abilityTrigger met
-  3. Update projectiles (move, collide, deal damage)
-  4. Collision separation (prevent overlapping)
-  5. Check for winner (one team eliminated)
-  6. Update FX (particles, flashes, shake decay)
+  4. Update projectiles (move, collide, deal damage)
+  5. Collision separation (prevent overlapping)
+  6. Check for winner (one team eliminated)
+  7. Update FX (particles, flashes, shake decay)
+  8. Re-render spell bar (~4fps throttled)
 ```
 
 ### Unit Runtime Fields (lines 1938-1966)
@@ -472,8 +491,22 @@ Attached by `initRuntime(u)`, not persisted:
 
 - **Ranged threshold**: Units with range > 80 fire projectiles; others melee
 - **Crits**: `crit` chance (0-1) deals 2x damage + gold FX
-- **Abilities**: 12 abilities (splash, heal, dodge, poison, explode, shield, spawn, lifesteal, rage, counter, heal_burst, none)
+- **Abilities**: 21 abilities (splash, heal, dodge, poison, explode, shield, spawn, lifesteal, rage, counter, heal_burst, thorns, blink_strike, frenzy, regen, cleanse, taunt, executioner, chain_lightning, slow, none)
 - **Status effects**: Poison (DoT), Slow (reduced move speed), Stun (can't act)
+- **Spells**: Auto-fire (trigger-based) + manual cast via spell bar UI with cooldowns
+
+### Spell System
+
+Spells are special draftable cards (30% chance from spellbook) that can be cast during battle:
+
+- **Auto-fire**: Each spell has a trigger (`battle_start`, `on_first_contact`, `delayed_3s`, `when_ally_hurt`, `periodic_5s`) that fires it automatically
+- **Manual cast**: Player can tap spell buttons in the spell bar to cast on demand
+- **Cooldowns**: Manual casts have power-based cooldowns (3-10s depending on effect)
+- **Targets**: 13 target types (enemy_cluster, enemy_frontline, enemy_backline, enemy_carry, lowest_hp_enemy, highest_hp_enemy, random_enemy, center, ally_cluster, lowest_ally)
+- **Shapes**: circle_aoe, line, cone, point, persistent_zone
+- **Effects**: damage, damage_over_time, slow, stun, heal_allies, shield_allies, buff_dmg, buff_speed, summon
+- **FX types**: explosion, frost, lightning, poison_cloud, heal_glow, shockwave, fire_wall
+- **Persistent zones**: Tick once per second, apply effect to units within radius
 
 ---
 
@@ -482,19 +515,19 @@ Attached by `initRuntime(u)`, not persisted:
 Units are controlled by 5 composable enum fields that determine their AI without scripting:
 
 ### Targeting (who to attack)
-`nearest`, `lowest_hp`, `enemy_carry`, `enemy_support`, `enemy_frontline`, `enemy_backline`, `lowest_ally` (for healers), `highest_hp_ally`, `random`, `self`
+`nearest`, `lowest_hp`, `enemy_carry`, `enemy_support`, `enemy_frontline`, `enemy_backline`, `lowest_ally` (for healers), `highest_hp_ally`, `random`, `self`, `taunt` (force enemies to target this unit), `random_ally`, `highest_hp_enemy`
 
 ### Movement (how to position)
-`chase` (pursue nearest enemy), `hold` (stay near spawn), `kite` (maintain range), `flee` (run from enemies), `patrol` (move toward enemy side), `hold_midpoint` (hold center)
+`chase` (pursue nearest enemy), `hold` (stay near spawn), `kite` (maintain range), `flee` (run from enemies), `patrol` (move toward enemy side), `hold_midpoint` (hold center), `blink` (teleport toward target), `strafe` (weaving approach)
 
 ### Attack Condition (when to attack)
-`always`, `only_if_target_low` (execute low-HP targets), `only_if_ally_near` (safety in numbers), `only_if_safe` (no enemies near)
+`always`, `only_if_target_low` (execute low-HP targets), `only_if_ally_near` (safety in numbers), `only_if_safe` (no enemies near), `only_if_near_allies`, `only_if_far_from_enemies`, `only_if_target_high_hp`
 
 ### Ability Trigger (when to use ability)
-`on_cooldown`, `on_low_hp`, `on_enemy_near`, `on_ally_damaged`, `on_death`, `on_spawn`, `passive`
+`on_cooldown`, `on_low_hp`, `on_enemy_near`, `on_ally_damaged`, `on_death`, `on_spawn`, `passive`, `on_kill`, `periodic_3s`, `on_first_hit`
 
 ### Role (archetype classification)
-`frontline` (durable tank), `carry` (fragile damage dealer), `support` (healer/buffer), `counter` (ambush predator), `utility` (versatile specialist)
+`frontline` (durable tank), `carry` (fragile damage dealer), `support` (healer/buffer), `counter` (ambush predator), `utility` (versatile specialist), `assassin` (burst damage), `bruiser` (hybrid fighter)
 
 ---
 
@@ -502,21 +535,54 @@ Units are controlled by 5 composable enum fields that determine their AI without
 
 ### Body Plans (lines 700-800)
 
-6 body plans, each defining a set of shape primitives with joint attachments:
+28 body plans, each defining a set of shape primitives with joint attachments:
 
 | Plan | Shapes | Joints |
 |------|--------|--------|
 | humanoid | head, body, 2 arms, 2 legs | arm_raise, leg_swing |
-| beast | head, body, 4 legs, tail | leg_swing, tail_wag |
-| quad | body, 4 legs | leg_swing |
+| quadruped | head, body, 4 legs, tail | leg_swing, tail_wag |
+| dragon | head, body, wings, tail | wing_flap, tail_wag |
 | serpent | head, body segments | body_wave |
-| flyer | body, 2 wings | wing_flap |
+| bird | body, wings, beak | wing_flap |
+| insect | body, 6 legs, antennae | leg_swing |
+| crab | shell, 8 legs, claws | leg_swing |
+| golem | head, body, arms, legs | arm_raise, leg_swing |
+| ghost | body, arms | float |
+| fish | body, fins, tail | tail_wag |
 | blob | body, eyes | bounce |
+| flying | body, wings | wing_flap |
+| mechanical | body, treads, turret | turret_rotate |
+| structure | base, tower | none |
+| plant | stem, leaves, flower | sway |
+| undead | head, body, arms | arm_raise |
+| demon | head, body, horns, wings | wing_flap |
+| beast-man | head, body, arms, legs, tail | arm_raise, leg_swing, tail_wag |
+| aquatic | body, fins | fin_wave |
+| monopod | body, 1 leg | bounce |
+| centaur | upper body, lower body, 4 legs | arm_raise, leg_swing |
+| hydra | body, 3 heads, tail | head_weave, tail_wag |
+| elemental | body, aura particles | pulse |
+| aberration | body, tentacles | tentacle_wave |
+| ooze | body, drips | wobble |
+| crystal | body, facets | shimmer |
+| construct | body, gears | gear_rotate |
+| angel | body, wings, halo | wing_flap |
 
 ### Weapons (lines 800-830)
 
-9 weapons, each adding a shape to the right arm:
-- sword (line), bow (arc), staff (line + orb), dagger (short line), claws (lines), hammer (rect), shield (arc), breath (particles), none
+14 weapons, each adding a shape to the right arm:
+- sword (line), bow (arc), staff (line + orb), dagger (short line), claws (lines), hammer (rect), shield (arc), breath (particles), scythe (curved line), whip (segmented line), spear (long line), rifle (rect + barrel), wand (short line + spark), none
+
+### Visual Modifiers
+
+7 visual modifier categories give the LLM more creative freedom:
+- **headFeature** (12 options): helmet, horns, crown, hood, hat, antenna, frill, mask, eyepatch, tiara, beak
+- **backFeature** (11 options): wings, cape, spikes, shell, jetpack, wings_insect, wings_angel, tentacles, fins, crystal_growth
+- **tailFeature** (5 options): tail, tail_fluffy, tail_barbed, tail_split
+- **aura** (11 options): fire, frost, lightning, poison, holy, shadow, void, nature, blood, tech
+- **eyeStyle** (8 options): glowing, visor, scar, star, cross, spiral, visor_red
+- **pattern** (8 options): stripes, spots, circuit, tribal, stars, hexagons, marble
+- **weaponStyle** (7 options): engraved, glowing, rusted, crystal, bone, molten
 
 ### Shape Primitives
 
@@ -537,10 +603,24 @@ Units are controlled by 5 composable enum fields that determine their AI without
 ### Recipe Assembler (lines 845-866)
 
 `RecipeAssembler.build(attrs)` assembles a visual recipe from:
-- Body plan template (based on `bodyPlan` field)
-- Weapon overlay (based on `weaponType` field)
+- Body plan template (based on `bodyPlan` field — 28 body plans)
+- Weapon overlay (based on `weaponType` field — 14 weapons)
 - Color substitution (`primaryColor`, `accentColor`)
 - Size scaling (`sizeMod`)
+- Visual modifiers: `headFeature`, `backFeature`, `tailFeature`, `aura`, `eyeStyle`, `pattern`, `weaponStyle`
+- Pattern rendering: stripes, spots, circuit, tribal, stars, hexagons, marble
+
+### Description Maps
+
+The game includes human-readable descriptions for all enum fields, shown in the unit detail modal and forge preview:
+
+| Map | Covers | Count |
+|-----|--------|-------|
+| `ABILITY_DESCRIPTIONS` | All abilities | 21 |
+| `MOVEMENT_DESCRIPTIONS` | All movement types | 8 |
+| `TARGETING_DESCRIPTIONS` | All targeting options | 13 |
+| `TRIGGER_DESCRIPTIONS` | All ability triggers | 10 |
+| `WEAPON_DESCRIPTIONS` | All weapon types | 14 |
 
 ---
 

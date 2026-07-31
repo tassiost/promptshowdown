@@ -1,7 +1,7 @@
 # Prompt Showdown — Complete Improvements & Research Document
 
-**File reviewed:** `index.html` (~6,013 lines, single-file game)
-**Date:** 2026-07-30
+**File reviewed:** `index.html` (~7000 lines, single-file game)
+**Date:** 2026-07-31
 
 ---
 
@@ -405,8 +405,8 @@ c.shadowBlur=0;
 - **Battle log uses `innerHTML+=`**: Appends HTML strings, which is slow and could cause layout thrashing. Consider using `textContent` and `createElement`.
 - **`screen()` removes all fixed overlays**: Queries all `div` elements to clean up overlays. This is expensive — should track overlays in an array.
 - **No "back" button on forge screen**: Once in the forge, you must generate or skip to leave. Should have a cancel/back button.
-- **Deck screen doesn't show unit abilities in detail**: Only shows ability name, not description or stats like range/speed.
-- **No unit detail view**: Tapping a unit card in deck/collection doesn't show a detailed view with full stats, ability description, and animated preview.
+- **Deck screen doesn't show unit abilities in detail**: Shows ability name with description in unit detail modal (added). Could show more stats like range/speed inline on cards.
+- **Unit detail view**: Tapping a unit card in collection shows a detailed modal with full stats, ability/movement/targeting/trigger/weapon descriptions, and animated preview. (Implemented)
 - **Settings screen has no "apply" feedback**: Changing settings saves silently. A toast or visual confirmation would help.
 - **No confirmation on loadout swap**: Tapping a loadout slot immediately swaps — no undo.
 - **Scout screen reveals all opponent picks at once**: No suspense in revealing. Could reveal one at a time or let player tap each card.
@@ -414,7 +414,7 @@ c.shadowBlur=0;
 ### 5.2 Onboarding
 - **Onboarding is 6 steps but non-interactive**: The coachmarks just say "tap X" but don't wait for the player to actually do it. Players skip through without learning.
 - **No tooltip on first draft**: The first time a player sees draft cards, there's no explanation of rarity colors or role hints.
-- **No explanation of abilities**: New players see "splash", "ramp", "lifesteal" etc. with no tooltip explaining what they do.
+- **No explanation of abilities**: New players see ability names. ABILITY_DESCRIPTIONS, MOVEMENT_DESCRIPTIONS, TARGETING_DESCRIPTIONS, TRIGGER_DESCRIPTIONS, and WEAPON_DESCRIPTIONS maps now provide full explanations in the unit detail modal. Tooltips on cards could further help.
 
 ### 5.3 Accessibility
 - **No ARIA labels**: Buttons and interactive elements have no `aria-label` or `role` attributes.
@@ -639,13 +639,13 @@ Both games prove that **constrained systems with strong visual treatment** can d
 13. **Auto gradient shading** — ~20 lines, makes flat fills look 3D
 14. **Debounce `saveData()` calls** — batch saves to avoid localStorage thrashing
 15. **Add snapshot interpolation for P2P** — smooth guest rendering
-16. **Implement unit detail view** — tap card to see full stats + animated preview
-17. **Add ability tooltips** — explain what each ability does
+16. **Implement unit detail view** — ✅ Done (tap card to see full stats + ability/movement/targeting/trigger/weapon descriptions + animated preview)
+17. **Add ability tooltips** — ✅ Done (ABILITY_DESCRIPTIONS + MOVEMENT_DESCRIPTIONS + TARGETING_DESCRIPTIONS + TRIGGER_DESCRIPTIONS + WEAPON_DESCRIPTIONS shown in unit detail modal)
 18. **Vary attack animation speed by unit attack speed** — `dt/u.a` instead of `dt/0.4`
 19. **Add arena-themed backgrounds** — distinct visual identity per arena
 20. **Pre-compute colorblind-filtered colors** — don't filter per-shape per-frame
 21. **Use `structuredClone()` instead of `JSON.parse(JSON.stringify())`** — faster deep cloning
-22. **Add `devicePixelRatio` handling** — crisp rendering on retina displays
+22. **Add `devicePixelRatio` handling** — ✅ Done (crisp rendering on retina displays)
 
 ### Long-term
 23. **Split into ES modules** — improve maintainability without adding a build step

@@ -1,6 +1,6 @@
 # Prompt Showdown — Comprehensive Codebase Improvement Scan
 
-**File reviewed:** `index.html` (6,013 lines, single-file game)
+**File reviewed:** `index.html` (~7000 lines, single-file game)
 **Date:** 2025
 
 ---
@@ -31,6 +31,7 @@
 
 ### 1.4 Spell System
 - **Spells have no cooldown between periodic fires**: `periodic_5s` spells fire every 5s with no limit — could be too strong in long battles.
+- **Manual casting now available**: Spell bar UI lets players tap to cast spells during battle with power-based cooldowns (3-10s). Auto-fire triggers still work alongside manual casting.
 - **No spell crafting UI**: Spells can only be forged via LLM or shared. No way to combine or modify existing spells.
 - **Spell summon minions have fixed stats**: `Spell Minion` is always `{h:30,d:8,r:25,s:60}` regardless of arena tier.
 

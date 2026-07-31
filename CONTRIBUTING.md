@@ -52,10 +52,10 @@ All game code lives in `index.html`. No build step, no bundler, no framework. Va
 
 ### CSS
 
-- Use CSS variables defined in `:root` (lines 11-22)
-- Use existing component classes (`.btn`, `.card`, `.pill`, `.detail`, `.group`)
+- Use CSS variables defined in `:root` (lines 13-25) — purple/gold Draft Showdown palette
+- Use existing component classes (`.btn`, `.card`, `.pill`, `.detail`, `.group`, `.spellBtn`)
 - Avoid inline styles unless one-off positioning
-- Prefer `var(--accent)` over hardcoded colors
+- Prefer `var(--accent)` (purple) or `var(--gold)` over hardcoded colors
 
 ### Adding a new screen
 
@@ -79,19 +79,39 @@ myScreen(){
 
 ### Adding a new unit ability
 
-1. Add to `ENUM_FIELDS.ability` array (line 1083)
-2. Add to `FIELD_PROMPTS.ability` description (line 1126)
-3. Implement in `Battle.triggerAbility()` (lines 2200-2350)
-4. Add FX in `BattleFX` if needed
-5. Test via forge with a prompt that matches the ability
+1. Add to `ENUM_FIELDS.ability` array (currently 21 abilities)
+2. Add to `FIELD_PROMPTS.ability` description
+3. Add to `ABILITY_DESCRIPTIONS` map for UI display
+4. Implement in `Battle.triggerAbility()` and/or `Battle.takeDamage()` (for passives)
+5. Add FX in `BattleFX` if needed
+6. Test via forge with a prompt that matches the ability
 
 ### Adding a new body plan
 
-1. Add to `ENUM_FIELDS.bodyPlan` array (line 1088)
-2. Add to `FIELD_PROMPTS.bodyPlan` description (line 1131)
-3. Define shapes in the body plan templates (lines 700-800)
+1. Add to `ENUM_FIELDS.bodyPlan` array (currently 28 body plans)
+2. Add to `FIELD_PROMPTS.bodyPlan` description
+3. Define shapes in `BODY_PLANS` (lines 700-800)
 4. Add joints to `SpriteRenderer.JOINT_ANGLES` if new joints needed
 5. Test via forge
+
+### Adding a new weapon
+
+1. Add to `ENUM_FIELDS.weaponType` array (currently 14 weapons)
+2. Add to `FIELD_PROMPTS.weaponType` description
+3. Add to `WEAPON_DESCRIPTIONS` map
+4. Define shape in `WEAPONS` map
+5. Add color/FX to `WEAPON_COLOR` and `WEAPON_FX` maps
+6. Test via forge
+
+### Adding a new spell
+
+1. Add spell spec to `SPELL_ENUM` (trigger, target, effect, shape, fxType)
+2. Implement target resolution in `SPELL_TARGET`
+3. Implement shape in `SPELL_SHAPE`
+4. Implement effect in `SPELL_EFFECT`
+5. Add to `Spell.checkTriggers` if new auto-fire trigger
+6. Cooldown is auto-calculated by `Battle._spellCooldown()` based on effect power
+7. Spell bar UI auto-renders from `Battle.playerSpells`
 
 ## Testing
 
@@ -110,9 +130,11 @@ Use the Playwright MCP server (never chrome-devtools — it is forbidden on this
 - [ ] Page loads without console errors
 - [ ] Menu renders with stats pills and buttons
 - [ ] Forge screen loads (model downloads or template fallback works)
-- [ ] Forge generates a unit with sprite preview
-- [ ] Draft screen shows 3 cards with rarity borders
+- [ ] Forge generates a unit with sprite preview + ability descriptions
+- [ ] Draft screen shows 3 cards with rarity borders (spells may appear 30% chance)
 - [ ] Battle screen renders units on canvas
+- [ ] Spell bar shows below canvas if spells were drafted
+- [ ] Spell buttons cast on tap with cooldown overlay
 - [ ] Battle progresses when Tick/Auto is clicked
 - [ ] Result screen shows after battle ends
 - [ ] Deck screen shows loadout + collection

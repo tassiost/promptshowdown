@@ -1,6 +1,12 @@
 # Prompt Showdown — Tier 5: Polish, Feel & Live-Ops
 
-**Status: PLANNED (not yet implemented)**
+**Status: PARTIALLY IMPLEMENTED (audio, onboarding, settings, quests, i18n, replays done)**
+
+**Post-implementation updates (2026-07-31):**
+- Audio system, onboarding, settings, daily quests, replays, and i18n all implemented
+- CSS theme updated to purple/gold Draft Showdown style
+- Manual spell casting added with spell bar UI
+- Forge system expanded: 21 abilities, 28 body plans, 14 weapons, 7 roles, 7 visual modifier categories
 
 Tier 1 (Draft Showdown clone), Tier 2 (LLM unit forge), Tier 3 (ramp carry + bot strategy + formation + spells, see `PLAN-TIER3.md`), and Tier 4 (visuals & animation overhaul, see `PLAN-TIER4.md`) are planned. This doc plans the final layer: everything a shippable hybrid-casual game needs beyond gameplay and visuals — **audio, onboarding, retention loop, multiplayer robustness, analytics, accessibility, competitive play, and content sharing.**
 

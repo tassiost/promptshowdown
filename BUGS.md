@@ -93,7 +93,7 @@ Also add them to `shareUnit`'s data payload.
 ### BUG-008 🟢 All-spell draft picks → empty army → instant loss
 **File:** index.html:4841-4855
 **Found:** 2026-07-30
-**Description:** If all draft picks are spells (20% chance each, ~0.8% for 3 picks), `buildArmy()` returns empty array. Battle starts with 0 player units → instant loss.
+**Description:** If all draft picks are spells (now 30% chance each, up from 20%), `buildArmy()` returns empty array. Battle starts with 0 player units → instant loss.
 **Fix:** Guarantee at least 1 unit in draft, or auto-fill with base units if army is empty.
 
 ### BUG-009 🟢 `migrateSave` keeps empty loadout array
@@ -618,3 +618,9 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** The `kite` movement function had a dead zone between `r*0.5` and `r*1.1` where the unit doesn't move. But the attack range is `r` (checked in `act()` as `dist(u,target)<=u.r`). Between `r` and `r*1.1`, the unit is too far to attack but the kite behavior says "don't move." Two kite units (e.g., Wizard with r=160) would converge to distance ~176, just outside attack range, and stare at each other forever.
 **Fix:** Changed the upper kite threshold from `r*1.1` to `r` so the dead zone ends exactly at attack range. Units now always close to within attack range before stopping.
+
+### BUG-088 🟢 Spells appear to "do nothing" — no manual casting, auto-fire invisible
+**File:** index.html:3945-3996, 4118-4124
+**Found:** 2026-07-31
+**Description:** Spells only fired automatically based on triggers (battle_start, when_ally_hurt, etc.) with no player control. The auto-fire was invisible to the player — spells appeared to "do nothing" because there was no UI feedback or manual casting ability.
+**Fix:** Added spell bar UI below the battle canvas with clickable spell buttons. Each spell shows an icon, name, and cooldown countdown overlay. Player can tap to cast spells manually. Cooldowns are power-based (3-10s). Auto-fire triggers still work alongside manual casting. Spell draft chance increased from 20% to 30%.

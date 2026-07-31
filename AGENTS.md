@@ -95,3 +95,11 @@ The host should not send `opponent_picks` with bot picks — the guest already h
 ### Damage Over Time Stacking
 
 `damage_over_time` spell effect must use `Math.max` for `poisonDmg` to avoid overwriting higher existing poison damage from unit abilities. Same rule applies to any status effect that could be applied by multiple sources.
+
+### Manual Spell Casting
+
+Spells can be cast manually by the player via the spell bar UI (`Battle._castPlayerSpell`). Each manually-cast spell has a power-based cooldown (3-10s, computed by `Battle._spellCooldown`). The spell bar auto-renders at ~4fps to show cooldown countdowns. Auto-fire triggers (`Spell.checkTriggers`) still run alongside manual casting — both paths call `Spell.fire`. When adding a new spell effect, ensure it works in both auto-fire and manual cast paths (they share the same `Spell.fire` entry point).
+
+### Spell Bar UI
+
+The spell bar (`#spellBar`) is a flex container below the battle canvas. It should be hidden when not on the battle screen (handled by `G.screen()`). Spell buttons (`.spellBtn`) show an icon, name, and cooldown overlay (`.spellCD`). Buttons are disabled while on cooldown. The spell bar re-renders from `Battle.playerSpells` array — each entry has `{spec, cooldown, maxCD}`.

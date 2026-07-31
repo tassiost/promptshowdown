@@ -1,6 +1,13 @@
 # Prompt Showdown — Tier 4: Visuals & Animation Overhaul
 
-**Status: PLANNED (not yet implemented)**
+**Status: PARTIALLY IMPLEMENTED (expanded body plans, visual modifiers, patterns, CSS theme)**
+
+**Post-implementation updates (2026-07-31):**
+- Body plans expanded from 6 to 28 (added centaur, hydra, elemental, aberration, ooze, crystal, construct, angel, etc.)
+- Weapons expanded from 9 to 14 (added scythe, whip, spear, rifle, wand)
+- 7 visual modifier categories added: headFeature (12), backFeature (11), tailFeature (5), aura (11), eyeStyle (8), pattern (8), weaponStyle (7)
+- New patterns rendered: circuit, tribal, stars, hexagons, marble
+- CSS theme updated to purple/gold Draft Showdown style with radial gradients, glow effects, gradient cards
 
 Tier 1 (Draft Showdown clone), Tier 2 (LLM unit forge), and Tier 3 (ramp carry + bot strategy + formation + spells, see `PLAN-TIER3.md`) are planned. This doc plans the next layer: **massively improving the look and animation of created units** — the single biggest weakness of the current game.
 

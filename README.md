@@ -13,14 +13,16 @@ python3 -m http.server 8765
 
 ## Features
 
-- **AI Forge** — generates custom units from text prompts via a local LLM (Qwen2.5-1.5B, runs in-browser via WebLLM/WebGPU). Per-field micro-prompts with accumulating context produce creative, coherent units. Falls back to archetype templates when WebGPU is unavailable.
-- **Draft system** — rarity-weighted unit pool (70% common / 25% rare / 5% legendary), 3 rerolls per match, comeback bonus (4th draw after a loss)
-- **Auto-battle** — projectiles, crits, status effects (poison / slow / stun), 12 abilities (splash / heal / dodge / poison / explode / shield / spawn / lifesteal / rage / counter / heal_burst / none), collision separation, skeletal sprite animations
+- **AI Forge** — generates custom units from text prompts via a local LLM (Qwen2.5-1.5B, runs in-browser via WebLLM/WebGPU). Per-field micro-prompts with accumulating context produce creative, coherent units. 24 fields including 21 abilities, 28 body plans, 14 weapons, 7 roles, 13 targeting options, 8 movement types, and 7 visual modifier categories. Falls back to archetype templates when WebGPU is unavailable.
+- **Draft system** — rarity-weighted unit pool (70% common / 25% rare / 5% legendary), 3 rerolls per match, comeback bonus (4th draw after a loss). 30% chance to draft spells from your spellbook.
+- **Auto-battle** — projectiles, crits, status effects (poison / slow / stun), 21 abilities (splash / heal / dodge / poison / explode / shield / spawn / lifesteal / rage / slow / ramp / thorns / blink_strike / frenzy / regen / cleanse / taunt / executioner / chain_lightning / heal_burst / none), collision separation, skeletal sprite animations
+- **Manual spell casting** — spell bar UI below the battle canvas lets you tap to cast spells during battle. Each spell has a power-based cooldown (3-10s). Auto-fire triggers still work alongside manual casting.
 - **Behaviour Composition API** — 5 composable enums (targeting, movement, attackCondition, abilityTrigger, role) create diverse unit AI without scripting
 - **Progression** — XP, player levels, coins, unit upgrades (+10% HP/DMG per level), fusion (2 duplicates → +1 level), 6 arenas with increasing difficulty
 - **P2P multiplayer** — host-authoritative sync at 20Hz via Trystero (WebTorrent signalling, no server needed). Full flow: matchmaking → draft → scout → battle → results
-- **Sprite system** — 6 body plans (humanoid, beast, quad, serpent, flyer, blob), 9 weapons, skeletal joints with animation (arm_raise, leg_swing, bow_draw, tail_wag), role-coded fallbacks
-- **Clean modern UI** — indigo/slate palette, gradient title, rounded corners, soft shadows, hover effects, screen transitions
+- **Sprite system** — 28 body plans (humanoid, quadruped, dragon, serpent, bird, insect, crab, golem, ghost, fish, blob, flying, mechanical, structure, plant, undead, demon, beast-man, aquatic, monopod, centaur, hydra, elemental, aberration, ooze, crystal, construct, angel), 14 weapons, skeletal joints with animation (arm_raise, leg_swing, bow_draw, tail_wag, wing_flap), 7 visual modifier categories (head, back, tail, aura, eyes, pattern, weapon style), role-coded fallbacks
+- **Unit explanations** — detailed descriptions for all abilities, movement types, targeting options, ability triggers, and weapons. Unit detail modal shows full breakdown.
+- **Clean modern UI** — purple/gold Draft Showdown-style palette, radial gradient backgrounds, gradient cards with glow effects, bolder typography with text shadows, screen transitions
 - **Mobile-friendly** — adaptive FPS (60 desktop / 30 mobile), tap-to-tick, vibration feedback, fullscreen, pause-on-hidden
 - **Resilient** — visible error panel, save backup + crash recovery, version migrations, PWA manifest
 
@@ -58,7 +60,7 @@ This repo includes a `render.yaml` blueprint so Render auto-creates the service 
 ## Project structure
 
 ```
-index.html          # the entire game (HTML + CSS + JS in one file, ~3800 lines)
+index.html          # the entire game (HTML + CSS + JS in one file, ~7000 lines)
 vendor/
   core.mjs          # trystero P2P core (vendored from esm.sh)
   torrent.mjs       # trystero torrent signaling (vendored from esm.sh)

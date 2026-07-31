@@ -5,8 +5,10 @@
 **Post-completion updates:**
 - **Phase 12 (LLM Forge) reworked**: Switched from 0.5B to Qwen2.5-1.5B model. Replaced single JSON call with per-field micro-prompts + accumulating context. Removed tier-based stat system (LLM now generates raw numbers directly). Enum options shuffled to counter first-option bias. No max_tokens cap.
 - **P2P multiplayer fixed**: Vendored trystero v0.25.3 locally (esm.sh had connection issues). Updated for v0.25 API changes (makeAction returns object, onPeerJoin/onPeerLeave are setters, added disconnect()). Matchmaking timeout increased 5s → 15s.
-- **UI redesigned**: Clean modern aesthetic — indigo/slate palette, CSS variables, gradient title, rounded corners, soft shadows, hover effects, screen transitions.
+- **UI redesigned**: Draft Showdown-style aesthetic — purple/gold palette, radial gradient backgrounds, gradient cards with glow effects, bolder typography with text shadows, screen transitions.
 - **Vendored deps**: trystero (core.mjs, torrent.mjs) and lz-string (lz-string.mjs) in `vendor/` for reliability.
+- **Forge system expanded (2026-07-31)**: 21 abilities (was 12), 28 body plans (was 6), 14 weapons (was 9), 7 roles (was 5), 13 targeting options (was 10), 8 movement types (was 6), 10 ability triggers (was 7), 7 visual modifier categories (head, back, tail, aura, eyes, pattern, weapon style). Description maps added for all enum fields.
+- **Manual spell casting (2026-07-31)**: Spell bar UI below battle canvas. Tap to cast spells with power-based cooldowns (3-10s). Spell draft chance increased 20% → 30%.
 
 **Product strategy: two tiers.**
 

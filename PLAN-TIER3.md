@@ -1,6 +1,12 @@
 # Prompt Showdown — Tier 3: Depth & Infinite Spells
 
-**Status: PLANNED (not yet implemented)**
+**Status: PARTIALLY IMPLEMENTED (spell forge + manual casting done)**
+
+**Post-implementation updates (2026-07-31):**
+- Spell system now supports manual casting via spell bar UI (tap to cast, power-based cooldowns 3-10s)
+- Spell draft chance increased from 20% to 30%
+- Auto-fire triggers still work alongside manual casting
+- Forge system expanded: 21 abilities (was 12), 28 body plans (was 6), 14 weapons (was 9), 7 roles (was 5)
 
 Tier 1 (Draft Showdown clone) and Tier 2 (LLM unit forge) are complete per `PLAN.md`. This doc plans the next layer: closing the game-design gaps surfaced by auditing the current `index.html` against the real Draft Showdown (per the beginner guide / tier list research), and — the headline — **extending the LLM forge from units to spells, giving infinite spell variety from the same 0.5B model + grammar-sampler pipeline already built.**
 
