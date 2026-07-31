@@ -240,8 +240,13 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="screen" id="matchmaking">
 <h2>🔍 Finding Opponent...</h2>
 <div id="matchmakingSpinner" style="font-size:2.5rem;margin:24px;animation:sp 1.5s linear infinite;display:inline-block;">⏳</div>
-<div class="detail" id="matchmakingStatus" style="margin-bottom:16px;">Searching for a human opponent...</div>
+<div class="detail" id="matchmakingStatus" style="margin-bottom:8px;">Searching for a human opponent...</div>
+<div class="detail" id="matchmakingQueueInfo" style="margin-bottom:8px;font-size:.7rem;color:var(--muted);"></div>
+<div id="matchmakingTimerBar" style="height:5px;background:var(--bg);border-radius:3px;overflow:hidden;margin:4px auto 12px;max-width:280px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);"><div id="matchmakingTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
+<div style="display:flex;gap:6px;justify-content:center;">
 <button class="btn" onclick="G.cancelMatchmaking()">Cancel</button>
+<button class="btn" onclick="G.skipQueue()" style="font-size:.75rem;">⚡ Play vs Bot Now</button>
+</div>
 </div>
 
 <div class="screen" id="lobby">
@@ -2630,6 +2635,12 @@ function setupNetwork(id){
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
       G.cancelReconnect();
+      // Matchmaking: peer joined the queue room — show "opponent found".
+      if(G.matchmakingWaitInterval){
+        setText("matchmakingStatus","Opponent found! Negotiating roles...");
+        const fill=$("matchmakingTimerFill");
+        if(fill)fill.style.width="100%";
+      }
       // P2P Test: log + update UI + stop wait timer.
       if(G.p2pTestState?.waitStart){
         G._p2pTestLog("✅ Peer joined! Connected.");
@@ -2723,19 +2734,21 @@ function networkReceive(data){
     }
     if(data.t==="role"){
       if(role==="host"&&data.d==="host"){
-        // Both players tried to host (matchmaking) — use tiebreaker to decide.
+        // Both players joined the queue room — use tiebreaker to decide roles.
         // Lower peerId becomes host, higher becomes guest.
         if(!_peerId)_peerId=Math.random().toString(36).slice(2);
         transmit("role_tiebreak",{id:_peerId});
       }else if(role==="none")role=data.d;
-      // Phase 18: if we're hosting and a guest connects during matchmaking,
-      // cancel the bot fallback timer and start a P2P match.
-      if(role==="host"&&G.matchmakingTimer){
-        G.matchmakingCancelled=true; // prevent bot fallback race
-        clearTimeout(G.matchmakingTimer);
-        G.matchmakingTimer=null;
-        setText("matchmakingStatus",t("opponent_found"));
-        setTimeout(()=>G.start(),300);
+      // If we're hosting and a peer connects during matchmaking,
+      // cancel the wait timer and start a P2P match.
+      if(role==="host"&&G.matchmakingWaitInterval){
+        G.matchmakingCancelled=true;
+        clearInterval(G.matchmakingWaitInterval);
+        G.matchmakingWaitInterval=null;
+        setText("matchmakingStatus","Opponent found! Starting match...");
+        const fill=$("matchmakingTimerFill");
+        if(fill)fill.style.width="100%";
+        setTimeout(()=>G.start(),500);
       }
     }
     if(data.t==="role_tiebreak"){
@@ -2747,12 +2760,22 @@ function networkReceive(data){
         role="guest";
       }
       // Host starts the match; guest waits for round_start.
-      if(role==="host"&&G.matchmakingTimer){
+      if(role==="host"&&G.matchmakingWaitInterval){
         G.matchmakingCancelled=true;
-        clearTimeout(G.matchmakingTimer);
-        G.matchmakingTimer=null;
-        setText("matchmakingStatus",t("opponent_found"));
-        setTimeout(()=>G.start(),300);
+        clearInterval(G.matchmakingWaitInterval);
+        G.matchmakingWaitInterval=null;
+        setText("matchmakingStatus","Opponent found! Starting match...");
+        const fill=$("matchmakingTimerFill");
+        if(fill)fill.style.width="100%";
+        setTimeout(()=>G.start(),500);
+      }
+      // Guest: stop waiting, show "found opponent" message.
+      if(role==="guest"&&G.matchmakingWaitInterval){
+        clearInterval(G.matchmakingWaitInterval);
+        G.matchmakingWaitInterval=null;
+        setText("matchmakingStatus","Opponent found! Waiting for host to start...");
+        const fill=$("matchmakingTimerFill");
+        if(fill)fill.style.width="100%";
       }
     }
     if(data.t==="request_deck"){
@@ -7018,39 +7041,70 @@ const G={
     }
   },
   lobby(){this.screen("lobby");},
-  // Phase 18: matchmaking flow — try P2P first, fall back to bot after 5s.
+  // Phase 18: matchmaking flow — join a shared queue room, wait for opponent.
+  // Both players join the same queue room. First to join waits (becomes host
+  // via tiebreaker), second to join triggers the match. No bot fallback —
+  // player must explicitly click "Play vs Bot Now" to skip the queue.
   matchmakingTimer:null,
+  matchmakingWaitStart:0,
+  matchmakingWaitInterval:null,
   startMatchmaking(){
     this.screen("matchmaking");
-    setText("matchmakingStatus",t("searching_opponent"));
+    setText("matchmakingStatus","Entering queue...");
+    setText("matchmakingQueueInfo","");
     // Try to join the arena queue room via trystero.
+    // All players in the same arena share one queue room.
     const arenaIdx=this.save.arena||0;
     const queueRoom=`psd-arena-${arenaIdx}-queue`;
-    // Suppress P2P errors during matchmaking (silent fallback to bot).
+    // Suppress P2P errors during matchmaking (silent queue join).
     suppressP2PErrors=true;
+    let netOk=false;
     try{
-      this.host(queueRoom,true);
+      netOk=this.host(queueRoom,true);
     }catch(e){
       suppressP2PErrors=false;
+      setText("matchmakingStatus","P2P unavailable — starting bot match...");
       this.startBotMatch();
       return;
     }
     suppressP2PErrors=false;
-    // If connection failed (connected still false), fall back immediately.
-    if(!connected){
+    // If trystero not loaded or room creation failed, fall back immediately.
+    if(!netOk){
+      setText("matchmakingStatus","P2P unavailable — starting bot match...");
       this.startBotMatch();
       return;
     }
-    // Set a 15s timeout — if no opponent joins, start bot match.
+    // Start wait timer + UI updates.
     this.matchmakingCancelled=false;
-    this.matchmakingTimer=setTimeout(()=>{
+    this.matchmakingWaitStart=Date.now();
+    setText("matchmakingStatus","In queue — waiting for opponent...");
+    setText("matchmakingQueueInfo","Room: "+queueRoom);
+    // Update wait timer every second.
+    if(this.matchmakingWaitInterval)clearInterval(this.matchmakingWaitInterval);
+    this.matchmakingWaitInterval=setInterval(()=>{
       if(this.matchmakingCancelled)return;
-      this.startBotMatch();
-    },5000);
+      const elapsed=Math.floor((Date.now()-this.matchmakingWaitStart)/1000);
+      const mins=Math.floor(elapsed/60);
+      const secs=elapsed%60;
+      const timeStr=mins>0?`${mins}m ${secs}s`:`${secs}s`;
+      setText("matchmakingStatus",`In queue — waiting for opponent... (${timeStr})`);
+      // Animate the timer bar (pulsing effect, never depletes since we wait indefinitely).
+      const fill=$("matchmakingTimerFill");
+      if(fill){
+        const pulse=0.5+0.5*Math.sin(elapsed*2);
+        fill.style.width=(40+pulse*60)+"%";
+      }
+    },1000);
+  },
+  // Skip the queue and play vs bot immediately.
+  skipQueue(){
+    setText("matchmakingStatus","Starting bot match...");
+    this.startBotMatch();
   },
   cancelMatchmaking(){
     this.matchmakingCancelled=true;
     if(this.matchmakingTimer){clearTimeout(this.matchmakingTimer);this.matchmakingTimer=null;}
+    if(this.matchmakingWaitInterval){clearInterval(this.matchmakingWaitInterval);this.matchmakingWaitInterval=null;}
     // Disconnect from the queue room.
     if(connected&&typeof disconnect==="function"){try{disconnect();}catch(e){}}
     this.menu();
@@ -7059,6 +7113,7 @@ const G={
   startBotMatch(){
     this.matchmakingCancelled=true;
     if(this.matchmakingTimer){clearTimeout(this.matchmakingTimer);this.matchmakingTimer=null;}
+    if(this.matchmakingWaitInterval){clearInterval(this.matchmakingWaitInterval);this.matchmakingWaitInterval=null;}
     // Disconnect from any queue room.
     if(connected&&typeof disconnect==="function"){try{disconnect();}catch(e){}}
     this.start();
@@ -9999,13 +10054,15 @@ G.host=function(roomName,silent){
   role="host";
   const rid=$("roomId");
   const room=roomName||(rid?rid.value:"room1");
-  if(setupNetwork(room)){
+  const ok=setupNetwork(room);
+  if(ok){
     setTimeout(()=>{transmit("role","host");},500);
     if(!silent){
       const c=$("connection");
       if(c)c.innerText="Status: hosting room "+room;
     }
   }
+  return ok;
 };
 G.join=function(){
   role="guest";

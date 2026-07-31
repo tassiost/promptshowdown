@@ -70,7 +70,7 @@ async def pick_draft_cards(page, label, count=4):
     return True
 
 async def run_player(playwright, browser, player_name, is_host):
-    """Run a single player through the P2P match flow."""
+    """Run a single player through the P2P match flow using queue matchmaking."""
     context = await browser.new_context(
         viewport={"width": 420, "height": 800},
     )
@@ -85,69 +85,43 @@ async def run_player(playwright, browser, player_name, is_host):
     print(f"[{player_name}] Navigating to game...")
     await page.goto(URL, wait_until="networkidle")
 
-    # Go to P2P Test screen
-    print(f"[{player_name}] Opening P2P Test screen...")
-    await page.evaluate("G.p2pTest()")
+    # Use the FIGHT button (queue matchmaking) instead of P2P test mode
+    print(f"[{player_name}] Clicking FIGHT (entering queue)...")
+    await page.evaluate("G.startMatchmaking()")
     await asyncio.sleep(0.5)
 
-    # Set room ID
-    await page.evaluate(f"""() => {{
-        const el = document.getElementById('p2pTestRoom');
-        if (el) el.value = '{ROOM_ID}';
-    }}""")
-
-    # Host or Join
-    if is_host:
-        print(f"[{player_name}] Clicking Host...")
-        await page.evaluate("G.p2pTestHost()")
-    else:
-        # Wait a bit for host to start first
-        print(f"[{player_name}] Waiting 2s for host to start...")
-        await asyncio.sleep(2)
-        print(f"[{player_name}] Clicking Join...")
-        await page.evaluate("G.p2pTestJoin()")
-
-    # Wait for connection (up to 30 seconds)
-    print(f"[{player_name}] Waiting for P2P connection (up to 30s)...")
-    connected = False
-    for attempt in range(60):
-        await asyncio.sleep(0.5)
-        status = await get_p2p_status(page)
-        if status["connected"] == "Yes":
-            connected = True
-            print(f"[{player_name}] CONNECTED! Role: {status['role']}, Wait: {status['waitTime']}")
-            print(f"[{player_name}] Sent: {status['sent']}, Recv: {status['recv']}")
-            break
-        if attempt % 10 == 0:
-            print(f"[{player_name}] Still waiting... Role: {status['role']}, Wait: {status['waitTime']}, Sent: {status['sent']}, Recv: {status['recv']}")
-
-    if not connected:
-        log = await get_p2p_log(page)
-        print(f"[{player_name}] FAILED to connect within 30s")
-        print(f"[{player_name}] Log:\n{log}")
-        await page.screenshot(path=f"{SCREENSHOT_DIR}/{player_name}-failed.png")
+    # Check we're on the matchmaking screen
+    screen = await get_active_screen(page)
+    if screen != "matchmaking":
+        print(f"[{player_name}] Not on matchmaking screen. Current: {screen}")
+        await page.screenshot(path=f"{SCREENSHOT_DIR}/{player_name}-no-matchmaking.png")
         await context.close()
         return None
 
-    # Log the P2P debug log
-    log = await get_p2p_log(page)
-    print(f"[{player_name}] P2P Log:\n{log}")
+    status = await page.evaluate("() => document.getElementById('matchmakingStatus')?.textContent || ''")
+    print(f"[{player_name}] Matchmaking status: {status}")
+    await page.screenshot(path=f"{SCREENSHOT_DIR}/{player_name}-queue.png")
 
-    # Take screenshot of connected state
-    await page.screenshot(path=f"{SCREENSHOT_DIR}/{player_name}-connected.png")
+    # Wait for connection (up to 60 seconds — queue waits indefinitely)
+    print(f"[{player_name}] Waiting in queue (up to 60s)...")
+    connected = False
+    for attempt in range(120):
+        await asyncio.sleep(0.5)
+        screen = await get_active_screen(page)
+        # If we've left matchmaking screen, we either connected or cancelled
+        if screen != "matchmaking":
+            connected = True
+            print(f"[{player_name}] Left matchmaking screen -> {screen}")
+            break
+        if attempt % 10 == 0:
+            status = await page.evaluate("() => document.getElementById('matchmakingStatus')?.textContent || ''")
+            print(f"[{player_name}] Still in queue... {status}")
 
-    # Test ping
-    print(f"[{player_name}] Sending ping...")
-    await page.evaluate("G.p2pTestPing()")
-    await asyncio.sleep(1)
-    log = await get_p2p_log(page)
-    print(f"[{player_name}] Log after ping:\n{log}")
-
-    # Start the match
-    if is_host:
-        print(f"[{player_name}] Starting P2P match...")
-        await page.evaluate("G.p2pTestStartMatch()")
-        await asyncio.sleep(1)
+    if not connected:
+        print(f"[{player_name}] FAILED to connect within 60s")
+        await page.screenshot(path=f"{SCREENSHOT_DIR}/{player_name}-timeout.png")
+        await context.close()
+        return None
 
     # Wait for draft screen
     print(f"[{player_name}] Waiting for draft screen...")
@@ -283,15 +257,15 @@ async def main():
         # but separate pages — trystero P2P works across contexts).
         browser = await p.chromium.launch(headless=True)
 
-        # Run both players concurrently
-        # Host starts first, then join connects
+        # Run both players concurrently — both enter the queue at the same time.
+        # The queue matchmaking will match them with each other.
         host_task = asyncio.create_task(
-            run_player(p, browser, "HOST", is_host=True)
+            run_player(p, browser, "PLAYER1", is_host=True)
         )
-        # Small delay so host starts first
+        # Small delay so player1 enters queue first
         await asyncio.sleep(1)
         guest_task = asyncio.create_task(
-            run_player(p, browser, "GUEST", is_host=False)
+            run_player(p, browser, "PLAYER2", is_host=False)
         )
 
         host_result = await host_task
@@ -302,8 +276,8 @@ async def main():
     print("\n" + "="*60)
     print("P2P TEST SUMMARY")
     print("="*60)
-    print(f"Host final screen:  {host_result}")
-    print(f"Guest final screen: {guest_result}")
+    print(f"Player1 final screen:  {host_result}")
+    print(f"Player2 final screen: {guest_result}")
 
     if host_result and guest_result:
         print("\n✅ Both players completed the match!")
