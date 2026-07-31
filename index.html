@@ -177,6 +177,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.showSettings()" style="font-size:.78rem;opacity:0.7;">⚙️ Settings</button>
 <button class="btn" onclick="G.showQuests()" style="font-size:.78rem;opacity:0.7;">📋 Quests <span id="questBadge" style="background:var(--accent);color:#fff;border-radius:8px;padding:1px 5px;font-size:.7rem;display:none;">!</span></button>
 <button class="btn" onclick="G.showLeaderboard()" style="font-size:.78rem;opacity:0.7;">🏆 Ranked</button>
+<button class="btn" onclick="G.p2pTest()" style="font-size:.78rem;opacity:0.7;">🧪 P2P Test</button>
 </div>
 </div>
 
@@ -253,6 +254,50 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 </div>
 <div class="pill" id="connection" style="margin-top:10px;">Status: idle</div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="p2ptest">
+<h2>🧪 P2P Test Mode</h2>
+<div class="detail" style="margin-bottom:8px;">Dedicated multiplayer testing — no bot fallback, extended wait times, full debug logging.</div>
+
+<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin:8px 0;width:100%;max-width:320px;">
+<h3 style="font-size:.85rem;margin-bottom:8px;color:var(--accent2);">Room Setup</h3>
+<label style="display:block;font-size:.75rem;margin:4px 0;color:var(--muted);">Room ID (both players use same):</label>
+<input class="input" id="p2pTestRoom" value="test-room-1" style="width:100%;max-width:280px;">
+<div style="display:flex;gap:6px;margin:8px 0;">
+<button class="btn primary" onclick="G.p2pTestHost()" style="flex:1;font-size:.8rem;">🏠 Host</button>
+<button class="btn" onclick="G.p2pTestJoin()" style="flex:1;font-size:.8rem;">🚪 Join</button>
+</div>
+<button class="btn red" onclick="G.p2pTestDisconnect()" style="font-size:.75rem;">🔌 Disconnect</button>
+</div>
+
+<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin:8px 0;width:100%;max-width:320px;">
+<h3 style="font-size:.85rem;margin-bottom:8px;color:var(--accent2);">Connection Status</h3>
+<div id="p2pTestStatus" style="font-size:.75rem;line-height:1.8;">
+<div>📋 Role: <b id="p2pTestRole" style="color:var(--muted);">none</b></div>
+<div>🔗 Connected: <b id="p2pTestConnected" style="color:var(--danger);">No</b></div>
+<div>⏱️ Wait time: <b id="p2pTestWait" style="color:var(--muted);">0s</b></div>
+<div>📡 Messages sent: <b id="p2pTestSent" style="color:var(--muted);">0</b></div>
+<div>📡 Messages received: <b id="p2pTestRecv" style="color:var(--muted);">0</b></div>
+<div>🆔 Peer ID: <b id="p2pTestPeerId" style="color:var(--muted);">—</b></div>
+</div>
+</div>
+
+<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin:8px 0;width:100%;max-width:320px;">
+<h3 style="font-size:.85rem;margin-bottom:8px;color:var(--accent2);">Test Actions</h3>
+<div style="display:flex;flex-direction:column;gap:6px;">
+<button class="btn" onclick="G.p2pTestPing()" style="font-size:.75rem;">📡 Send Ping</button>
+<button class="btn" onclick="G.p2pTestStartMatch()" style="font-size:.75rem;" id="p2pTestStartBtn">⚔️ Start P2P Match</button>
+</div>
+<div class="detail" style="margin-top:6px;font-size:.68rem;">Start a real P2P match once both players are connected. Host clicks start, guest auto-joins.</div>
+</div>
+
+<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin:8px 0;width:100%;max-width:320px;">
+<h3 style="font-size:.85rem;margin-bottom:8px;color:var(--accent2);">Debug Log</h3>
+<div id="p2pTestLog" style="font-size:.65rem;line-height:1.6;max-height:200px;overflow-y:auto;color:var(--muted);font-family:monospace;background:var(--bg);border-radius:6px;padding:8px;border:1px solid var(--border);"></div>
+</div>
+
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back to Menu</button>
 </div>
 
 <div class="screen" id="draft">
@@ -2585,10 +2630,21 @@ function setupNetwork(id){
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
       G.cancelReconnect();
+      // P2P Test: log + update UI + stop wait timer.
+      if(G.p2pTestState?.waitStart){
+        G._p2pTestLog("✅ Peer joined! Connected.");
+        G._p2pTestStopWaitTimer();
+        G._p2pTestUpdateUI();
+      }
     };
     room.onPeerLeave=()=>{
       connected=false;
       setText("connection",t("status_disconnected"));
+      // P2P Test: log + update UI.
+      if($("p2pTestLog")){
+        G._p2pTestLog("❌ Peer left. Disconnected.");
+        G._p2pTestUpdateUI();
+      }
       // Phase 18: mid-match disconnect — offer "Continue vs Bot" (host) or return to menu (guest).
       if(Match.active&&role==="host"){
         showDisconnectPrompt(Match.opponentPicks||[]);
@@ -2655,6 +2711,16 @@ let suppressP2PErrors=false;
 //   round_deck    : guest→host {picks (serialized units with recipes)}
 function networkReceive(data){
   try{
+    // P2P Test: handle ping/pong for latency testing.
+    if(data.t==="ping"){
+      transmit("pong",{ts:data.d?.ts});
+      return;
+    }
+    if(data.t==="pong"){
+      const latency=Date.now()-(data.d?.ts||0);
+      G._p2pTestLog?.(`Pong received — latency: ${latency}ms`);
+      return;
+    }
     if(data.t==="role"){
       if(role==="host"&&data.d==="host"){
         // Both players tried to host (matchmaking) — use tiebreaker to decide.
@@ -9793,6 +9859,137 @@ const G={
 };
 
 // Phase 1/18: host/join assigned after G exists; setupNetwork now null-safe.
+// ── P2P Test Mode ──────────────────────────────────────────────────────
+// Dedicated multiplayer testing with extended wait times, debug logging,
+// and no bot fallback. Used to verify P2P actually works.
+G.p2pTestState={log:[],sent:0,recv:0,waitStart:0,waitTimer:null,origOnPeerJoin:null,origOnPeerLeave:null};
+G.p2pTest=function(){this.screen("p2ptest");this._p2pTestUpdateUI();};
+G._p2pTestLog=function(msg){
+  const ts=new Date().toLocaleTimeString();
+  const line=`[${ts}] ${msg}`;
+  G.p2pTestState.log.push(line);
+  if(G.p2pTestState.log.length>50)G.p2pTestState.log.shift();
+  const el=$("p2pTestLog");
+  if(el)el.innerHTML=G.p2pTestState.log.map(l=>`<div>${l}</div>`).join("");
+  const el2=$("p2pTestLog");
+  if(el2)el2.scrollTop=el2.scrollHeight;
+};
+G._p2pTestUpdateUI=function(){
+  const s=G.p2pTestState;
+  setText("p2pTestRole",role||"none");
+  const connEl=$("p2pTestConnected");
+  if(connEl){connEl.textContent=connected?"Yes":"No";connEl.style.color=connected?"var(--ok)":"var(--danger)";}
+  setText("p2pTestSent",s.sent||0);
+  setText("p2pTestRecv",s.recv||0);
+  setText("p2pTestPeerId",_peerId||"—");
+  // Wait timer
+  if(s.waitStart){
+    const elapsed=Math.floor((Date.now()-s.waitStart)/1000);
+    setText("p2pTestWait",elapsed+"s");
+  }else{
+    setText("p2pTestWait","0s");
+  }
+  // Start match button: enabled only when connected
+  const startBtn=$("p2pTestStartBtn");
+  if(startBtn)startBtn.disabled=!connected;
+};
+G._p2pTestStartWaitTimer=function(){
+  const s=G.p2pTestState;
+  s.waitStart=Date.now();
+  if(s.waitTimer)clearInterval(s.waitTimer);
+  s.waitTimer=setInterval(()=>G._p2pTestUpdateUI(),1000);
+};
+G._p2pTestStopWaitTimer=function(){
+  const s=G.p2pTestState;
+  if(s.waitTimer){clearInterval(s.waitTimer);s.waitTimer=null;}
+  s.waitStart=0;
+};
+// Wrap transmit to count sent messages.
+G._p2pTestOrigTransmit=transmit;
+G._p2pTestWrapTransmit=function(){
+  if(G._p2pTestTransmitWrapped)return;
+  G._p2pTestTransmitWrapped=true;
+  const orig=transmit;
+  transmit=function(type,data){
+    G.p2pTestState.sent++;
+    G._p2pTestLog(`→ sent: ${type}`);
+    G._p2pTestUpdateUI();
+    orig(type,data);
+  };
+};
+// Wrap networkReceive to count received messages.
+G._p2pTestOrigNetworkReceive=networkReceive;
+G._p2pTestWrapNetworkReceive=function(){
+  if(G._p2pTestNetworkReceiveWrapped)return;
+  G._p2pTestNetworkReceiveWrapped=true;
+  const orig=networkReceive;
+  networkReceive=function(data){
+    G.p2pTestState.recv++;
+    G._p2pTestLog(`← received: ${data.t}`);
+    G._p2pTestUpdateUI();
+    orig(data);
+  };
+};
+G.p2pTestHost=function(){
+  const roomName=$("p2pTestRoom")?.value||"test-room-1";
+  G._p2pTestLog(`Hosting room: ${roomName}`);
+  G._p2pTestWrapTransmit();
+  G._p2pTestWrapNetworkReceive();
+  role="host";
+  if(setupNetwork(roomName)){
+    G._p2pTestLog("Network setup OK, waiting for peer...");
+    G._p2pTestStartWaitTimer();
+    // Send role announcement after 500ms (same as normal host).
+    setTimeout(()=>{transmit("role","host");G._p2pTestLog("Sent role: host");},500);
+  }else{
+    G._p2pTestLog("Network setup FAILED");
+  }
+  G._p2pTestUpdateUI();
+};
+G.p2pTestJoin=function(){
+  const roomName=$("p2pTestRoom")?.value||"test-room-1";
+  G._p2pTestLog(`Joining room: ${roomName}`);
+  G._p2pTestWrapTransmit();
+  G._p2pTestWrapNetworkReceive();
+  role="guest";
+  if(setupNetwork(roomName)){
+    G._p2pTestLog("Network setup OK, waiting for host...");
+    G._p2pTestStartWaitTimer();
+    setTimeout(()=>{transmit("role","guest");G._p2pTestLog("Sent role: guest");},500);
+  }else{
+    G._p2pTestLog("Network setup FAILED");
+  }
+  G._p2pTestUpdateUI();
+};
+G.p2pTestDisconnect=function(){
+  G._p2pTestLog("Disconnecting...");
+  if(typeof disconnect==="function"){try{disconnect();}catch(e){}}
+  role="none";
+  G._p2pTestStopWaitTimer();
+  G._p2pTestUpdateUI();
+  G._p2pTestLog("Disconnected. Role reset to none.");
+};
+G.p2pTestPing=function(){
+  if(!connected){G._p2pTestLog("Cannot ping — not connected");return;}
+  transmit("ping",{ts:Date.now()});
+  G._p2pTestLog("Sent ping");
+};
+G.p2pTestStartMatch=function(){
+  if(!connected){G._p2pTestLog("Cannot start — not connected");return;}
+  G._p2pTestLog(`Starting P2P match as ${role}...`);
+  G._p2pTestStopWaitTimer();
+  // Use the normal start flow — role is already set, connection is established.
+  // The host calls G.start(), which triggers the full P2P match flow.
+  // The guest waits for match_start message from host.
+  if(role==="host"){
+    G.start();
+  }else{
+    G._p2pTestLog("Guest: waiting for host to start the match...");
+  }
+};
+// Handle ping messages in networkReceive (add to existing handler).
+// We hook this via the wrapped networkReceive above — pings are logged there.
+
 G.host=function(roomName,silent){
   role="host";
   const rid=$("roomId");
