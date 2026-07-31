@@ -267,6 +267,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="battleLog"></div>
 <div id="compBonus" style="display:none;position:fixed;left:5px;top:70px;max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
 <div id="battleStats" style="display:none;position:fixed;right:5px;top:70px;max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
+<div id="killFeed" style="display:none;position:fixed;right:5px;top:130px;max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
 <div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:80px;transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
@@ -4305,6 +4306,9 @@ const Battle={
     this._renderCompBonus();
     // Initialize battle stats tracking.
     this._battleStats={playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+    this._killFeed=[]; // kill feed entries
+    this._manualSpeed=false; // reset dramatic slowdown flag
+    this._highlights={biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
     // Phase 17: trigger spawn FX for all units.
     for(const u of this.units)BattleFX.onSpawn(u);
     this.projectiles=[];
@@ -4428,7 +4432,16 @@ const Battle={
     dt=Math.min(dt,0.05);
     // Apply speed multiplier and pause.
     if(this.paused){this.render();return;}
-    dt*=this.speed||1;
+    // Dramatic slowdown: when 3 or fewer total units remain alive, slow down
+    // to 60% speed for dramatic effect (only if speed is >= 1).
+    let effectiveSpeed=this.speed||1;
+    if(effectiveSpeed>=1&&!this._manualSpeed){
+      const aliveCount=this.units.filter(u=>u.h>0).length;
+      if(aliveCount<=3&&aliveCount>0&&this.time>5){
+        effectiveSpeed=effectiveSpeed*0.6;
+      }
+    }
+    dt*=effectiveSpeed;
     this._lastDt=dt;
     // FPS monitoring: compute rolling average every 30 frames, set quality tier.
     this._fpsFrames++;this._fpsAccum+=dt;
@@ -4457,6 +4470,7 @@ const Battle={
       this._spellBarT=0;
       this._renderSpellBar();
       this._renderBattleStats();
+      this._renderKillFeed();
     }
     // Arena mechanics: apply arena-specific effects to all units.
     this._applyArenaMechanics(dt);
@@ -4874,6 +4888,12 @@ const Battle={
       if(killer.team==="player")this._battleStats.playerKills++;
       else this._battleStats.enemyKills++;
     }
+    // Kill feed: track recent kills for overlay.
+    if(!this._killFeed)this._killFeed=[];
+    const kfKiller=killer?killer.n:"environment";
+    const kfTeam=killer?killer.team:"neutral";
+    this._killFeed.unshift({killer:kfKiller,victim:u.n,killerTeam:kfTeam,victimTeam:u.team,t:this.time});
+    if(this._killFeed.length>5)this._killFeed.pop();
     u.deathT=0;
     // D5: body-plan-specific death FX.
     const bp=u.recipe?.bodyPlan||u.bodyPlan;
@@ -5337,6 +5357,9 @@ const Battle={
     // Hide battle stats overlay.
     const stats=$("battleStats");
     if(stats)stats.style.display="none";
+    // Hide kill feed.
+    const kf=$("killFeed");
+    if(kf)kf.style.display="none";
     // Hide unit inspector.
     const inspector=$("unitInspector");
     if(inspector)inspector.style.display="none";
@@ -5383,6 +5406,30 @@ const Battle={
       `<div style="color:var(--accent2);">Kills: <b>${s.playerKills}</b> vs <b style="color:var(--warn)">${s.enemyKills}</b></div>`+
       `<div style="color:var(--accent2);">DPS: <b>${dps}</b> (peak: ${s.peakDPS})</div>`+
       `<div style="color:var(--accent2);">Units: <b>${playerAlive}</b> vs <b style="color:var(--warn)">${enemyAlive}</b></div>`;
+  },
+
+  // Render kill feed overlay.
+  _renderKillFeed(){
+    const el=$("killFeed");
+    if(!el)return;
+    if(!this._killFeed||this._killFeed.length===0){el.style.display="none";return;}
+    // Filter out entries older than 6 seconds.
+    const now=this.time;
+    this._killFeed=this._killFeed.filter(k=>now-k.t<6);
+    if(this._killFeed.length===0){el.style.display="none";return;}
+    el.style.display="block";
+    let html="";
+    for(const k of this._killFeed){
+      const age=now-k.t;
+      const opacity=Math.max(0.3,1-age/6);
+      const killerColor=k.killerTeam==="player"?"var(--ok)":k.killerTeam==="enemy"?"var(--warn)":"var(--muted)";
+      const victimColor=k.victimTeam==="player"?"var(--ok)":"var(--warn)";
+      html+=`<div style="opacity:${opacity};margin:2px 0;padding:2px 4px;background:rgba(0,0,0,.3);border-radius:3px;">`+
+        `<span style="color:${killerColor};font-weight:700;">${k.killer}</span>`+
+        `<span style="color:var(--muted);"> ⚔ </span>`+
+        `<span style="color:${victimColor};">${k.victim}</span></div>`;
+    }
+    el.innerHTML=html;
   },
 
   // Show unit inspector panel with detailed stats.
@@ -7915,6 +7962,7 @@ const G={
   cycleSpeed(){
     if(connected&&role==="guest"){transmit("cmd",{cmd:"speed"});return;}
     Battle.speed=Battle.speed===1?2:Battle.speed===2?4:1;
+    Battle._manualSpeed=true; // user override — disable dramatic slowdown
     const btn=$("speedBtn");
     if(btn)btn.textContent=Battle.speed+"×";
     // Save preferred speed.
