@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -37,12 +37,18 @@
 | **Round 4: E2E Share/Bot/Arena Unlock** | 4 | 0 | 0 |
 | **Round 4: Arena Unit Recipes** | 8 | 1 | 1 |
 | **Round 4: Full Bot Match Regression** | 1 | 0 | 0 |
+| **Round 5: Static Analysis (3 subagents)** | 90+ | 13 | 13 |
+| **Round 5: E2E Shop/Upgrade/Forge/Quest** | 11 | 0 | 0 |
+| **Round 5: E2E Ranked/Replays/Stats/Codex** | 10 | 1 | 1 |
+| **Round 5: E2E Spells/Difficulty/Endless** | 5 | 0 | 0 |
+| **Round 5: E2E Fix Verification** | 9 | 0 | 0 |
+| **Round 5: Full Bot Match Regression** | 1 | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **500+** | **15** | **15** |
+| **Total** | **600+** | **29** | **29** |
 
 ---
 
@@ -524,3 +530,79 @@ The auto-gradient path (line 3549) already had the safe `(shape.cx||0)-10` patte
 - `BotStrategy` is module-scoped. Tested via full bot match regression instead.
 - `serializeUnitsForPeer`/`deserializeUnitsFromPeer` are module-scoped. Tested via battle with all body plans.
 - Particle/projectile counts in test were 0 because `Battle.start()` creates copies of units — the original unit references don't reflect battle state. Full bot match regression confirms projectiles/particles work in real battles.
+
+---
+
+## Round 5 — Deep Static + E2E: Shop/Upgrade/Forge/Quests/Ranked/Spells (2026-07-31)
+
+**Focus:** Shop economy, upgrade system, forge flow, quest claiming, ranked/leaderboard, replay history, stats/profile, codex, tier list, spell system in battle, difficulty effects, endless mode, audio, keyboard shortcuts, settings persistence.
+
+**Method:** Three parallel static analysis subagents (shop/upgrade/forge, quests/achievements/ranked/replays/stats, spells/battle/audio/match) + E2E testing via Playwright.
+
+### Round 5: Bugs Found + Fixed (13 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 21 | **showLeaderboard crash if ranked undefined**: `showLeaderboard()` accesses `r.rating` without null check. Crashes with "Cannot read properties of undefined" if `save.ranked` is missing (corrupted save). | Critical | Added null check: `if(!r){toast("Ranked data not available");return;}` |
+| 22 | **blink_strike deals normal damage**: `takeDamage(u,target,enemies,u.d*2)` passes 4th param as damage override, but `takeDamage` only accepts 3 params. Ability deals 1× damage instead of 2×. | High | Added optional `dmgOverride` 4th parameter to `takeDamage`: `let dmg=dmgOverride!=null?dmgOverride:attacker.d;` |
+| 23 | **chain_lightning deals normal damage**: Same issue as #22. `takeDamage(u,t,enemies,u.d*0.8)` — 4th param ignored. Ability deals 1× damage instead of 0.8×. | High | Same fix as #22 (dmgOverride parameter). |
+| 24 | **Shop purchase wastes coins on duplicates**: `buyShopUnit()` deducts coins and shows "Added!" toast even when unit is already in collection. Players can waste coins buying duplicates. | High | Moved coin deduction inside the `if(!collection.some())` block. Duplicate shows "You already own X!" toast. |
+| 25 | **Zone buff_speed stacks every tick**: `u.moveSpeedMod += magnitude` runs every second in `tickZones`. Unit in zone for 5s gets +100 speed instead of +20. | Medium | Changed to `Math.max(u.moveSpeedMod||100, 100+magnitude)` — only applies the highest buff. |
+| 26 | **Zone buff_dmg stacks every tick**: `u.d = Math.round(u.d * (1+magnitude/100))` compounds every second. Unit in zone for 5s gets 2.49× damage instead of 1.2×. | Medium | Changed to use `u.baseD * (1+magnitude/100)` with `_buffDmgApplied` tracker — buff applied once, not compounded. |
+| 27 | **_doForge doesn't clear _forgeRunning on error**: If an error occurs during async forge (ad failure, LLM crash), `_forgeRunning` stays true, permanently blocking all future forges. | Medium | Wrapped both spell and unit forge paths in `try/finally` blocks. `_forgeRunning` always cleared in `finally`. |
+| 28 | **Spell name not sanitized (XSS)**: `templateSpellFallback()` sets `attrs.name=prompt.slice(0,18)` without stripping `<`, `>`, `"`. Spell name used in `innerHTML` — XSS risk. | Medium | Added sanitization: `.replace(/</g,"").replace(/>/g,"").replace(/"/g,"'")` |
+| 29 | **_initRest doesn't initialize ranked**: New saves with no version might not have `ranked` initialized. Migration v11 handles existing saves, but `_initRest` didn't have a fallback. | Low | Added `if(!this.save.ranked)this.save.ranked={...}` to `_initRest()`. |
+| 30 | **Quest progress div by zero + empty quest list**: `quest.progress/quest.target` crashes if target=0. `generateDaily()` skips regeneration if `q.list.length` is truthy (0 is falsy, so this actually works — but changed to `>0` for clarity). | Low | Added `quest.target>0?` guard. Changed `q.list.length` to `q.list.length>0`. |
+| 31 | **Spell cooldown can go negative**: `ps.cooldown-=dt` without clamping. Large dt (lag) could make cooldown negative. | Low | Changed to `Math.max(0, ps.cooldown-dt)`. |
+| 32 | **periodic_5s lastFire uninitialized**: `battle.time-entry.lastFire` produces NaN if `lastFire` is undefined (e.g., imported spell without initialization). | Low | Changed to `battle.time-(entry.lastFire||0)`. |
+| 33 | **addSpellToBook missing numeric clamping**: Spell forge doesn't clamp `magnitude`, `radius`, `duration` before adding to spellbook. Invalid values could cause balance issues or crashes. | Medium | Added `clamp()` calls for magnitude (1-200), radius (10-200), duration (0-10). Also added `target` enum validation. |
+
+### Round 5: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Shop render + purchase | ✅ Pass | Coins deducted correctly, item added. |
+| Shop insufficient coins | ✅ Pass | Coins don't go negative. |
+| Shop duplicate purchase | ✅ Pass | No coins wasted on duplicates (fixed). |
+| Upgrade screen + applyUpgrades | ✅ Pass | HP 110→143, DMG 12→15 at level 3. |
+| Forge flow (async + keepForge) | ✅ Pass | Unit generated, added to collection. |
+| Forge daily cap | ✅ Pass | Forge blocked at 10/day. |
+| Quest tracking + claiming | ✅ Pass | Reward coins granted on claim. |
+| Ranked/leaderboard | ✅ Pass | Modal shows rating, tier, W/L. |
+| Ranked uninitialized | ✅ Pass | No crash (fixed). |
+| Replay screen | ✅ Pass | Shows saved replays. |
+| Stats screen (with data) | ✅ Pass | Renders correctly. |
+| Stats screen (empty data) | ✅ Pass | No crash with zero matches. |
+| Profile screen | ✅ Pass | Renders correctly. |
+| Codex screen | ✅ Pass | All tabs accessible. |
+| Tier list screen | ✅ Pass | Renders correctly. |
+| Achievements screen | ✅ Pass | Renders correctly. |
+| Spell system in battle | ✅ Pass | playerSpells initialized. |
+| Difficulty effects | ✅ Pass | All 3 modes work (effects applied via bot AI, not stat modification). |
+| Endless mode | ✅ Pass | Accessible with 20 wins. |
+| Settings persistence | ✅ Pass | Settings saved to save.settings. |
+| Keyboard shortcuts | ✅ Pass | No crash on Space/Escape. |
+| blink_strike damage (crit=0) | ✅ Pass | Deals exactly 40 (20×2) — fixed. |
+| chain_lightning damage (crit=0) | ✅ Pass | Deals 16 (20×0.8) base per target — fixed. |
+| Full bot match regression | ✅ Pass | Battle screen, 14 units, 0 console errors. |
+
+### Round 5: Verified Non-Bugs (from subagent reports)
+
+- **`taunt` ability has no trigger case** — by design. `taunt` is in `PASSIVE_ABILITIES` and works via targeting override in `act()` (enemies target the taunter).
+- **`counter` ability has no implementation** — `counter` is a role, not an ability. The `abColors` entry is unused but harmless.
+- **`heal_over_time` missing from SPELL_EFFECT** — referenced in `tickZones` but not in `SPELL_ENUM.effect`, so it can't be selected. The `tickZones` handler is defensive coding.
+- **Division by zero in stats win rate** — `byArena`/`byDifficulty` data objects are only created when a replay exists, so `data.total` is always ≥1.
+- **Comeback achievement uses Match state** — `checkAchievements()` runs during `onMatchEnd()` before `Match` state is reset. State is correct at that point.
+- **Endless mode coin bonus overflow** — by design (endless progression). `Math.min` cap would defeat the purpose.
+- **Shop cost includes starters** — by design (cost scales with total collection size, not just forged units).
+- **Upgrade screen shows base stats** — by design (shows base → next level, not current → next).
+- **Audio context resume only on first gesture** — by design (browser autoplay policy requires user gesture).
+- **`regen` ability has no trigger case** — by design. `regen` is passive (ticked in `update()`).
+
+### Round 5: Subagent Findings Summary
+
+Three parallel subagents analyzed 90+ code paths across shop/upgrade/forge, quests/achievements/ranked/replays/stats, and spells/battle/audio/match. Of 36 reported findings:
+- 13 were confirmed real bugs (fixed above)
+- 11 were verified non-bugs (design choices or defensive coding)
+- 8 were test artifacts (module-scoped functions, RNG-dependent behavior)
+- 4 were low-priority design concerns (not bugs)
