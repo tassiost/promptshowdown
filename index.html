@@ -323,6 +323,13 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <h2>📋 Loadout</h2>
 <div class="detail" style="margin-bottom:8px;">4 cards in your loadout · tap collection to swap</div>
 <div id="loadoutArea" style="display:flex;gap:6px;justify-content:center;margin:10px 0;"></div>
+<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;margin:6px 0;">
+<button class="btn" onclick="G.autoFillLoadout()" style="font-size:.72rem;padding:4px 10px;">⚡ Auto-Fill Best</button>
+<button class="btn" onclick="G.savePreset()" style="font-size:.72rem;padding:4px 10px;">💾 Save Preset</button>
+<button class="btn" onclick="G.loadPreset()" style="font-size:.72rem;padding:4px 10px;">📂 Load Preset</button>
+<button class="btn" onclick="G.clearLoadout()" style="font-size:.72rem;padding:4px 10px;">🗑️ Clear</button>
+</div>
+<div id="presetList" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="synergyMeter" style="margin:10px 0;font-size:.8rem;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <h2 style="font-size:.85rem;margin-top:14px;">Collection</h2>
 <div class="detail" style="margin-bottom:8px;">Tap a unit with a duplicate to fuse (2 → +1 Lv)</div>
@@ -7652,9 +7659,103 @@ const G={
 
   next(){this.start();}, // Phase 8: starts a new match
 
+  // Auto-fill loadout with the highest power-score units, prioritizing role diversity.
+  autoFillLoadout(){
+    const coll=this.collectionUnits();
+    if(coll.length===0){toast("No units available");return;}
+    // Score each unit (same formula as tier list).
+    const scored=coll.map(u=>{
+      const lvl=this.unitLevel(u.n);
+      const hp=u.h*(1+0.1*lvl),dmg=u.d*(1+0.1*lvl);
+      let score=hp*0.5+dmg*2+u.r*0.3+u.s*0.2+u.a*5+(u.crit||0)*20;
+      const abBonus={none:0,splash:15,heal:20,dodge:25,poison:15,spawn:20,lifesteal:20,explode:15,heal_burst:20,shield:25,rage:20,slow:10,ramp:25,thorns:15,blink_strike:25,frenzy:20,regen:15,cleanse:15,taunt:20,executioner:25,chain_lightning:25};
+      score+=abBonus[u.ability]||0;
+      score+=u.rar==="legendary"?30:u.rar==="rare"?15:0;
+      return {u,score};
+    }).sort((a,b)=>b.score-a.score);
+    // Pick top unit for each role, prioritizing frontline, carry, support, counter.
+    const rolePriority=["frontline","carry","support","counter"];
+    const picked=[];
+    const usedNames=new Set();
+    for(const role of rolePriority){
+      const best=scored.find(s=>s.u.role===role&&!usedNames.has(s.u.n));
+      if(best){picked.push(best.u.n);usedNames.add(best.u.n);}
+    }
+    // Fill remaining slots with highest-scored unused units.
+    for(const s of scored){
+      if(picked.length>=4)break;
+      if(!usedNames.has(s.u.n)){picked.push(s.u.n);usedNames.add(s.u.n);}
+    }
+    this.save.loadout=picked.slice(0,4);
+    while(this.save.loadout.length<4)this.save.loadout.push(scored[0]?.u.n||"Knight");
+    saveData(this.save);
+    GameAudio.sfx("level_up");
+    toast("⚡ Loadout auto-filled with best units!");
+    this.deck();
+  },
+  // Save current loadout as a named preset.
+  savePreset(){
+    const name=prompt("Preset name (e.g. 'Aggressive', 'Tank'):");
+    if(!name||!name.trim())return;
+    if(!this.save.presets)this.save.presets={};
+    this.save.presets[name.trim()]=this.save.loadout.slice();
+    saveData(this.save);
+    GameAudio.sfx("ui_click");
+    toast("💾 Preset '"+name.trim()+"' saved!");
+    this._renderPresetList();
+  },
+  // Load a preset — shows a list of saved presets to choose from.
+  loadPreset(){
+    this._renderPresetList(true);
+  },
+  _renderPresetList(showAll){
+    const el=$("presetList");
+    if(!el)return;
+    const presets=this.save.presets||{};
+    const keys=Object.keys(presets);
+    if(keys.length===0){
+      el.style.display=showAll?"block":"none";
+      el.innerHTML="<div style='text-align:center;color:var(--muted);font-size:.75rem;'>No presets saved. Use 'Save Preset' to create one.</div>";
+      return;
+    }
+    el.style.display="block";
+    let html="<div style='font-size:.75rem;font-weight:700;margin-bottom:6px;'>Saved Presets:</div>";
+    for(const name of keys){
+      const loadout=presets[name];
+      const units=loadout.map(n=>this.collectionUnits().find(u=>u.n===n)).filter(Boolean);
+      const names=units.map(u=>`<span style="color:${u.c}">${u.n}</span>`).join(", ");
+      html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:3px 0;background:var(--bg);border-radius:var(--radius-sm);">`+
+        `<div><span style="font-weight:700;font-size:.78rem;">${name}</span><br><span style="font-size:.65rem;">${names}</span></div>`+
+        `<div style="display:flex;gap:4px;"><button class="btn primary" style="font-size:.65rem;padding:2px 8px;" onclick="G.applyPreset('${name.replace(/'/g,"\\'")}')">Load</button>`+
+        `<button class="btn red" style="font-size:.65rem;padding:2px 8px;" onclick="G.deletePreset('${name.replace(/'/g,"\\'")}')">✕</button></div></div>`;
+    }
+    el.innerHTML=html;
+  },
+  applyPreset(name){
+    const presets=this.save.presets||{};
+    if(!presets[name])return;
+    this.save.loadout=presets[name].slice();
+    saveData(this.save);
+    GameAudio.sfx("ui_click");
+    toast("📂 Loaded preset '"+name+"'");
+    this.deck();
+  },
+  deletePreset(name){
+    if(!this.save.presets||!this.save.presets[name])return;
+    delete this.save.presets[name];
+    saveData(this.save);
+    this._renderPresetList();
+  },
+  clearLoadout(){
+    this.save.loadout=["","","",""];
+    saveData(this.save);
+    this.deck();
+  },
+
   // Phase 13/16: deck screen = 4 loadout slots + synergy meter + collection.
   deck(){
     this.screen("deck");
+    this._renderPresetList();
     // Render loadout slots (4 cards).
     const la=$("loadoutArea");
     if(la){
@@ -8070,6 +8171,64 @@ const G={
         `<div style="font-size:.7rem;color:var(--muted);">${c.label}</div></div>`;
     }
     html+="</div>";
+    // Match history analysis: win rate by arena and difficulty.
+    const replays=this.save.replays||[];
+    if(replays.length>0){
+      // Win rate by arena.
+      const byArena={};
+      const byDifficulty={};
+      for(const r of replays){
+        const arena=r.arena||0;
+        const diff=r.difficulty||"normal";
+        if(!byArena[arena])byArena[arena]={wins:0,total:0};
+        byArena[arena].total++;
+        if(r.winner==="player")byArena[arena].wins++;
+        if(!byDifficulty[diff])byDifficulty[diff]={wins:0,total:0};
+        byDifficulty[diff].total++;
+        if(r.winner==="player")byDifficulty[diff].wins++;
+      }
+      html+="<div style='margin:14px 0 6px;font-weight:700;font-size:.85rem;'>📈 Win Rate by Arena</div>";
+      html+="<div style='display:flex;flex-direction:column;gap:4px;'>";
+      for(const arena of Object.keys(byArena).sort((a,b)=>a-b)){
+        const data=byArena[arena];
+        const wr=Math.round(data.wins/data.total*100);
+        const arenaName=this.arenas[arena]?.n||"Unknown";
+        const barColor=wr>=50?"var(--ok)":"var(--warn)";
+        html+=`<div style="display:flex;align-items:center;gap:8px;font-size:.75rem;">`+
+          `<span style="min-width:80px;">${arenaName}</span>`+
+          `<div style="flex:1;height:16px;background:var(--bg);border-radius:8px;overflow:hidden;">`+
+          `<div style="width:${wr}%;height:100%;background:${barColor};border-radius:8px;transition:width .3s;"></div></div>`+
+          `<span style="min-width:60px;text-align:right;color:${barColor};font-weight:700;">${data.wins}/${data.total} (${wr}%)</span></div>`;
+      }
+      html+="</div>";
+      // Win rate by difficulty.
+      html+="<div style='margin:14px 0 6px;font-weight:700;font-size:.85rem;'>🎯 Win Rate by Difficulty</div>";
+      html+="<div style='display:flex;flex-direction:column;gap:4px;'>";
+      for(const diff of ["easy","normal","hard"]){
+        if(!byDifficulty[diff])continue;
+        const data=byDifficulty[diff];
+        const wr=Math.round(data.wins/data.total*100);
+        const barColor=wr>=50?"var(--ok)":"var(--warn)";
+        const diffColor=diff==="easy"?"var(--ok)":diff==="hard"?"var(--warn)":"var(--accent2)";
+        html+=`<div style="display:flex;align-items:center;gap:8px;font-size:.75rem;">`+
+          `<span style="min-width:80px;color:${diffColor};font-weight:700;text-transform:uppercase;">${diff}</span>`+
+          `<div style="flex:1;height:16px;background:var(--bg);border-radius:8px;overflow:hidden;">`+
+          `<div style="width:${wr}%;height:100%;background:${barColor};border-radius:8px;transition:width .3s;"></div></div>`+
+          `<span style="min-width:60px;text-align:right;color:${barColor};font-weight:700;">${data.wins}/${data.total} (${wr}%)</span></div>`;
+      }
+      html+="</div>";
+      // Recent form: last 10 matches.
+      html+="<div style='margin:14px 0 6px;font-weight:700;font-size:.85rem;'>📋 Recent Form (last 10)</div>";
+      const recent=replays.slice(0,10).reverse();
+      html+="<div style='display:flex;gap:3px;justify-content:center;flex-wrap:wrap;'>";
+      for(const r of recent){
+        const win=r.winner==="player";
+        const icon=win?"W":"L";
+        const color=win?"var(--ok)":"var(--warn)";
+        html+=`<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:${color};color:#fff;border-radius:4px;font-size:.7rem;font-weight:700;">${icon}</div>`;
+      }
+      html+="</div>";
+    }
     el.innerHTML=html;
   },
 
