@@ -85,6 +85,13 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 .input:focus{border-color:var(--accent);}
 #cv{background:radial-gradient(ellipse at center,#1a2540 0%,#0d1526 70%);border:1px solid var(--border);touch-action:none;max-width:100%;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg),inset 0 0 40px rgba(0,0,0,.4);}
 #battleLog{position:fixed;right:5px;top:70px;width:120px;max-height:140px;overflow:auto;background:rgba(11,17,32,.9);border:1px solid var(--border);font-size:8px;padding:5px;border-radius:var(--radius-sm);color:var(--muted);}
+/* Spell bar */
+.spellBtn{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--accent);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.7rem;font-weight:700;color:var(--accent2);transition:all .15s ease;position:relative;min-width:60px;text-align:center;box-shadow:0 2px 8px rgba(124,58,237,.3);}
+.spellBtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 4px 16px rgba(124,58,237,.5);border-color:var(--accent2);}
+.spellBtn:active:not(:disabled){transform:translateY(0);}
+.spellBtn:disabled{opacity:.4;cursor:not-allowed;}
+.spellBtn .spellCD{position:absolute;inset:0;background:rgba(0,0,0,.6);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:.9rem;color:var(--warn);font-weight:900;}
+.spellBtn .spellIcon{font-size:1.2rem;display:block;margin-bottom:2px;}
 #networkBadge{position:fixed;top:8px;right:8px;display:none;color:var(--warn);border:1px solid var(--warn);padding:4px 8px;font-size:10px;border-radius:6px;background:rgba(245,158,11,.1);}
 .aiBox{background:var(--card);border:1px solid var(--border);padding:12px;margin:6px;width:240px;text-align:center;font-size:.72rem;border-radius:var(--radius-sm);box-shadow:var(--shadow);}
 .aiBar{height:8px;width:100%;background:var(--bg);border-radius:4px;margin-top:8px;overflow:hidden;}
@@ -226,6 +233,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <span id="turn">T0</span>
 </div>
 <canvas id="cv"></canvas>
+<div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;"></div>
 <div id="battleLog"></div>
 <div id="networkBadge">🌐 ONLINE</div>
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
@@ -4048,6 +4056,7 @@ const Battle={
   autoTimer:null,
   spells:[],         // Phase 23: active spell entries {spec,team,fired,lastFire}
   zones:[],          // Phase 23: persistent spell zones
+  playerSpells:[],   // manually-castable player spells {spec, cooldown, maxCD}
   debug:false,       // toggle battle debug logging
   _debugT:0,         // debug log accumulator
   bgTheme:"forest",  // arena background theme
@@ -4109,10 +4118,18 @@ const Battle={
     // Phase 23: init spells + zones.
     this.spells=[];
     this.zones=[];
+    // Manually-castable player spells (each gets a cooldown).
+    this.playerSpells=[];
     if(spells){
-      for(const s of (spells.player||[]))this.spells.push({spec:s,team:"player",fired:false,lastFire:0});
+      for(const s of (spells.player||[])){
+        // Auto-trigger spells go into the auto-fire list.
+        this.spells.push({spec:s,team:"player",fired:false,lastFire:0});
+        // Also add to manual cast list (player can cast anytime, subject to cooldown).
+        this.playerSpells.push({spec:s,cooldown:0,maxCD:this._spellCooldown(s)});
+      }
       for(const s of (spells.enemy||[]))this.spells.push({spec:s,team:"enemy",fired:false,lastFire:0});
     }
+    this._renderSpellBar();
     this.time=0;
     this.running=true;
     this.winner=null;
@@ -4172,6 +4189,12 @@ const Battle={
       this.stop();
       return;
     }
+    // Update spell bar cooldown display (throttled to ~4fps to avoid DOM thrash).
+    this._spellBarT=(this._spellBarT||0)+dt;
+    if(this._spellBarT>=0.25){
+      this._spellBarT=0;
+      this._renderSpellBar();
+    }
     this.checkEnd();
   },
 
@@ -4181,6 +4204,12 @@ const Battle={
     // Phase 23: spell trigger checks + zone ticking.
     Spell.checkTriggers(this,dt);
     Spell.tickZones(this,dt);
+    // Tick player spell cooldowns.
+    if(this.playerSpells){
+      for(const ps of this.playerSpells){
+        if(ps.cooldown>0)ps.cooldown-=dt;
+      }
+    }
     // 1. status ticks + death animation + minion TTL
     for(let u of this.units){
       if(u.h<=0){
@@ -4925,6 +4954,58 @@ const Battle={
     this.running=false;
     cancelAnimationFrame(this.frame);
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    // Hide spell bar.
+    const bar=$("spellBar");
+    if(bar)bar.style.display="none";
+  },
+
+  // Spell cooldown based on effect power.
+  _spellCooldown(s){
+    const mag=s.magnitude||30;
+    if(s.effect==="damage")return Math.max(3,mag/15);
+    if(s.effect==="heal_allies"||s.effect==="shield_allies")return Math.max(4,mag/10);
+    if(s.effect==="stun")return 8;
+    if(s.effect==="summon")return 10;
+    if(s.effect==="buff_dmg"||s.effect==="buff_speed")return 8;
+    return 6;
+  },
+
+  // Render the spell bar with clickable spell buttons.
+  _renderSpellBar(){
+    const bar=$("spellBar");
+    if(!bar)return;
+    if(!this.playerSpells||!this.playerSpells.length){bar.style.display="none";return;}
+    bar.style.display="flex";
+    bar.innerHTML="";
+    const icons={explosion:"💥",frost:"❄️",lightning:"⚡",poison_cloud:"☠️",heal_glow:"💚",shockwave:"🌊",fire_wall:"🔥"};
+    for(let i=0;i<this.playerSpells.length;i++){
+      const ps=this.playerSpells[i];
+      const s=ps.spec;
+      const icon=icons[s.fxType]||"✨";
+      const btn=document.createElement("button");
+      btn.className="spellBtn";
+      btn.disabled=ps.cooldown>0||!this.running;
+      btn.innerHTML=`<span class="spellIcon">${icon}</span>${s.name||"Spell"}`+
+        (ps.cooldown>0?`<span class="spellCD">${Math.ceil(ps.cooldown)}</span>`:"");
+      btn.onclick=()=>this._castPlayerSpell(i);
+      bar.appendChild(btn);
+    }
+  },
+
+  // Cast a player spell manually.
+  _castPlayerSpell(idx){
+    if(!this.running||!this.playerSpells||!this.playerSpells[idx])return;
+    const ps=this.playerSpells[idx];
+    if(ps.cooldown>0)return;
+    // Fire the spell for the player's team.
+    this.fireSpell(ps.spec,"player");
+    ps.cooldown=ps.maxCD;
+    this._renderSpellBar();
+  },
+
+  // Fire a spell (wrapper around Spell.fire with logging).
+  fireSpell(spec,team){
+    Spell.fire(spec,team,this);
   },
 
   tick(){
@@ -5485,6 +5566,11 @@ const G={
     let target=$(id);
     if(!target)target=$("menu");
     if(target)target.classList.add("active");
+    // Hide spell bar when not in battle.
+    if(id!=="battle"){
+      const bar=$("spellBar");
+      if(bar)bar.style.display="none";
+    }
     // Clean up any leftover fixed overlays (forge confirm, disconnect prompt).
     [...document.querySelectorAll("div")].forEach(d=>{
       if(d.id==="errorPanel")return; // keep error panel
@@ -6109,10 +6195,10 @@ const G={
   // Phase 13: rarity-weighted draw from the loadout (4 cards).
   // Excludes names already used in this draw (no dupes within a draw).
   rollOne(usedNames){
-    // Phase 23: 20% chance to roll a spell from spellbook (if any).
+    // Phase 23: 30% chance to roll a spell from spellbook (if any).
     const spellbook=this.save.spellbook||[];
     const availableSpells=spellbook.filter(s=>!usedNames.has(s.name));
-    if(availableSpells.length&&R()<0.2){
+    if(availableSpells.length&&R()<0.3){
       const spell=availableSpells[F(R()*availableSpells.length)];
       return {...spell,_isSpell:true};
     }
