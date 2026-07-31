@@ -3809,7 +3809,13 @@ const Battle={
       this._fpsTier=avgFps>50?"high":avgFps>30?"medium":"low";
       this._fpsFrames=0;this._fpsAccum=0;
     }
-    this.update(dt);
+    try{
+      this.update(dt);
+    }catch(e){
+      showError("Update error: "+(e&&e.message||e));
+      this.stop();
+      return;
+    }
     try{
       this.render();
     }catch(e){
