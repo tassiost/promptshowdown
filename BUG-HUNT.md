@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -64,12 +64,15 @@
 | **Round 10: Static Analysis (2 subagents)** | 60+ | 1 | 1 |
 | **Round 10: E2E Abilities/Movements/Targetings** | 35 | 0 | 0 |
 | **Round 10: E2E Export/Import/Arenas/Replay** | 12 | 0 | 0 |
+| **Round 11: Static Analysis (2 subagents)** | 50+ | 0 | 0 |
+| **Round 11: E2E Achievements/Difficulty/Fusion/Deck** | 40+ | 0 | 0 |
+| **Round 11: E2E Screens/MultiRound/Ads/Regression** | 25+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1150+** | **58** | **58** |
+| **Total** | **1270+** | **58** | **58** |
 
 ---
 
@@ -942,3 +945,58 @@ Two parallel subagents analyzed 60+ code paths across match flow/deck/bot AI/col
 - **Comeback achievement uses lives condition** — checked after onMatchEnd; works correctly for normal win-after-loss scenario.
 - **Battle.stop doesn't clear units array** — Battle.start clears these arrays; stale data between battles is not visible to users.
 - **Export uses deprecated unescape/escape** — currently works in all browsers; future compatibility issue only.
+
+---
+
+## Round 11 — Deep Static + E2E: Achievements/Difficulty/Fusion/Deck/Screens (2026-07-31)
+
+**Focus:** Achievements (unlock, notification, tracking), difficulty selection (easy/normal/hard), unit fusion (2→+1 Lv), deck search/filter, auto-fill loadout, profile screen, tier list screen, AdSDK, multi-round match progression, win prediction tracking.
+
+**Method:** Two parallel static analysis subagents (Achievements/Difficulty/Fusion/Deck/AutoFill, AdSDK/MatchProgress/Profile/TierList/History) + E2E testing via Playwright.
+
+### Round 11: Bugs Found + Fixed (0 bugs)
+
+No bugs found. All subagent findings were verified as non-bugs.
+
+### Round 11: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| All 12 screens navigation | ✅ Pass | menu, deck, shop, upgrade, forge, codex, stats, settings, achievements, replays, profile, tierlist |
+| Achievements screen (empty) | ✅ Pass | 23 achievements listed, 0 unlocked. |
+| Achievements screen (via codex tab) | ✅ Pass | Tab switches correctly. |
+| Profile screen (empty data) | ✅ Pass | No crash with 0 wins/losses. |
+| Profile screen (with data) | ✅ Pass | Renders correctly. |
+| Tier list screen | ✅ Pass | Renders without crash. |
+| Stats screen (empty) | ✅ Pass | No division by zero with 0 replays. |
+| Stats screen (with data) | ✅ Pass | Win rate by arena/difficulty renders correctly. |
+| Difficulty: easy | ✅ Pass | Saved correctly, affects bot stats (-20%). |
+| Difficulty: normal | ✅ Pass | Saved correctly, default. |
+| Difficulty: hard | ✅ Pass | Saved correctly, affects bot stats (+20%). |
+| Unit fusion (duplicates) | ✅ Pass | Takes higher of each stat, increments upgrade level, removes 2nd copy. |
+| Unit fusion (non-duplicates) | ✅ Pass | Fails gracefully with toast. |
+| Deck search by name | ✅ Pass | Filters to matching units. |
+| Deck filter by role | ✅ Pass | Filters to matching role. |
+| Auto-fill loadout (good collection) | ✅ Pass | Picks 4 best units by power score. |
+| Auto-fill loadout (empty collection) | ✅ Pass | Falls back to base loadout. |
+| Multi-round match (round 1) | ✅ Pass | Lives decrement correctly (3/3 → 3/2). |
+| Multi-round match (continue) | ✅ Pass | Next round button works. |
+| AdSDK (forge ad button) | ✅ Pass | Button exists, stub works. |
+| Win prediction tracking | ✅ Pass | _lastPrediction and render function exist. |
+| Full bot match regression | ✅ Pass | Battle, 15 units, 0 console errors. |
+
+### Round 11: Verified Non-Bugs (from subagent reports)
+
+- **Auto-fill loadout redundant code** — the while loop is a safety fallback; doesn't cause incorrect behavior.
+- **Fusion uses reference comparison** — `matches` is filtered from `coll`, so `b` is a reference to an element in `coll`; `findIndex(u=>u===b)` always finds it.
+- **Difficulty not initialized in save** — all usages use `||"normal"` fallback, so undefined is handled.
+- **Deck filter values persist** — by design (filters persist across screen navigation for convenience).
+- **Comeback achievement uses lives condition** — works correctly for normal win-after-loss scenario.
+- **Achievement progress display fails silently** — try-catch is intentional (prevents crash from buggy progress functions).
+- **Division by zero in stats win rate** — `byArena`/`byDifficulty` entries are only created when a replay is processed (which increments `total`), so `data.total` is always >= 1.
+- **Interstitial ad shows before result screen** — AdSDK is a stub; future-proofing concern only.
+- **AdSDK cooldown** — no cooldown logic exists (stub), which is fine.
+- **Multi-round match progression** — lives, rounds, draw condition, and comeback all work correctly.
+- **Profile screen** — uses optional chaining for arena lookups; win rate has guard clause.
+- **Tier list** — uses `Math.max(1, ...)` to prevent division by zero.
+- **Match history** — replays capped at 10 entries; handles missing data gracefully.
