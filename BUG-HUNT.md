@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16 + Round 17 + Round 18)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16 + Round 17 + Round 18 + Round 19)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -81,12 +81,14 @@
 | **Round 17: E2E Shop/Match/AI/Sprite/Bot/Keyboard/Memory** | 30+ | 0 | 0 |
 | **Round 18: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
 | **Round 18: E2E Combat/Arena/Touch/Tier/Leaderboard** | 30+ | 0 | 0 |
+| **Round 19: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
+| **Round 19: E2E Spells/FX/Canvas/Migration/Settings/Codex** | 30+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1930+** | **82** | **82** |
+| **Total** | **2030+** | **86** | **86** |
 
 ---
 
@@ -1342,3 +1344,52 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Snapshot doesn't check Battle.units exists** — `Battle.start` always initializes `units` array; can't be undefined during battle.
 - **Replay save doesn't validate Battle.units** — same as above.
 - **Tier list deduplication by name** — by design; prevents showing duplicate entries for the same unit.
+
+---
+
+## Round 19 — Deep Static + E2E: Spells/FX/Canvas/Migration/Settings (2026-07-31)
+
+**Focus:** Spell system (casting, cooldowns, AOE, spell bar, spell effects, spell shapes), battle FX (particles, screen shake, hit flash, death animation, damage numbers), canvas rendering (resize, high DPI, dark mode), save migration (version upgrades, field validation), codex (unit encyclopedia), profile/stats (achievements, win rate), settings (all options, persist, apply), onboarding, comeback mechanic.
+
+**Method:** Two parallel static analysis subagents (Spells/FX/Canvas/Death/Inspector, SaveMigration/Codex/Profile/Settings/Onboarding) + E2E testing via Playwright.
+
+### Round 19: Bugs Found + Fixed (4 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 84 | **Damage numbers not cleared in Battle.stop()**: The `stop()` function cleared `particles`, `shakeAmount`, and `roundFlash` to prevent FX leaking between battles, but didn't clear `damageNums`. While `start()` does clear it, stale damage numbers could persist if battle state was accessed after stop but before the next start. | Medium | Added `this.damageNums=[];` to the cleanup section in `Battle.stop()`. |
+| 85 | **Unit inspector crash on null unit**: `_showUnitInspector(u)` assumed `u` was always a valid unit object and immediately accessed `u.team`, `u.h`, `u.mh`, etc. If called with null/undefined (e.g., unit removed between click and inspector call), it would crash with "Cannot read property 'team' of null". | High | Added guard: `if(!el||!u||u.h===undefined)return;` at the start of `_showUnitInspector()`. |
+| 86 | **Spell.fire crash on null/missing spec**: `Spell.fire(spec,team,battle)` accessed `spec.target` and `spec.effect` without checking if `spec` itself was valid. If a spell with a malformed or missing spec was fired (e.g., from P2P data corruption or LLM forge error), it would crash. | High | Added guard: `if(!spec||!spec.effect||!spec.target)return;` at the start of `Spell.fire()`. |
+| 87 | **SPELL_SHAPE point targets dead units**: The `point(anchor)` shape returned `anchor?[anchor]:[]` without checking if the anchor unit was alive. Other shapes (like `circle_aoe`) filtered with `u.h>0`, but `point` didn't, causing spells to waste effects on dead units. | Low | Changed to `anchor&&anchor.h>0?[anchor]:[]` to filter dead units consistently. |
+
+### Round 19: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Spell bar rendering | ✅ Pass | 1 spell button visible, playerSpells=1. |
+| Spell casting | ✅ Pass | Click spell button → spell fires, no crash. |
+| Battle FX: particles | ✅ Pass | ~54 particles (bounded, no leak). |
+| Battle FX: damage numbers | ✅ Pass | ~7 damage numbers (bounded at 40 max). |
+| Battle FX: screen shake | ✅ Pass | Shake decays over time. |
+| Battle FX: hit flash | ✅ Pass | Hit flash present on units taking damage. |
+| Canvas rendering | ✅ Pass | 400×550 canvas, context valid, resize handler present. |
+| Damage numbers cleanup | ✅ Pass | 0 damageNums after Battle.stop(). |
+| Unit inspector null check | ✅ Pass | No crash on null/undefined unit. |
+| Spell.fire null check | ✅ Pass | No crash on null/empty spec (verified via source). |
+| Save migration (v1→v12) | ✅ Pass | Version=12, all fields created (collection, quests, ranked, settings). |
+| Settings (6 options) | ✅ Pass | musicVolume, sfxVolume, quality, reducedMotion, colorblind, highContrast — all persist. |
+| Codex | ✅ Pass | Screen activates correctly. |
+| Profile | ✅ Pass | Screen activates correctly. |
+| Full bot match regression | ✅ Pass | Battle, 15 units, no NaN, 0 console errors. |
+
+### Round 19: Verified Non-Bugs (from subagent reports)
+
+- **chain_lightning missing description** — already present in ABILITY_DESCRIPTIONS (line 3165).
+- **Quality setting "medium" not handled** — "medium" is only returned by auto-quality FPS logic, not a user-selectable option; treated as "high" is acceptable.
+- **Settings don't apply immediately** — quality/reducedMotion/colorblind/highContrast apply on next render frame; not a bug.
+- **predStats avgError NaN** — lazily initialized with `{correct:0,total:0,avgError:0}`; display code checks `ps&&ps.total>0`.
+- **predStats not in migration** — lazily initialized; display code handles undefined safely.
+- **Spell summon effect empty units** — fallback position works correctly via falsy check.
+- **Spell zone summon unbounded growth** — zone duration caps total spawns; 3s × 3 per tick = 9 max, acceptable.
+- **Canvas render missing clearRect** — `drawBackground()` fills entire canvas with gradient; clearRect not needed.
+- **Unit inspector stale data** — inspector is a snapshot view; refreshing every frame would be excessive. Hidden on battle end.

@@ -4496,7 +4496,7 @@ const SPELL_TARGET={
 };
 // Phase 23: spell shape — returns list of affected units given anchor + spec.
 const SPELL_SHAPE={
-  point(anchor){return anchor?[anchor]:[];},
+  point(anchor){return anchor&&anchor.h>0?[anchor]:[];},
   circle_aoe(anchor,spec,b){
     if(!anchor)return[];
     const ax=anchor.x??0,ay=anchor.y??0;
@@ -4586,6 +4586,7 @@ const SPELL_EFFECT={
 // Phase 23: Spell object — resolves a spell spec into an effect at battle time.
 const Spell={
   fire(spec,team,battle){
+    if(!spec||!spec.effect||!spec.target)return;
     const anchor=SPELL_TARGET[spec.target]?.(team,battle);
     if(!anchor&&spec.shape!=="persistent_zone")return;
     let affected=[];
@@ -5966,6 +5967,7 @@ const Battle={
     GameAudio.stopMusic();
     // Clean up visual state so it doesn't leak into the next battle.
     this.particles=[];
+    this.damageNums=[];
     this.shakeAmount=0;
     this.roundFlash=null;
     // Hide spell bar.
@@ -6052,7 +6054,7 @@ const Battle={
   // Show unit inspector panel with detailed stats.
   _showUnitInspector(u){
     const el=$("unitInspector");
-    if(!el)return;
+    if(!el||!u||u.h===undefined)return;
     const teamColor=u.team==="player"?"var(--accent2)":"var(--warn)";
     const teamLabel=u.team==="player"?"ALLY":"ENEMY";
     const hpPct=Math.round(u.h/u.mh*100);
