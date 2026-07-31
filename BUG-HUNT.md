@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16 + Round 17)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -77,12 +77,14 @@
 | **Round 15: E2E Forge/Ach/Screens/Settings/A11y** | 20+ | 0 | 0 |
 | **Round 16: Static Analysis (2 subagents)** | 60+ | 2 | 2 |
 | **Round 16: E2E Quests/Ranked/Replays/Fusion/Screens** | 30+ | 0 | 0 |
+| **Round 17: Static Analysis (2 subagents)** | 60+ | 3 | 3 |
+| **Round 17: E2E Shop/Match/AI/Sprite/Bot/Keyboard/Memory** | 30+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1730+** | **75** | **75** |
+| **Total** | **1830+** | **78** | **78** |
 
 ---
 
@@ -1248,3 +1250,47 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Endless mode level never decreases on loss** — by design. Endless is about escalation; losing doesn't reset progress.
 - **High contrast doesn't trigger immediate re-render** — canvas rendering applies on next animation frame; not a bug.
 - **Onboarding** — works correctly, shows for new users (`onboarded=false`).
+
+---
+
+## Round 17 — Deep Static + E2E: Shop/Match/AI/Sprite/Bot/Keyboard/Memory (2026-07-31)
+
+**Focus:** Sprite rendering (body plans, weapons, animations, death), targeting/AI (targeting modes, attack conditions, ability triggers), match flow (scout, draft, formation, round transitions), shop system (unit packs, reroll, purchase), bot AI (loadout generation, picks, difficulty), memory leaks (event listeners, intervals, RAF cleanup), LLM integration, keyboard shortcuts, CSS/styling edge cases, daily/login rewards, game state management.
+
+**Method:** Two parallel static analysis subagents (Sprites/Targeting/MatchFlow/Bot/Shop, MemoryLeaks/LLM/Keyboard/CSS/Rewards/State) + E2E testing via Playwright.
+
+### Round 17: Bugs Found + Fixed (3 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 77 | **Daily win bonus display overwritten**: In `onMatchEnd`, the streak bonus and daily bonus were added to `coinGain` and `this.save.coins` directly. But then `coinGain` was overwritten with `20+F(R()*15)` (the base reward), losing the accumulated streak and daily bonus from the displayed amount. The coins were saved correctly (added directly to `this.save.coins`), but the result screen showed only the base reward (e.g., "+30" instead of "+130"). | High | Changed `coinGain=20+F(R()*15)` to `coinGain+=20+F(R()*15)` (accumulate instead of overwrite). Removed the redundant direct `this.save.coins` additions for streak and daily bonus (now handled by the single `this.save.coins+=coinGain` at the end). |
+| 78 | **Interpolation RAF not canceled on battle stop**: `Battle.stop()` canceled `this.frame` (the main RAF) but not `this._interpRAF` (the interpolation RAF used for P2P guest rendering). The interp loop self-terminates when `Battle.running` becomes false, but there's a window where it could continue firing after disconnect/error. | Medium | Added `if(this._interpRAF){cancelAnimationFrame(this._interpRAF);this._interpRAF=null;}` to `Battle.stop()`. |
+| 79 | **Keyboard shortcuts fire in contenteditable fields**: The keydown handler checked for `INPUT` and `TEXTAREA` tags but not `isContentEditable`. If a contenteditable div was focused, keyboard shortcuts would still fire, potentially triggering unwanted actions while typing. | Low | Added `e.target.isContentEditable` to the input field check in the keydown handler. |
+
+### Round 17: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Daily win bonus: coins awarded | ✅ Pass | 1000→1130 (gain=130 = base 30 + daily 100). |
+| Daily win bonus: display | ✅ Pass | Shows "+130" (was "+30" before fix). |
+| Shop: screen activation | ✅ Pass | Shop screen activates correctly. |
+| Shop: purchase | ✅ Pass | Coins deducted (10000→9885), unit added to collection. |
+| Shop: reroll | ✅ Pass | No crash on reroll. |
+| Match flow: draft | ✅ Pass | 3 cards shown, can pick. |
+| Match flow: battle | ✅ Pass | 9 player units, 9 enemy units, battle running. |
+| Targeting/AI | ✅ Pass | Units have valid targeting, movement, and live targets. |
+| Sprite rendering | ✅ Pass | Valid weaponType, animState, recipe. Canvas renders. |
+| Bot AI | ✅ Pass | 4-unit loadout (Wizard, Wizard, Knight, Slash). |
+| Keyboard: escape | ✅ Pass | No crash on escape key. |
+| Memory leaks: 20 screen transitions | ✅ Pass | 0 modals leaked, 2 overlays (spell bar + canvas). |
+| Full bot match regression | ✅ Pass | Battle, 17 units, no NaN, 0 console errors. |
+
+### Round 17: Verified Non-Bugs (from subagent reports)
+
+- **showAdStub interval not cleaned on external removal** — only happens if DOM is manually manipulated; normal flow always completes the countdown.
+- **Audio init event listeners accumulate** — listeners are removed after first user gesture; they don't accumulate on screen transitions.
+- **attrsToUnit can return null** — template fallback always produces valid attrs; double-null is not possible in practice.
+- **Escape key modal detection fragile** — all modals in the game use `z-index:9999` inline style, so the selector works.
+- **Reconnect overlay interval not cleaned on match end** — `cancelReconnect` is called in the disconnect handler which covers all paths.
+- **Model poll interval not cleaned on LLM cancel** — the interval checks `!llmLoading` which is set to false on cancel.
+- **P2P test wait timer not cleaned** — best-effort feature; timer self-terminates after timeout.

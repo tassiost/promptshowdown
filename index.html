@@ -5960,6 +5960,7 @@ const Battle={
   stop(){
     this.running=false;
     cancelAnimationFrame(this.frame);
+    if(this._interpRAF){cancelAnimationFrame(this._interpRAF);this._interpRAF=null;}
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
     // Stop battle music in all code paths (error, timeout, disconnect).
     GameAudio.stopMusic();
@@ -8538,7 +8539,6 @@ const G={
       if(this.save.winStreak>=3){
         const streakBonus=Math.min(50,this.save.winStreak*5);
         coinGain+=streakBonus;
-        this.save.coins=(this.save.coins||0)+streakBonus;
       }
       // Daily challenge: first win of the day gives bonus coins.
       const today=new Date().toDateString();
@@ -8546,11 +8546,10 @@ const G={
         this.save.lastDailyWin=today;
         const dailyBonus=100;
         coinGain+=dailyBonus;
-        this.save.coins=(this.save.coins||0)+dailyBonus;
         setTimeout(()=>toast(`🎁 Daily challenge complete! +${dailyBonus}💰`),600);
       }
       xpGain=50+this.playerLevel()*10;
-      coinGain=20+F(R()*15);
+      coinGain+=20+F(R()*15);
       this.save.xp=(this.save.xp||0)+xpGain;
       this.save.coins=(this.save.coins||0)+coinGain;
       // Phase 15: advance to next arena if unlocked.
@@ -10740,7 +10739,7 @@ document.addEventListener("keydown",e=>{
     return;
   }
   // Don't intercept when typing in input fields.
-  if(e.target&&(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"))return;
+  if(e.target&&(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA"||e.target.isContentEditable))return;
   const active=document.querySelector(".screen.active");
   if(!active)return;
   const sid=active.id;
