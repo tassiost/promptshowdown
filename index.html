@@ -2926,8 +2926,21 @@ const GameAudio={
       src.start(tN);src.stop(tN+dur);
     };
     switch(name){
-      case "attack_melee":make("square",200,80,0.08,0.15,{type:"lowpass",freq:600});break;
-      case "attack_ranged":make("triangle",600,1200,0.06,0.12,{type:"bandpass",freq:800});break;
+      case "attack_melee":{
+        // I3: weapon-type-specific melee sounds.
+        const wt=opts.weaponType||"sword";
+        if(wt==="claw"){noise(0.08,0.12,400,"bandpass");}
+        else if(wt==="staff"){make("sine",400,600,0.1,0.1,{type:"highpass",freq:300});}
+        else{make("square",300,80,0.08,0.15,{type:"lowpass",freq:600});} // sword
+        break;
+      }
+      case "attack_ranged":{
+        // I3: bow = string twang, staff = magical shimmer.
+        const wt=opts.weaponType||"bow";
+        if(wt==="staff"){make("sine",400,800,0.1,0.1,{type:"highpass",freq:300});}
+        else{make("triangle",800,1200,0.06,0.12,{type:"bandpass",freq:800});} // bow
+        break;
+      }
       case "hit":noise(0.05,0.15,800,"lowpass");break;
       case "crit":noise(0.05,0.15,800,"lowpass");make("square",400,400,0.12,0.1);break;
       case "death":make("sawtooth",150,40,0.2,0.15);break;
@@ -2951,23 +2964,33 @@ const GameAudio={
     }
   },
   // Procedural music — generative ambient loop.
+  // I2: Arena-specific music patterns (different scales per arena).
   startMusic(){
     if(!this.ctx||!this.enabled)return;
     if(this.musicInterval)return;
-    const root=[261.63,329.63,392,440][G.save?.arena||0]||261.63;
+    const arenaIdx=G.save?.arena||0;
+    // I2: Arena-specific root notes and scale patterns.
+    const patterns=[
+      {root:261.63,scale:[1,1.25,1.5,1.875],type:"sine"},     // Training Yard: major arpeggio
+      {root:220,scale:[1,1.125,1.5,1.78],type:"triangle"},     // District Z: minor drone
+      {root:293.66,scale:[1,1.125,1.375,1.625],type:"sine"},   // Golden Goal: pentatonic
+      {root:233.08,scale:[1,1.067,1.2,1.414],type:"sawtooth"}, // Void Rift: chromatic/diminished
+    ];
+    const pat=patterns[arenaIdx]||patterns[0];
+    const root=pat.root;
     // Bass drone.
-    const bass=this.ctx.createOscillator();bass.type="sine";bass.frequency.value=root/2;
+    const bass=this.ctx.createOscillator();bass.type=pat.type;bass.frequency.value=root/2;
     const bg=this.ctx.createGain();bg.gain.value=0.08;
     bass.connect(bg);bg.connect(this.musicGain);bass.start();
     this.musicOsc=[bass];
     this.musicGainNodes=[bg];
-    // Slow arpeggio.
-    const notes=[root,root*1.25,root*1.5,root*1.875];
+    // Slow arpeggio using arena-specific scale.
+    const notes=pat.scale.map(s=>root*s);
     let step=0;
     this.musicInterval=setInterval(()=>{
       if(!this.ctx||!this.enabled){this.stopMusic();return;}
       const t=this.ctx.currentTime;
-      const osc=this.ctx.createOscillator();osc.type="sine";
+      const osc=this.ctx.createOscillator();osc.type=pat.type;
       osc.frequency.value=notes[step%notes.length];
       const g=this.ctx.createGain();g.gain.setValueAtTime(0.05,t);
       g.gain.exponentialRampToValueAtTime(0.001,t+0.8);
@@ -2975,6 +2998,30 @@ const GameAudio={
       osc.start(t);osc.stop(t+0.8);
       step++;
     },800);
+  },
+  // I1: Ambient menu/forge music — calmer, lower gain.
+  startAmbient(){
+    if(!this.ctx||!this.enabled)return;
+    if(this.musicInterval)return; // already playing
+    const root=174.61; // F3 — calm base
+    const bass=this.ctx.createOscillator();bass.type="sine";bass.frequency.value=root/2;
+    const bg=this.ctx.createGain();bg.gain.value=0.04; // lower gain for ambient
+    bass.connect(bg);bg.connect(this.musicGain);bass.start();
+    this.musicOsc=[bass];
+    this.musicGainNodes=[bg];
+    const notes=[root,root*1.2,root*1.5,root*1.2];
+    let step=0;
+    this.musicInterval=setInterval(()=>{
+      if(!this.ctx||!this.enabled){this.stopMusic();return;}
+      const t=this.ctx.currentTime;
+      const osc=this.ctx.createOscillator();osc.type="sine";
+      osc.frequency.value=notes[step%notes.length];
+      const g=this.ctx.createGain();g.gain.setValueAtTime(0.03,t);
+      g.gain.exponentialRampToValueAtTime(0.001,t+1.2); // longer notes
+      osc.connect(g);g.connect(this.musicGain);
+      osc.start(t);osc.stop(t+1.2);
+      step++;
+    },1200); // slower tempo
   },
   stopMusic(){
     if(this.musicInterval){clearInterval(this.musicInterval);this.musicInterval=null;}
@@ -3775,7 +3822,7 @@ const Battle={
   attack(attacker,target,enemies){
     BattleFX.onAttack(attacker,target); // Phase 17: attack lunge FX
     BattleFX.fireRecipeFx(attacker,target); // Phase 17: weapon-based recipe FX
-    GameAudio.sfx(attacker.r>RANGED_THRESHOLD?"attack_ranged":"attack_melee",{pitch:fxTypeFreq(attacker.fxType)}); // Phase 30
+    GameAudio.sfx(attacker.r>RANGED_THRESHOLD?"attack_ranged":"attack_melee",{pitch:fxTypeFreq(attacker.fxType),weaponType:attacker.weaponType}); // Phase 30 + I3
     if(attacker.r>RANGED_THRESHOLD){
       this.projectiles.push({
         x:attacker.x,y:attacker.y,
@@ -5153,6 +5200,8 @@ const G={
     this.screen("menu");
     this.wins();
     this._updateQuestBadge(); // Phase 33
+    // I1: Start ambient menu music.
+    GameAudio.init();GameAudio.stopMusic();GameAudio.startAmbient();
     // Phase 15/19a: arena badge + unlock progress + theme color.
     const arenaIdx=this.save.arena||0;
     const arena=this.arenas[arenaIdx];
@@ -5591,7 +5640,7 @@ const G={
   startBattle(){
     // Phase 21: store player's picks for bot counter-picking next round.
     this.prevPlayerPicks=this.selected?[...this.selected]:null;
-    GameAudio.init();GameAudio.startMusic(); // Phase 30
+    GameAudio.init();GameAudio.stopMusic();GameAudio.startMusic(); // Phase 30 + I1: switch to battle music
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
     if(connected&&role==="host"){
@@ -5937,6 +5986,8 @@ const G={
   forge(){
     this.screen("forge");
     this.setForgeMode("unit"); // Default to Unit mode on screen entry.
+    // I1: Start ambient forge music.
+    GameAudio.init();GameAudio.stopMusic();GameAudio.startAmbient();
     const aiStatus=$("aiStatus");
     if(aiStatus)aiStatus.innerText=llmReady?"AI: Ready":llmLoading?"AI: Loading...":"AI: "+(navigator.gpu?"Idle":"Unavailable (templates)");
     const preview=$("forgePreview");
