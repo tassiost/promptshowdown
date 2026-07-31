@@ -256,6 +256,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="pill">⭐ <span id="xpGain">+0</span> XP</div>
 <div class="pill">💰 <span id="coinGain">+0</span></div>
 </div>
+<div id="matchMVP" style="display:none;margin:10px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--accent);text-align:center;"></div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:12px;">
 <button class="btn primary" id="nextRound">Next Round</button>
 <button class="btn" id="matchMenu" style="display:none;" onclick="G.menu()">Menu</button>
@@ -4117,6 +4118,7 @@ const Battle={
     u.lungeDir={x:0,y:0}; // lunge direction
     u.abFlash=0;          // ability activation flash timer
     u.abFlashColor="#fff"; // ability flash color
+    u.dmgDealt=0;         // total damage dealt (for MVP tracking)
     return u;
   },
 
@@ -4436,6 +4438,8 @@ const Battle={
     if(crit){dmg*=2;vibrate(25);}
     const hpBefore=target.h;
     target.h-=dmg;
+    // Track damage dealt by attacker for MVP calculation.
+    if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=dmg;
     // Spawn floating damage number.
     this.spawnDmgNum(target.x,target.y-target.z-8,Math.round(dmg),target.team,crit);
     // Debug: log melee damage (ranged hits are logged in updateProjectiles)
@@ -4658,7 +4662,7 @@ const Battle={
           if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22+f.z){
             // Synthetic attacker carrying projectile properties.
             const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
-              c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD};
+              c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD,dmgDealt:0};
             // For lifesteal on ranged units, heal the real owner instead of synth.
             const owner=this.units.find(u=>u.id===p.owner&&u.h>0);
             if(owner){synth.h=owner.h;synth.mh=owner.mh;synth.d=owner.d;synth.baseD=owner.baseD;}
@@ -4667,6 +4671,7 @@ const Battle={
             if(owner){
               if(synth.h>owner.h)owner.h=synth.h; // lifesteal
               if(synth.d>owner.d)owner.d=synth.d; // ramp
+              if(owner.dmgDealt!==undefined)owner.dmgDealt+=synth.dmgDealt||0; // MVP tracking
             }
             hit=true;hitUnit=f;
             if(this.debug)console.log("[HIT] t="+this.time.toFixed(2)+" "+p.n+" proj→"+f.n+"["+f.team+"] d="+p.d+" hp:"+hpBefore.toFixed(0)+"→"+f.h.toFixed(0)+" dist="+Math.hypot(f.x-p.tx,f.y-p.ty).toFixed(0));
@@ -6079,7 +6084,12 @@ const G={
           html+=`<br><span style="color:#0f0;font-size:.8rem">✓ ${nextArena.n} unlocked! Play to advance</span>`;
         }
       }else{
-        html+=`<br><span style="color:#fa0;font-size:.8rem">★ Final arena</span>`;
+        const el=this.save.endlessLevel||0;
+        if(el>0){
+          html+=`<br><span style="color:#f0f;font-size:.8rem">♾️ Endless Level ${el} — enemy stats +${el*15}% HP, +${el*10}% DMG</span>`;
+        }else{
+          html+=`<br><span style="color:#fa0;font-size:.8rem">★ Final arena — win to start Endless Mode</span>`;
+        }
       }
       badge.innerHTML=html;
       // Phase 19a: theme color shift on the h1.
@@ -6153,13 +6163,25 @@ const G={
     // Phase 15: generate bot loadout from the current arena's bot pool.
     const arena=this.arenas[this.save.arena||0];
     Bot.generateLoadout(arena?arena.botPool:this.base.map(u=>u.n));
-    // Phase 15: arena determines lives count.
+    // Endless mode: scale bot unit stats based on endless level.
+    const endlessLvl=this.save.endlessLevel||0;
+    if(endlessLvl>0){
+      for(const u of Bot.loadout){
+        u.h=Math.round(u.h*(1+endlessLvl*0.15));
+        u.d=Math.round(u.d*(1+endlessLvl*0.10));
+        u.mh=u.h;
+      }
+    }
+    // Phase 15: arena determines lives count. Endless mode gets +1 life per 5 levels.
     const lives=arena?arena.lives:DEFAULT_LIVES;
+    const botLives=endlessLvl>0?lives+Math.floor(endlessLvl/5):lives;
     // Phase 18: send match_start to guest.
     if(connected&&role==="host"){
       transmit("match_start",{arena:this.save.arena||0,lives,firstPlayer:"host"});
     }
     Match.start(lives,winner=>this.onMatchEnd(winner));
+    // Override enemy lives for endless mode (after Match.start sets defaults).
+    if(endlessLvl>0)Match.livesEnemy=botLives;
   },
 
   // Phase 9: called by Match.startRound() to start the sequential draft.
@@ -6288,11 +6310,12 @@ const G={
     const missingRole=this.roundDraftState.picks.length>0&&!pickedRoles.includes(u.role);
     const roleFillHint=missingRole?`<br><span style="color:var(--ok)">fills ${u.role}</span>`:"";
     const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
+    const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?`<br><span style="color:var(--muted);font-size:.65rem">${ABILITY_DESCRIPTIONS[u.ability]}</span>`:"";
     const roleLabel=u.role?`<br><span style="color:var(--muted)">${u.role}</span>`:"";
     card.innerHTML=
       `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
-      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${roleLabel}${roleFillHint}</div>`;
+      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${abDesc}${roleLabel}${roleFillHint}</div>`;
     if(missingRole)card.style.borderColor="var(--ok)";
     card.onclick=()=>{
       const st=this.roundDraftState;
@@ -6703,6 +6726,12 @@ const G={
         arenaAdvanced=true;
         coinGain+=50; // bonus for advancing
         this.save.coins+=50;
+      }else if(!nextArena){
+        // Endless mode: after clearing all arenas, escalate difficulty.
+        this.save.endlessLevel=(this.save.endlessLevel||0)+1;
+        arenaAdvanced=true;
+        coinGain+=30+this.save.endlessLevel*10; // escalating bonus
+        this.save.coins+=30+this.save.endlessLevel*10;
       }
       saveData(this.save);
       this.checkAchievements();
@@ -6720,13 +6749,31 @@ const G={
     }
     // Phase 15: arena advancement notification.
     if(arenaAdvanced){
-      const arena=this.arenas[this.save.arena];
-      setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
+      if(this.save.endlessLevel){
+        setTimeout(()=>toast(`♾️ Endless Level ${this.save.endlessLevel}! +${30+this.save.endlessLevel*10}💰 bonus`),500);
+      }else{
+        const arena=this.arenas[this.save.arena];
+        setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
+      }
     }
     // Phase 16: post-match strategy hint.
     const hint=this.generateMatchHint(win);
     const mh=$("matchHint");
     if(mh)mh.innerHTML=hint;
+    // Battle MVP: unit that dealt the most damage on the winning team.
+    const mvpEl=$("matchMVP");
+    if(mvpEl){
+      const playerTeam=connected&&role==="guest"?"enemy":"player";
+      const contenders=Battle.units.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
+        .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0));
+      if(contenders.length>0){
+        const mvp=contenders[0];
+        mvpEl.style.display="block";
+        mvpEl.innerHTML=`🏆 <b>MVP: ${mvp.n}</b><br><span style="color:${mvp.c};font-size:.8rem">${mvp.role||""} · ${Math.round(mvp.dmgDealt)} damage dealt</span>`;
+      }else{
+        mvpEl.style.display="none";
+      }
+    }
     const nr=$("nextRound");
     if(nr){
       nr.style.display="block";
