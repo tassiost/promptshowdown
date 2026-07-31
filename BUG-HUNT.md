@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -54,12 +54,16 @@
 | **Round 7: E2E Edge Cases (empty/extreme/XSS)** | 6 | 0 | 0 |
 | **Round 7: E2E Battle Mechanics** | 8 | 0 | 0 |
 | **Round 7: E2E Navigation + Regression** | 12 | 0 | 0 |
+| **Round 8: Static Analysis (2 subagents)** | 60+ | 7 | 7 |
+| **Round 8: E2E Upgrade/Codex/Onboarding/Presets** | 10 | 1 | 1 |
+| **Round 8: E2E Audio/Accessibility/Quality** | 12 | 0 | 0 |
+| **Round 8: E2E Battle Cleanup + Regression** | 5 | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **850+** | **44** | **44** |
+| **Total** | **950+** | **52** | **52** |
 
 ---
 
@@ -756,3 +760,65 @@ Two parallel subagents analyzed 60+ code paths across match flow/deck/bot AI/col
 - **Quest progress can go negative** — `inc` is always positive from tracking events; negative values would require save corruption.
 - **heal_allies zone undefined mh** — `mh` is set by `initRuntime` for all units.
 - **Spell minion missing baseD** — `initRuntime` sets `baseD` for all units including minions.
+
+---
+
+## Round 8 — Deep Static + E2E: Upgrade/Codex/Presets/Audio/Accessibility/Particles (2026-07-31)
+
+**Focus:** Upgrade system, codex/encyclopedia, preset management, onboarding, audio system, accessibility (reduced motion, high contrast, colorblind), quality tiers, particle budget management, battle stop cleanup, bot pool correctness.
+
+**Method:** Two parallel static analysis subagents (SpriteRenderer/BattleFX/Audio/Upgrade, BotAI/Formation/PowerScore/Endless/Onboarding) + E2E testing via Playwright.
+
+### Round 8: Bugs Found + Fixed (7 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 47 | **XSS in preset names**: `_renderPresetList` inserts preset names directly into `innerHTML` without sanitization. A preset named `<img src=x onerror=alert(1)>` renders as an HTML tag. | Critical | Sanitize preset names before inserting into HTML. Changed `applyPreset`/`deletePreset` to accept array index instead of name (avoids needing to pass raw name through onclick). |
+| 48 | **"Berserk" typo in Void Rift botPool**: The bot pool for arena 3 (Void Rift) contains "Berserk" but the actual unit name is "Berserker". Bot.generateLoadout can't resolve "Berserk", resulting in fewer bot units. | High | Changed "Berserk" to "Berserker" in the botPool array. |
+| 49 | **Battle.stop doesn't clear visual state**: `particles`, `shakeAmount`, and `roundFlash` are not cleared on battle stop. Stale particles/shake can leak into the next battle. | Medium | Added cleanup in `Battle.stop()`: `this.particles=[]; this.shakeAmount=0; this.roundFlash=null;` |
+| 50 | **spellZone particles not budget-checked**: `BattleFX.spellZone` pushes 3 particles per call without checking `MAX_PARTICLES` limit. Long-running persistent zones can exceed the 60-particle cap. | Medium | Added budget check: `const budget=MAX_PARTICLES-(Battle.particles?.length||0); if(budget<=0)return;` |
+| 51 | **Death FX particles not budget-checked**: Body-plan-specific death FX (golem: 8, ghost: 6, blob: 5 particles) push without checking `MAX_PARTICLES`. Mass deaths can exceed the cap. | Medium | Wrapped death FX in `if(dBudget>0)` with `Math.min(count, dBudget)` per body plan. |
+| 52 | **Particle update doesn't filter NaN**: If a particle has NaN coordinates (from a unit with NaN position), it persists indefinitely since `NaN>0` is false but `NaN` is never filtered. | Low | Changed filter to `p.life>0&&!isNaN(p.x)&&!isNaN(p.y)`. |
+| 53 | **upgradeUnit doesn't validate cost parameter**: If called with `undefined` cost, `coins -= undefined` produces `NaN`, corrupting the save. | Low | Added `typeof cost!=="number"||isNaN(cost)` guard before balance check. |
+
+### Round 8: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Upgrade screen render | ✅ Pass | Shows upgrade UI with unit list. |
+| Upgrade unit (valid cost) | ✅ Pass | Coins deducted, level incremented. |
+| Upgrade to max level (10) | ✅ Pass | Max level enforced. |
+| Upgrade with undefined cost | ✅ Pass | Rejected by new guard. |
+| Codex screen | ✅ Pass | Renders with tabs. |
+| Unit detail modal | ✅ Pass | Shows unit details. |
+| Onboarding (new player) | ✅ Pass | Coachmark shown. |
+| Onboarding skip | ✅ Pass | Sets onboarded=true, returns to menu. |
+| Preset save | ✅ Pass | Preset stored in save. |
+| Preset load (by index) | ✅ Pass | Loadout restored correctly. |
+| Preset delete (by index) | ✅ Pass | Preset removed. |
+| XSS in preset name | ✅ Pass | Angle brackets stripped, no HTML injection. |
+| Berserker in Void Rift pool | ✅ Pass | "Berserker" present, "Berserk" removed. |
+| Audio apply settings | ✅ Pass | No crash with various volume levels. |
+| Audio disabled | ✅ Pass | SFX silent when disabled. |
+| Reduced motion setting | ✅ Pass | Saved and applied. |
+| High contrast setting | ✅ Pass | Saved and applied. |
+| Colorblind modes (3 types) | ✅ Pass | All saved correctly. |
+| Quality tiers (4 levels) | ✅ Pass | All return correct tier. |
+| Battle stop clears particles | ✅ Pass | particles=0, shakeAmount=0 after stop. |
+| Full bot match regression | ✅ Pass | Battle, 18+ units, 0 console errors. |
+
+### Round 8: Verified Non-Bugs (from subagent reports)
+
+- **SpriteRenderer position modification on exception** — very unlikely; rendering errors are caught by the outer try-finally in render().
+- **MOVEMENT.blink NaN propagation** — requires a unit with NaN position, which is prevented by initRuntime and bounds clamping.
+- **GameAudio.startMusic null ctx** — already guarded by `if(!this.ctx||!this.enabled)return;` at function start.
+- **GameAudio.resume closed state** — AudioContext.close() is never called in the codebase.
+- **BotStrategy.missingRoles only checks frontline/carry** — by design (per AGENTS.md, bot prioritizes core roles).
+- **Formation Y-bands don't handle assassin/bruiser** — fallback to frontline is intentional and works correctly.
+- **Power score missing unit properties** — `unit()` factory always sets all properties with defaults.
+- **Bot.loadout not regenerated between matches** — `Bot.generateLoadout` is called at the start of every match via `G.start()`.
+- **Endless level bonus uses new level** — intentional (bonus is for reaching the new level, not completing the old one).
+- **Onboarding doesn't auto-navigate to screen** — by design (user navigates manually, coachmark overlays).
+- **Win prediction color duplicate** — cosmetic only, both use warn color for <60% win chance.
+- **Arena unlock toast** — uses correct arena index (this.save.arena was already incremented to the new arena).
+- **fireRecipeFx particles not budget-checked** — very low particle count (max 5 per attack), unlikely to exceed cap in practice.

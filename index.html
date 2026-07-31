@@ -4233,7 +4233,9 @@ const BattleFX={
   spellZone(z){
     const colorMap={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
     const color=colorMap[z.spec.fxType]||"#fa4";
-    const n=3;
+    const budget=MAX_PARTICLES-(Battle.particles?.length||0);
+    if(budget<=0)return;
+    const n=Math.min(3,budget);
     for(let i=0;i<n;i++){
       const a=Math.random()*Math.PI*2;
       const r=z.radius*(0.7+Math.random()*0.3);
@@ -4369,7 +4371,7 @@ const BattleFX={
         p.vy*=0.95;
         p.life-=dt;
       }
-      Battle.particles=Battle.particles.filter(p=>p.life>0);
+      Battle.particles=Battle.particles.filter(p=>p.life>0&&!isNaN(p.x)&&!isNaN(p.y));
     }
     // Update screen shake decay.
     if(Battle.shakeAmount>0){
@@ -5423,23 +5425,26 @@ const Battle={
     u.deathT=0;
     // D5: body-plan-specific death FX.
     const bp=u.recipe?.bodyPlan||u.bodyPlan;
-    if(bp==="golem"||bp==="construct"){
-      // Shatter: spawn colored rect particles.
-      for(let i=0;i<8;i++){
-        Battle.particles.push({x:u.x+(Math.random()-0.5)*20,y:u.y+(Math.random()-0.5)*20,
-          vx:(Math.random()-0.5)*80,vy:-30-Math.random()*40,life:0.5,maxLife:0.6,c:u.c,r:3+Math.random()*3});
-      }
-    }else if(bp==="ghost"||bp==="wraith"||bp==="undead"){
-      // Dissolve: fade + rise particles.
-      for(let i=0;i<6;i++){
-        Battle.particles.push({x:u.x+(Math.random()-0.5)*15,y:u.y+(Math.random()-0.5)*15,
-          vx:0,vy:-20-Math.random()*15,life:0.6,maxLife:0.7,c:u.c,r:2+Math.random()*2});
-      }
-    }else if(bp==="blob"||bp==="slime"||bp==="monopod"){
-      // Flatten: quick scale Y to 0 is handled by death animation; spawn puddle particles.
-      for(let i=0;i<5;i++){
-        Battle.particles.push({x:u.x+(Math.random()-0.5)*18,y:u.y+5,
-          vx:(Math.random()-0.5)*20,vy:0,life:0.4,maxLife:0.5,c:u.c,r:4+Math.random()*2});
+    const dBudget=MAX_PARTICLES-(Battle.particles?.length||0);
+    if(dBudget>0){
+      if(bp==="golem"||bp==="construct"){
+        // Shatter: spawn colored rect particles.
+        for(let i=0;i<Math.min(8,dBudget);i++){
+          Battle.particles.push({x:u.x+(Math.random()-0.5)*20,y:u.y+(Math.random()-0.5)*20,
+            vx:(Math.random()-0.5)*80,vy:-30-Math.random()*40,life:0.5,maxLife:0.6,c:u.c,r:3+Math.random()*3});
+        }
+      }else if(bp==="ghost"||bp==="wraith"||bp==="undead"){
+        // Dissolve: fade + rise particles.
+        for(let i=0;i<Math.min(6,dBudget);i++){
+          Battle.particles.push({x:u.x+(Math.random()-0.5)*15,y:u.y+(Math.random()-0.5)*15,
+            vx:0,vy:-20-Math.random()*15,life:0.6,maxLife:0.7,c:u.c,r:2+Math.random()*2});
+        }
+      }else if(bp==="blob"||bp==="slime"||bp==="monopod"){
+        // Flatten: quick scale Y to 0 is handled by death animation; spawn puddle particles.
+        for(let i=0;i<Math.min(5,dBudget);i++){
+          Battle.particles.push({x:u.x+(Math.random()-0.5)*18,y:u.y+5,
+            vx:(Math.random()-0.5)*20,vy:0,life:0.4,maxLife:0.5,c:u.c,r:4+Math.random()*2});
+        }
       }
     }
     BattleFX.onDeath(u); // Phase 17: death burst FX
@@ -5944,6 +5949,10 @@ const Battle={
     this.running=false;
     cancelAnimationFrame(this.frame);
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    // Clean up visual state so it doesn't leak into the next battle.
+    this.particles=[];
+    this.shakeAmount=0;
+    this.roundFlash=null;
     // Hide spell bar.
     const bar=$("spellBar");
     if(bar)bar.style.display="none";
@@ -6741,7 +6750,7 @@ const G={
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber"]},
     {n:"Void Rift",c:"#a4f",lives:4,unlock:15,maxHp:200,maxDmg:50,
      bgTheme:"void",mechanic:"damage_aura",
-     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserk","Shielder","Healer","Tank"]},
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserker","Shielder","Healer","Tank"]},
   ],
   // Phase 10/11: starter roster with Behaviour Composition API fields + recipes.
   // 6 hand-authored units; each sets the 5 behaviour fields directly + visual recipe.
@@ -9425,28 +9434,35 @@ const G={
     }
     el.style.display="block";
     let html="<div style='font-size:.75rem;font-weight:700;margin-bottom:6px;'>Saved Presets:</div>";
-    for(const name of keys){
+    for(let i=0;i<keys.length;i++){
+      const name=keys[i];
+      const safeName=String(name).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
       const loadout=presets[name];
       const units=loadout.map(n=>this.collectionUnits().find(u=>u.n===n)).filter(Boolean);
       const names=units.map(u=>`<span style="color:${u.c}">${u.n}</span>`).join(", ");
       html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:3px 0;background:var(--bg);border-radius:var(--radius-sm);">`+
-        `<div><span style="font-weight:700;font-size:.78rem;">${name}</span><br><span style="font-size:.65rem;">${names}</span></div>`+
-        `<div style="display:flex;gap:4px;"><button class="btn primary" style="font-size:.65rem;padding:2px 8px;" onclick="G.applyPreset('${name.replace(/'/g,"\\'")}')">Load</button>`+
-        `<button class="btn red" style="font-size:.65rem;padding:2px 8px;" onclick="G.deletePreset('${name.replace(/'/g,"\\'")}')">✕</button></div></div>`;
+        `<div><span style="font-weight:700;font-size:.78rem;">${safeName}</span><br><span style="font-size:.65rem;">${names}</span></div>`+
+        `<div style="display:flex;gap:4px;"><button class="btn primary" style="font-size:.65rem;padding:2px 8px;" onclick="G.applyPreset(${i})">Load</button>`+
+        `<button class="btn red" style="font-size:.65rem;padding:2px 8px;" onclick="G.deletePreset(${i})">✕</button></div></div>`;
     }
     el.innerHTML=html;
   },
-  applyPreset(name){
+  applyPreset(idx){
     const presets=this.save.presets||{};
-    if(!presets[name])return;
+    const keys=Object.keys(presets);
+    const name=keys[idx];
+    if(name===undefined||!presets[name])return;
     this.save.loadout=presets[name].slice();
     saveData(this.save);
     GameAudio.sfx("ui_click");
-    toast("📂 Loaded preset '"+name+"'");
+    toast("📂 Loaded preset '"+String(name).replace(/</g,"").replace(/>/g,"")+"'");
     this.deck();
   },
-  deletePreset(name){
-    if(!this.save.presets||!this.save.presets[name])return;
+  deletePreset(idx){
+    if(!this.save.presets)return;
+    const keys=Object.keys(this.save.presets);
+    const name=keys[idx];
+    if(name===undefined||!this.save.presets[name])return;
     delete this.save.presets[name];
     saveData(this.save);
     this._renderPresetList();
@@ -9798,6 +9814,7 @@ const G={
   // Phase 6: spend coins to raise a unit's upgrade level.
   upgradeUnit(name,cost){
     if(this.unitLevel(name)>=10){toast(t("max_level"));GameAudio.sfx("error");return;}
+    if(typeof cost!=="number"||isNaN(cost)){toast(t("not_enough_coins"));GameAudio.sfx("error");return;}
     if(this.save.coins<cost){toast(t("not_enough_coins"));GameAudio.sfx("error");return;}
     this.save.coins-=cost;
     this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;
