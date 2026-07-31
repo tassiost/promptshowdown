@@ -3632,6 +3632,9 @@ const GameAudio={
       case "draft_pick":make("triangle",600,900,0.08,0.06);break;
       case "reroll":make("sine",300,600,0.15,0.06);break;
       case "error":make("sawtooth",200,150,0.15,0.08);break;
+      case "first_blood":make("sine",330,330,0.1,0.12);setTimeout(()=>make("sine",440,440,0.1,0.12),100);setTimeout(()=>make("sine",554,554,0.2,0.14),200);break;
+      case "clutch":make("sine",523,523,0.08,0.1);setTimeout(()=>make("sine",659,659,0.08,0.1),80);setTimeout(()=>make("sine",784,784,0.08,0.1),160);setTimeout(()=>make("sine",1047,1047,0.3,0.12),240);break;
+      case "low_hp_warn":make("sine",800,400,0.15,0.06);break;
     }
   },
   // Procedural music — generative ambient loop.
@@ -4321,6 +4324,7 @@ const Battle={
     this._killFeed=[]; // kill feed entries
     this._manualSpeed=false; // reset dramatic slowdown flag
     this._highlights={biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+    this._firstBlood=false; // first blood sound cue flag
     // Phase 17: trigger spawn FX for all units.
     for(const u of this.units)BattleFX.onSpawn(u);
     this.projectiles=[];
@@ -4906,6 +4910,11 @@ const Battle={
     const kfTeam=killer?killer.team:"neutral";
     this._killFeed.unshift({killer:kfKiller,victim:u.n,killerTeam:kfTeam,victimTeam:u.team,t:this.time});
     if(this._killFeed.length>5)this._killFeed.pop();
+    // First blood sound cue: play on the first kill of the battle.
+    if(!this._firstBlood){
+      this._firstBlood=true;
+      GameAudio.sfx("first_blood");
+    }
     u.deathT=0;
     // D5: body-plan-specific death FX.
     const bp=u.recipe?.bodyPlan||u.bodyPlan;
@@ -5370,6 +5379,12 @@ const Battle={
       return;
     }
     this.winner=playerAlive?"player":(enemyAlive?"enemy":"draw");
+    // Clutch sound: player wins with a unit at very low HP.
+    if(this.winner==="player"){
+      const survivors=this.units.filter(u=>u.team==="player"&&u.h>0);
+      const clutchSurvivor=survivors.find(u=>u.h<u.mh*0.15);
+      if(clutchSurvivor)GameAudio.sfx("clutch");
+    }
     // Phase 17: round-end flash + screen shake.
     BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
     BattleFX.shake(4);
@@ -8829,16 +8844,67 @@ const G={
     const coll=this.save.collection||[];
     const matches=coll.filter(u=>u.n===name);
     if(matches.length<2){toast(t("need_fuse"));return;}
-    // Take the higher of each combat stat from the two copies.
+    // Show fusion preview modal.
+    this._showFusionPreview(name,matches);
+  },
+  _showFusionPreview(name,matches){
+    const a=matches[0],b=matches[1];
+    const lvl=this.unitLevel(name);
+    const newLvl=lvl+1;
+    // Calculate merged stats (higher of each).
+    const mergedH=Math.max(a.h,b.h);
+    const mergedD=Math.max(a.d,b.d);
+    const mergedR=Math.max(a.r,b.r);
+    const mergedS=Math.max(a.s,b.s);
+    // Apply upgrade bonus for the new level.
+    const bonus=newLvl*0.1;
+    const newH=Math.round(mergedH*(1+bonus));
+    const newD=Math.round(mergedD*(1+bonus));
+    const overlay=document.createElement("div");
+    overlay.id="fusePreviewModal";
+    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    overlay.onclick=()=>overlay.remove();
+    const modal=document.createElement("div");
+    modal.style.cssText="background:var(--card);border:1px solid var(--legendary);border-radius:var(--radius);padding:20px;max-width:300px;width:90%;text-align:center;box-shadow:0 0 20px rgba(251,191,36,.2);";
+    modal.onclick=e=>e.stopPropagation();
+    modal.innerHTML=
+      `<div style="font-weight:700;font-size:1rem;margin-bottom:12px;color:var(--legendary);">🔮 Fusion Preview</div>`+
+      `<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin:12px 0;">`+
+      `<div style="flex:1;"><div style="font-weight:700;color:${a.c};font-size:.8rem;">${a.n}</div>`+
+      `<div style="font-size:.7rem;color:var(--muted);">Lv${lvl}</div>`+
+      `<div style="font-size:.65rem;">${a.h} HP · ${a.d} DMG</div></div>`+
+      `<div style="font-size:1.5rem;color:var(--legendary);">+</div>`+
+      `<div style="flex:1;"><div style="font-weight:700;color:${b.c};font-size:.8rem;">${b.n}</div>`+
+      `<div style="font-size:.7rem;color:var(--muted);">Lv${lvl}</div>`+
+      `<div style="font-size:.65rem;">${b.h} HP · ${b.d} DMG</div></div>`+
+      `</div>`+
+      `<div style="font-size:1.2rem;margin:8px 0;color:var(--legendary);">↓</div>`+
+      `<div style="background:var(--bg);border:1px solid var(--legendary);border-radius:var(--radius);padding:10px;margin:8px 0;">`+
+      `<div style="font-weight:700;color:${a.c};font-size:.9rem;">${a.n}</div>`+
+      `<div style="font-size:.75rem;color:var(--ok);font-weight:700;">Lv${newLvl}</div>`+
+      `<div style="font-size:.7rem;margin-top:4px;">`+
+      `<span style="color:var(--ok);">${a.h}→${newH} HP</span> · `+
+      `<span style="color:var(--ok);">${a.d}→${newD} DMG</span></div>`+
+      `<div style="font-size:.6rem;color:var(--muted);margin-top:4px;">Takes the higher of each stat + ${Math.round(bonus*100)}% level bonus</div>`+
+      `</div>`+
+      `<div style="display:flex;gap:8px;margin-top:12px;">`+
+      `<button class="btn" onclick="document.getElementById('fusePreviewModal').remove()" style="flex:1;">Cancel</button>`+
+      `<button class="btn primary" onclick="G._confirmFuse('${name}');document.getElementById('fusePreviewModal').remove()" style="flex:1;">🔮 Fuse!</button>`+
+      `</div>`;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  },
+  _confirmFuse(name){
+    const coll=this.save.collection||[];
+    const matches=coll.filter(u=>u.n===name);
+    if(matches.length<2){toast(t("need_fuse"));return;}
     const a=matches[0],b=matches[1];
     a.h=Math.max(a.h,b.h);
     a.d=Math.max(a.d,b.d);
     a.r=Math.max(a.r,b.r);
     a.s=Math.max(a.s,b.s);
-    // Remove the second copy from collection (keep the merged first).
     const idx=coll.findIndex(u=>u===b);
     if(idx<0){
-      // b not found by identity — find by index among matches.
       const bIdx=coll.findIndex(u=>u.n===name&&u!==a);
       if(bIdx>=0)coll.splice(bIdx,1);
     }else{
@@ -8848,7 +8914,7 @@ const G={
     saveData(this.save);
     this.wins();
     toast(t("forged_to")+name+" → Lv"+this.unitLevel(name));
-    Quests.track("fuse"); // Phase 33
+    Quests.track("fuse");
     this.deck();
   },
 
