@@ -138,6 +138,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.deck()">📋 DECK</button>
 <button class="btn" onclick="G.shop()">🛒 SHOP</button>
 <button class="btn" onclick="G.codex()">📖 CODEX</button>
+<button class="btn" onclick="G.stats()">📊 STATS</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
@@ -341,6 +342,12 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.codexTab('targeting')" id="codexTabTargeting" style="font-size:.75rem;padding:4px 10px;">Targeting</button>
 </div>
 <div id="codexContent" style="max-width:400px;margin:0 auto;"></div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="stats">
+<h2>📊 Stats</h2>
+<div id="statsContent" style="max-width:320px;margin:0 auto;"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
@@ -4141,6 +4148,7 @@ const Battle={
     u.abFlash=0;          // ability activation flash timer
     u.abFlashColor="#fff"; // ability flash color
     u.dmgDealt=0;         // total damage dealt (for MVP tracking)
+    u.kills=0;            // kill count (for MVP tracking)
     return u;
   },
 
@@ -4628,6 +4636,8 @@ const Battle={
       const kEnemies=this.units.filter(x=>x.team!==killer.team&&x.h>0);
       this.triggerAbility(killer,kAllies,kEnemies);
     }
+    // Track kill count for MVP.
+    if(killer&&killer.kills!==undefined)killer.kills++;
     u.deathT=0;
     // D5: body-plan-specific death FX.
     const bp=u.recipe?.bodyPlan||u.bodyPlan;
@@ -5103,15 +5113,19 @@ const Battle={
     bar.style.display="flex";
     bar.innerHTML="";
     const icons={explosion:"💥",frost:"❄️",lightning:"⚡",poison_cloud:"☠️",heal_glow:"💚",shockwave:"🌊",fire_wall:"🔥"};
+    const effectLabels={damage:"Damage",damage_over_time:"DoT",slow:"Slow",stun:"Stun",heal_allies:"Heal",shield_allies:"Shield",summon:"Summon",knockback:"Knockback",buff_dmg:"Buff DMG",buff_speed:"Buff Speed"};
     for(let i=0;i<this.playerSpells.length;i++){
       const ps=this.playerSpells[i];
       const s=ps.spec;
       const icon=icons[s.fxType]||"✨";
+      const effectLabel=effectLabels[s.effect]||s.effect||"";
       const btn=document.createElement("button");
       btn.className="spellBtn";
       btn.disabled=ps.cooldown>0||!this.running;
       btn.innerHTML=`<span class="spellIcon">${icon}</span>${s.name||"Spell"}`+
         (ps.cooldown>0?`<span class="spellCD">${Math.ceil(ps.cooldown)}</span>`:"");
+      // Tooltip on hover.
+      btn.title=`${s.name||"Spell"}\n${effectLabel} · ${(s.shape||"point").replace(/_/g," ")}\nMagnitude: ${s.magnitude||30}\nCooldown: ${this._spellCooldown(s)}s`;
       btn.onclick=()=>this._castPlayerSpell(i);
       bar.appendChild(btn);
     }
@@ -6806,6 +6820,20 @@ const G={
     this.save.matchCount=(this.save.matchCount||0)+1;
     if(this.save.matchCount%3===0)AdSDK.showInterstitial();
     let xpGain=0,coinGain=0,arenaAdvanced=false;
+    // Global stats tracking.
+    if(!this.save.stats)this.save.stats={totalDmg:0,totalKills:0,totalMatches:0,totalWins:0,totalSpells:0};
+    this.save.stats.totalMatches=(this.save.stats.totalMatches||0)+1;
+    if(win)this.save.stats.totalWins=(this.save.stats.totalWins||0)+1;
+    // Accumulate damage + kills from all player units this match.
+    const playerTeam=connected&&role==="guest"?"enemy":"player";
+    for(const u of Battle.units){
+      if(u.team===playerTeam){
+        this.save.stats.totalDmg=(this.save.stats.totalDmg||0)+Math.round(u.dmgDealt||0);
+        this.save.stats.totalKills=(this.save.stats.totalKills||0)+(u.kills||0);
+      }
+    }
+    // Track spells cast.
+    if(Battle.spells)this.save.stats.totalSpells=(this.save.stats.totalSpells||0)+Battle.spells.filter(s=>s.fired).length;
     // Phase 36: update Elo rating.
     const r=this.save.ranked;
     if(r){
@@ -6905,8 +6933,9 @@ const G={
         .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0));
       if(contenders.length>0){
         const mvp=contenders[0];
+        const kills=mvp.kills||0;
         mvpEl.style.display="block";
-        mvpEl.innerHTML=`🏆 <b>MVP: ${mvp.n}</b><br><span style="color:${mvp.c};font-size:.8rem">${mvp.role||""} · ${Math.round(mvp.dmgDealt)} damage dealt</span>`;
+        mvpEl.innerHTML=`🏆 <b>MVP: ${mvp.n}</b><br><span style="color:${mvp.c};font-size:.8rem">${mvp.role||""} · ${Math.round(mvp.dmgDealt)} dmg${kills>0?` · ${kills} kills`:""}</span>`;
       }else{
         mvpEl.style.display="none";
       }
@@ -7672,6 +7701,37 @@ const G={
   codex(){
     this.screen("codex");
     this.codexTab(this._codexTab);
+  },
+
+  // Stats screen: show global battle statistics.
+  stats(){
+    this.screen("stats");
+    const s=this.save.stats||{totalDmg:0,totalKills:0,totalMatches:0,totalWins:0,totalSpells:0};
+    const wr=s.totalMatches>0?Math.round(s.totalWins/s.totalMatches*100):0;
+    const avgDmg=s.totalMatches>0?Math.round(s.totalDmg/s.totalMatches):0;
+    const el=$("statsContent");
+    if(!el)return;
+    const cards=[
+      {label:"Total Matches",value:s.totalMatches||0,icon:"⚔️",color:"var(--accent)"},
+      {label:"Wins",value:s.totalWins||0,icon:"🏆",color:"var(--ok)"},
+      {label:"Win Rate",value:wr+"%",icon:"📈",color:wr>=50?"var(--ok)":"var(--warn)"},
+      {label:"Total Damage",value:Math.round(s.totalDmg||0).toLocaleString(),icon:"💥",color:"#fb7185"},
+      {label:"Total Kills",value:s.totalKills||0,icon:"💀",color:"#fca5a5"},
+      {label:"Spells Cast",value:s.totalSpells||0,icon:"✨",color:"var(--accent2)"},
+      {label:"Avg Dmg/Match",value:avgDmg.toLocaleString(),icon:"📊",color:"#60a5fa"},
+      {label:"Best Streak",value:this.save.bestStreak||0,icon:"🔥",color:"#fb923c"},
+      {label:"Endless Level",value:this.save.endlessLevel||0,icon:"♾️",color:"#f0f"},
+      {label:"Collection Size",value:this.collectionUnits().length,icon:"📦",color:"var(--accent)"},
+    ];
+    let html="<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0;'>";
+    for(const c of cards){
+      html+=`<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:12px;text-align:center;">`+
+        `<div style="font-size:1.5rem;">${c.icon}</div>`+
+        `<div style="font-size:1.2rem;font-weight:700;color:${c.color};margin:4px 0;">${c.value}</div>`+
+        `<div style="font-size:.7rem;color:var(--muted);">${c.label}</div></div>`;
+    }
+    html+="</div>";
+    el.innerHTML=html;
   },
   codexTab(tab){
     this._codexTab=tab;
