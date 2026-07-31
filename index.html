@@ -2778,6 +2778,8 @@ const ATTACK_CONDITION_OPTS=["always","only_if_healthy","only_if_target_low","on
 const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","on_spawn","on_kill","periodic_3s","never"];
 const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"];
 const ROLE_OPTS=["frontline","carry","support","counter","utility","assassin","bruiser"];
+// Reusable role color map for canvas rendering (avoids per-frame allocation).
+const ROLE_COLORS={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",ranged:"#4ff",utility:"#4ff",assassin:"#f4f",bruiser:"#888"};
 const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp","thorns","regen","taunt","executioner"]);
 const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield","blink_strike","frenzy","cleanse","chain_lightning"]);
 // F1: Ability descriptions for tooltips.
@@ -2880,7 +2882,15 @@ const TARGETING={
   enemy_cluster:(u,enemies,allies)=>{
     if(!enemies.length)return null;
     let best=enemies[0],bestCount=0;
-    for(const e of enemies){const c=enemies.filter(o=>dist(e,o)<80).length;if(c>bestCount){bestCount=c;best=e;}}
+    for(let i=0;i<enemies.length;i++){
+      let count=0;
+      const ei=enemies[i];
+      for(let j=0;j<enemies.length;j++){
+        const ej=enemies[j];
+        if((ei.x-ej.x)*(ei.x-ej.x)+(ei.y-ej.y)*(ei.y-ej.y)<6400)count++;
+      }
+      if(count>bestCount){bestCount=count;best=ei;}
+    }
     return best;
   },
   lowest_ally:(u,enemies,allies)=>lowestBy(allies.filter(a=>a!==u),a=>a.h),
@@ -4150,8 +4160,15 @@ const Spell={
       let fire=false;
       switch(entry.spec.trigger){
         case "battle_start":fire=battle.time<0.1;break;
-        case "on_first_contact":
-          fire=allies.some(a=>enemies.some(e=>dist(a,e)<80));break;
+        case "on_first_contact":{
+          fire=false;
+          outer:for(const a of allies){
+            for(const e of enemies){
+              if((a.x-e.x)*(a.x-e.x)+(a.y-e.y)*(a.y-e.y)<6400){fire=true;break outer;}
+            }
+          }
+          break;
+        }
         case "delayed_3s":fire=battle.time>=3;break;
         case "when_ally_hurt":fire=allies.some(a=>a.h<a.mh*0.5);break;
         case "periodic_5s":
@@ -5245,8 +5262,7 @@ const Battle={
       c.fillText(u.n,u.x,u.y-16);
       // Role indicator: small colored dot above name.
       if(u.role){
-        const roleColors={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",ranged:"#4ff"};
-        c.fillStyle=roleColors[u.role]||"#fff";
+        c.fillStyle=ROLE_COLORS[u.role]||"#fff";
         c.beginPath();c.arc(u.x-20,u.y-14,2,0,Math.PI*2);c.fill();
       }
       // Low-HP warning: pulsing red glow when HP < 25%.
@@ -5794,7 +5810,7 @@ const Quests={
     const reward=STREAK_REWARDS[q.streak.count];
     if(reward!=null){
       G.save.coins=(G.save.coins||0)+reward;
-      saveData(G.save);
+      saveDataDebounced(G.save);
       toast(`🔥 ${q.streak.count}-day streak! +${reward} coins`);
     }
   },
@@ -5812,7 +5828,7 @@ const Quests={
     }
     q.date=today;
     q.list=picked;
-    saveData(G.save);
+    saveDataDebounced(G.save);
   },
   track(event,data){
     const q=G.save.quests;
@@ -5824,7 +5840,7 @@ const Quests={
         quest.progress=Math.min(quest.target,quest.progress+inc);
       }
     }
-    saveData(G.save);
+    saveDataDebounced(G.save);
   },
   claim(id){
     const q=G.save.quests;
@@ -6147,8 +6163,17 @@ const G={
     // Phase 37: check for shared unit in URL.
     this.importUnitFromURL();
     // Draft pick timer — countdown and auto-pick on timeout.
-    setInterval(()=>{
-      if(this._draftTimer!==undefined&&this._draftTimer>0){
+    // Only runs the interval when a draft timer is active (no perpetual polling).
+    this._draftTimerInterval=null;
+    this._startDraftTimerInterval=()=>{
+      if(this._draftTimerInterval)return; // already running
+      this._draftTimerInterval=setInterval(()=>{
+        if(this._draftTimer===undefined||this._draftTimer<=0){
+          // No active timer — stop the interval to avoid wasted cycles.
+          clearInterval(this._draftTimerInterval);
+          this._draftTimerInterval=null;
+          return;
+        }
         this._draftTimer-=0.1;
         const fill=$("draftTimerFill");
         if(fill){
@@ -6158,6 +6183,8 @@ const G={
         }
         if(this._draftTimer<=0){
           this._draftTimer=undefined;
+          clearInterval(this._draftTimerInterval);
+          this._draftTimerInterval=null;
           const bar=$("draftTimerBar");
           if(bar)bar.style.display="none";
           // Auto-pick first card if player hasn't picked.
@@ -6165,8 +6192,8 @@ const G={
             this.pickDraft(this.currentOffering[0]);
           }
         }
-      }
-    },100);
+      },100);
+    };
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
@@ -6590,7 +6617,7 @@ const G={
     if(!this.save.settings)this.save.settings={};
     if(key==="analyticsOptOut"){this.save.analyticsOptOut=val;saveData(this.save);toast(t("settings_saved"));return;}
     this.save.settings[key]=val;
-    saveData(this.save);
+    saveDataDebounced(this.save);
     toast(t("settings_saved"));
     // Apply immediately.
     if(key==="audioEnabled"||key==="sfxVol"||key==="musicVol")this.applyAudioSettings();
@@ -6853,7 +6880,7 @@ const G={
   // Set bot difficulty level.
   setDifficulty(level){
     this.save.difficulty=level;
-    saveData(this.save);
+    saveDataDebounced(this.save);
     this.updateDifficultyUI();
   },
   updateDifficultyUI(){
@@ -6968,12 +6995,15 @@ const G={
     this._draftTimerMax=20;
     const bar=$("draftTimerBar");
     if(bar)bar.style.display="block";
+    // Start the countdown interval (self-stopping when timer hits 0).
+    if(this._startDraftTimerInterval)this._startDraftTimerInterval();
   },
 
   // Auto-pick a draft card (called by timer timeout).
   pickDraft(u){
     const st=this.roundDraftState;
     if(!st||!u)return;
+    this._clearDraftTimer();
     st.picks.push(u);
     st.drawIndex++;
     GameAudio.sfx("draft_pick");
@@ -6986,6 +7016,12 @@ const G={
     }else{
       this.drawOne();
     }
+  },
+  _clearDraftTimer(){
+    this._draftTimer=undefined;
+    if(this._draftTimerInterval){clearInterval(this._draftTimerInterval);this._draftTimerInterval=null;}
+    const bar=$("draftTimerBar");
+    if(bar)bar.style.display="none";
   },
 
   // Phase 9: render the current draw (3 cards + progress dots).
@@ -7141,10 +7177,6 @@ const G={
   // Phase 9/16: draft card onclick — pick this unit, advance to next draw.
   // Phase 16: highlights picks that fill missing roles in current round army.
   draftCard(u){
-    // Clear draft timer on pick.
-    this._draftTimer=undefined;
-    const bar=$("draftTimerBar");
-    if(bar)bar.style.display="none";
     const card=document.createElement("div");
     // Phase 23: spell card rendering.
     if(u._isSpell){
@@ -7159,6 +7191,7 @@ const G={
       card.onclick=()=>{
         const st=this.roundDraftState;
         if(!st)return;
+        this._clearDraftTimer();
         st.picks.push(u);
         st.drawIndex++;
         GameAudio.sfx("draft_pick");
@@ -7190,6 +7223,7 @@ const G={
     card.onclick=()=>{
       const st=this.roundDraftState;
       if(!st)return;
+      this._clearDraftTimer();
       st.picks.push(u);
       st.drawIndex++;
       GameAudio.sfx("draft_pick");
@@ -8065,8 +8099,7 @@ const G={
     // Worst performer (if more than 1 unit).
     if(scored.length>1){
       const worst=scored[scored.length-1];
-      const best=scored[0];
-      if(worst.score<best.score){
+      if(worst.score<scored[0].score){
         html+=`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:var(--radius-sm);margin:4px 0;opacity:0.7;">`+
           `<div style="font-size:1.2rem;">💤</div>`+
           `<div style="flex:1;"><div style="font-weight:700;color:${worst.u.c};font-size:.8rem;">${worst.u.n}</div>`+
