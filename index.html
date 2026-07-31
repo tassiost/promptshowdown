@@ -263,6 +263,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;"></div>
 <div id="battleLog"></div>
 <div id="compBonus" style="display:none;position:fixed;left:5px;top:70px;max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
+<div id="battleStats" style="display:none;position:fixed;right:5px;top:70px;max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
 <div class="group">
@@ -4280,6 +4281,8 @@ const Battle={
     this.applyCompositionBonuses();
     // Show composition bonuses on battle screen.
     this._renderCompBonus();
+    // Initialize battle stats tracking.
+    this._battleStats={playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
     // Phase 17: trigger spawn FX for all units.
     for(const u of this.units)BattleFX.onSpawn(u);
     this.projectiles=[];
@@ -4375,6 +4378,7 @@ const Battle={
     if(this._spellBarT>=0.25){
       this._spellBarT=0;
       this._renderSpellBar();
+      this._renderBattleStats();
     }
     this.checkEnd();
   },
@@ -4598,6 +4602,11 @@ const Battle={
     target.h-=dmg;
     // Track damage dealt by attacker for MVP calculation.
     if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=dmg;
+    // Track battle stats for real-time overlay.
+    if(this._battleStats){
+      if(attacker.team==="player"){this._battleStats.playerDmg+=dmg;this._battleStats.dmgWindow.push({t:this.time,dmg});}
+      else{this._battleStats.enemyDmg+=dmg;}
+    }
     // Spawn floating damage number.
     this.spawnDmgNum(target.x,target.y-target.z-8,Math.round(dmg),target.team,crit);
     // Debug: log melee damage (ranged hits are logged in updateProjectiles)
@@ -4772,6 +4781,11 @@ const Battle={
     }
     // Track kill count for MVP.
     if(killer&&killer.kills!==undefined)killer.kills++;
+    // Track battle stats for real-time overlay.
+    if(this._battleStats&&killer){
+      if(killer.team==="player")this._battleStats.playerKills++;
+      else this._battleStats.enemyKills++;
+    }
     u.deathT=0;
     // D5: body-plan-specific death FX.
     const bp=u.recipe?.bodyPlan||u.bodyPlan;
@@ -5228,6 +5242,9 @@ const Battle={
     // Hide spell bar.
     const bar=$("spellBar");
     if(bar)bar.style.display="none";
+    // Hide battle stats overlay.
+    const stats=$("battleStats");
+    if(stats)stats.style.display="none";
   },
 
   // Spell cooldown based on effect power.
@@ -5251,6 +5268,28 @@ const Battle={
     el.innerHTML="<b style='color:var(--accent)'>⚡ Bonuses</b><br>"+b.labels.map(l=>`<div style='color:var(--accent2);font-size:.55rem;margin:1px 0;'>${l}</div>`).join("");
   },
 
+  // Render real-time battle stats overlay.
+  _renderBattleStats(){
+    const el=$("battleStats");
+    if(!el||!this._battleStats)return;
+    const s=this._battleStats;
+    // Calculate current DPS (damage in last 3 seconds).
+    const now=this.time;
+    s.dmgWindow=s.dmgWindow.filter(d=>now-d.t<3);
+    const recentDmg=s.dmgWindow.reduce((sum,d)=>sum+d.dmg,0);
+    const dps=Math.round(recentDmg/3);
+    if(dps>s.peakDPS)s.peakDPS=dps;
+    const playerAlive=this.units.filter(u=>u.team==="player"&&u.h>0).length;
+    const enemyAlive=this.units.filter(u=>u.team==="enemy"&&u.h>0).length;
+    el.style.display="block";
+    el.innerHTML=
+      `<div style="font-weight:700;color:var(--accent);margin-bottom:3px;">📊 Battle Stats</div>`+
+      `<div style="color:var(--accent2);">DMG: <b>${Math.round(s.playerDmg)}</b> vs <b style="color:var(--warn)">${Math.round(s.enemyDmg)}</b></div>`+
+      `<div style="color:var(--accent2);">Kills: <b>${s.playerKills}</b> vs <b style="color:var(--warn)">${s.enemyKills}</b></div>`+
+      `<div style="color:var(--accent2);">DPS: <b>${dps}</b> (peak: ${s.peakDPS})</div>`+
+      `<div style="color:var(--accent2);">Units: <b>${playerAlive}</b> vs <b style="color:var(--warn)">${enemyAlive}</b></div>`;
+  },
+
   // Render the spell bar with clickable spell buttons.
   _renderSpellBar(){    const bar=$("spellBar");
     if(!bar)return;
@@ -5264,13 +5303,26 @@ const Battle={
       const s=ps.spec;
       const icon=icons[s.fxType]||"✨";
       const effectLabel=effectLabels[s.effect]||s.effect||"";
+      const maxCD=ps.maxCD||this._spellCooldown(s);
+      const cdPct=ps.cooldown>0?Math.min(100,ps.cooldown/maxCD*100):0;
       const btn=document.createElement("button");
       btn.className="spellBtn";
       btn.disabled=ps.cooldown>0||!this.running;
+      btn.style.position="relative";
       btn.innerHTML=`<span class="spellIcon">${icon}</span>${s.name||"Spell"}`+
         (ps.cooldown>0?`<span class="spellCD">${Math.ceil(ps.cooldown)}</span>`:"");
+      // Visual cooldown overlay: dark bar covering the button from bottom up.
+      if(cdPct>0){
+        const overlay=document.createElement("div");
+        overlay.style.cssText=`position:absolute;bottom:0;left:0;right:0;height:${cdPct}%;background:rgba(0,0,0,0.6);border-radius:0 0 var(--radius-sm) var(--radius-sm);pointer-events:none;transition:height .1s linear;`;
+        btn.appendChild(overlay);
+      }
+      // Ready glow when off cooldown.
+      if(ps.cooldown<=0&&this.running){
+        btn.style.boxShadow="0 0 8px rgba(124,58,237,0.5)";
+      }
       // Tooltip on hover.
-      btn.title=`${s.name||"Spell"}\n${effectLabel} · ${(s.shape||"point").replace(/_/g," ")}\nMagnitude: ${s.magnitude||30}\nCooldown: ${this._spellCooldown(s)}s`;
+      btn.title=`${s.name||"Spell"}\n${effectLabel} · ${(s.shape||"point").replace(/_/g," ")}\nMagnitude: ${s.magnitude||30}\nCooldown: ${maxCD}s`;
       btn.onclick=()=>this._castPlayerSpell(i);
       bar.appendChild(btn);
     }
