@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15 + Round 16)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -75,12 +75,14 @@
 | **Round 14: E2E Spells/Stats/Save/i18n/Draw** | 20+ | 0 | 0 |
 | **Round 15: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
 | **Round 15: E2E Forge/Ach/Screens/Settings/A11y** | 20+ | 0 | 0 |
+| **Round 16: Static Analysis (2 subagents)** | 60+ | 2 | 2 |
+| **Round 16: E2E Quests/Ranked/Replays/Fusion/Screens** | 30+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1630+** | **73** | **73** |
+| **Total** | **1730+** | **75** | **75** |
 
 ---
 
@@ -1203,3 +1205,46 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Audio missing default case in sfx switch** — silent fallback is intentional (no error for unknown sounds).
 - **Quality setting doesn't apply immediately** — applies on next battle/screen render; not a bug.
 - **Spell bar visibility** — handled by `Battle._renderSpellBar()` which sets display directly.
+
+---
+
+## Round 16 — Deep Static + E2E: Quests/Ranked/Replays/Fusion/Composition (2026-07-31)
+
+**Focus:** Quest system (daily generation, streaks, claim, progress), ranked/leaderboard (Elo, season, peak rating), replay system (record, save, playback, delete), fusion/upgrade (fusion rules, upgrade costs, stat scaling), import/export save, composition bonuses (synergy detection), colorblind/high contrast, onboarding, endless mode.
+
+**Method:** Two parallel static analysis subagents (Quests/Ranked/Replays/Codex/ImportExport, Fusion/Upgrade/Composition/Colorblind/Onboarding/Endless) + E2E testing via Playwright.
+
+### Round 16: Bugs Found + Fixed (2 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 75 | **Fusion preview shows inconsistent before/after stats**: The preview showed raw stats for "before" (`a.h`) and stats with upgrade bonus for "after" (`mergedH * (1 + newLvl * 0.1)`). For a level 5 unit with 100 HP, it showed "100→192 HP" instead of "150→192 HP" (150 = 100 * 1.5 current battle stat). Users couldn't accurately assess the improvement. | Medium | Added `curBonus = lvl * 0.1` and `curH = Math.round(a.h * (1 + curBonus))` to show consistent before/after values — both now include the upgrade bonus. Preview now shows "130→168 HP" for a level 3 unit fusing to level 4. |
+| 76 | **Dead "ranged" role checks + orphaned ROLE_COLORS entry**: Three places checked `!roles["ranged"]` but "ranged" is not in `ROLE_OPTS` (valid roles: frontline, carry, support, counter, utility, assassin, bruiser). The check `!roles["carry"] && !roles["ranged"]` always simplified to `!roles["carry"]` since `roles["ranged"]` is always undefined. Also, `ROLE_COLORS` had an orphaned `ranged:"#4ff"` entry. | Low | Removed `&&!roles["ranged"]` from all three check sites (loss analysis, recommendations, synergy meter warnings). Removed `ranged:"#4ff"` from `ROLE_COLORS`. |
+
+### Round 16: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Quest: daily generation | ✅ Pass | 3 quests generated. |
+| Quest: claim (with proper id) | ✅ Pass | Coins 100→130 (+30), XP 50→60 (+10), claimed=true. |
+| Quest: streak increment | ✅ Pass | First check: count=1. Second check (same day): count=1. |
+| Ranked: Elo win | ✅ Pass | 1000→1016 (+16). |
+| Ranked: Elo loss | ✅ Pass | 1000→984 (-16). |
+| Ranked: Elo draw | ✅ Pass | 1000→1000 (0.5 score, between win and loss). |
+| Replay screen | ✅ Pass | replaysScreen() activates correctly. |
+| Fusion: preview stats | ✅ Pass | Before=130 (100*1.3), After=168 (120*1.4) — consistent with upgrade bonus. |
+| Screen transitions (9 screens) | ✅ Pass | menu, deck, forge, shop, codex, profile, settings, replays, tierlist — all activate correctly. |
+| Import/Export | ✅ Pass | Export generates 25KB code. |
+| Colorblind mode | ✅ Pass | Setting persists, cache cleared on change. |
+| High contrast mode | ✅ Pass | Setting persists, applied at canvas render level. |
+| Full bot match regression | ✅ Pass | Battle, 19 units, no NaN, 0 console errors. |
+
+### Round 16: Verified Non-Bugs (from subagent reports)
+
+- **Fusion doesn't apply upgrade bonus to collection stats** — by design. Collection stores raw stats; upgrade bonus is applied at battle time via `applyUpgrades()`. Collection display showing raw stats is consistent.
+- **Season reset not implemented** — documented feature, not a bug. Season field exists but reset logic is a future feature.
+- **Replays have no delete button** — UX feature request, not a bug. Replays auto-cap at 10.
+- **Quest streak negative count** — only possible with manually corrupted saves; migration validates.
+- **Endless mode level never decreases on loss** — by design. Endless is about escalation; losing doesn't reset progress.
+- **High contrast doesn't trigger immediate re-render** — canvas rendering applies on next animation frame; not a bug.
+- **Onboarding** — works correctly, shows for new users (`onboarded=false`).

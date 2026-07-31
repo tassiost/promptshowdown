@@ -3137,7 +3137,7 @@ const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on
 const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"];
 const ROLE_OPTS=["frontline","carry","support","counter","utility","assassin","bruiser"];
 // Reusable role color map for canvas rendering (avoids per-frame allocation).
-const ROLE_COLORS={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",ranged:"#4ff",utility:"#4ff",assassin:"#f4f",bruiser:"#888"};
+const ROLE_COLORS={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",utility:"#4ff",assassin:"#f4f",bruiser:"#888"};
 const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp","thorns","regen","taunt","executioner"]);
 const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield","blink_strike","frenzy","cleanse","chain_lightning"]);
 // F1: Ability descriptions for tooltips.
@@ -8755,7 +8755,7 @@ const G={
     }
     // Fall back to role-gap analysis.
     if(!roles["frontline"])return"💡 Lost — no frontline to protect your carries. Add a tanky unit";
-    if(!roles["carry"]&&!roles["ranged"])return"💡 Lost — no ranged DPS. Add an Archer or ranged unit";
+    if(!roles["carry"])return"💡 Lost — no ranged DPS. Add an Archer or ranged unit";
     if(!roles["support"])return"💡 Lost — no healing. A Priest could sustain your frontline";
     if(!roles["counter"])return"💡 Lost — no divers to threaten enemy carries. Add an Assassin";
     return"💡 Close match — try adjusting your loadout strategy";
@@ -8816,7 +8816,7 @@ const G={
     for(const u of this.loadoutUnits())if(u.role)roles[u.role]=(roles[u.role]||0)+1;
     if(!roles["frontline"])recs.push("Add a frontline unit to absorb damage");
     if(!roles["support"])recs.push("Add a support unit for healing");
-    if(!roles["carry"]&&!roles["ranged"])recs.push("Add a ranged carry for DPS");
+    if(!roles["carry"])recs.push("Add a ranged carry for DPS");
     if(!roles["counter"])recs.push("Add a counter unit to dive enemy carries");
     // Render insights.
     if(insights.length){
@@ -9656,7 +9656,7 @@ const G={
     // Warnings for missing/overloaded roles.
     const warnings=[];
     if(!roles["frontline"])warnings.push("⚠ No frontline — backline exposed");
-    if(!roles["carry"]&&!roles["ranged"])warnings.push("⚠ No carry — low DPS");
+    if(!roles["carry"])warnings.push("⚠ No carry — low DPS");
     if(!roles["support"])warnings.push("⚠ No support — no healing");
     if(!roles["counter"])warnings.push("⚠ No counter — can't dive enemy carries");
     const warnText=warnings.length?`<br><span style="color:#f84">${warnings.join("<br>")}</span>`:`<br><span style="color:#4f4">✓ Balanced loadout</span>`;
@@ -9753,10 +9753,13 @@ const G={
     const mergedD=Math.max(a.d,b.d);
     const mergedR=Math.max(a.r,b.r);
     const mergedS=Math.max(a.s,b.s);
-    // Apply upgrade bonus for the new level.
-    const bonus=newLvl*0.1;
-    const newH=Math.round(mergedH*(1+bonus));
-    const newD=Math.round(mergedD*(1+bonus));
+    // Apply upgrade bonus for current and new level (consistent before/after).
+    const curBonus=lvl*0.1;
+    const newBonus=newLvl*0.1;
+    const curH=Math.round(a.h*(1+curBonus));
+    const curD=Math.round(a.d*(1+curBonus));
+    const newH=Math.round(mergedH*(1+newBonus));
+    const newD=Math.round(mergedD*(1+newBonus));
     const overlay=document.createElement("div");
     overlay.id="fusePreviewModal";
     overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
@@ -9780,9 +9783,9 @@ const G={
       `<div style="font-weight:700;color:${a.c};font-size:.9rem;">${a.n}</div>`+
       `<div style="font-size:.75rem;color:var(--ok);font-weight:700;">Lv${newLvl}</div>`+
       `<div style="font-size:.7rem;margin-top:4px;">`+
-      `<span style="color:var(--ok);">${a.h}→${newH} HP</span> · `+
-      `<span style="color:var(--ok);">${a.d}→${newD} DMG</span></div>`+
-      `<div style="font-size:.6rem;color:var(--muted);margin-top:4px;">Takes the higher of each stat + ${Math.round(bonus*100)}% level bonus</div>`+
+      `<span style="color:var(--ok);">${curH}→${newH} HP</span> · `+
+      `<span style="color:var(--ok);">${curD}→${newD} DMG</span></div>`+
+      `<div style="font-size:.6rem;color:var(--muted);margin-top:4px;">Takes the higher of each stat + ${Math.round(newBonus*100)}% level bonus</div>`+
       `</div>`+
       `<div style="display:flex;gap:8px;margin-top:12px;">`+
       `<button class="btn" onclick="document.getElementById('fusePreviewModal').remove()" style="flex:1;">Cancel</button>`+
