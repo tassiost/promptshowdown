@@ -238,6 +238,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="draftDots" style="font-size:1.2rem;margin:6px;letter-spacing:4px;"></div>
 <div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:rgba(245,158,11,.1);border:1px solid var(--warn);text-align:center;font-weight:700;">⭐ COMEBACK BONUS — 4th draw!</div>
 <div class="detail" id="draftHint" style="margin-bottom:8px;">Pick 1 unit</div>
+<div id="draftTimerBar" style="display:none;height:4px;background:var(--bg);border-radius:2px;overflow:hidden;margin:4px 0 8px;max-width:280px;margin-left:auto;margin-right:auto;"><div id="draftTimerFill" style="height:100%;background:var(--accent);border-radius:2px;transition:width .1s linear;width:100%;"></div></div>
 <div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
 <div id="draftCounterPicks" style="display:none;margin:4px 0;padding:8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;"></div>
 <div id="draftArmyPreview" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
@@ -5222,6 +5223,12 @@ const Battle={
       // name + HP bar (smooth animated HP bar).
       c.fillStyle="#fff";c.font="9px sans-serif";c.textAlign="center";
       c.fillText(u.n,u.x,u.y-16);
+      // Role indicator: small colored dot above name.
+      if(u.role){
+        const roleColors={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",ranged:"#4ff"};
+        c.fillStyle=roleColors[u.role]||"#fff";
+        c.beginPath();c.arc(u.x-20,u.y-14,2,0,Math.PI*2);c.fill();
+      }
       c.fillStyle="#222";
       c.fillRect(u.x-18,u.y-12,36,5);
       // Smooth HP bar: lerp displayed HP toward actual HP.
@@ -6101,6 +6108,27 @@ const G={
     Analytics.track("game_start",{arena:this.save.arena||0,wins:this.save.matchWins||0});
     // Phase 37: check for shared unit in URL.
     this.importUnitFromURL();
+    // Draft pick timer — countdown and auto-pick on timeout.
+    setInterval(()=>{
+      if(this._draftTimer!==undefined&&this._draftTimer>0){
+        this._draftTimer-=0.1;
+        const fill=$("draftTimerFill");
+        if(fill){
+          const pct=Math.max(0,this._draftTimer/this._draftTimerMax*100);
+          fill.style.width=pct+"%";
+          fill.style.background=pct<30?"var(--warn)":"var(--accent)";
+        }
+        if(this._draftTimer<=0){
+          this._draftTimer=undefined;
+          const bar=$("draftTimerBar");
+          if(bar)bar.style.display="none";
+          // Auto-pick first card if player hasn't picked.
+          if(this.currentOffering&&this.currentOffering.length>0){
+            this.pickDraft(this.currentOffering[0]);
+          }
+        }
+      }
+    },100);
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
@@ -6849,6 +6877,29 @@ const G={
     }
     this.currentOffering=offering;
     this.renderDraw();
+    // Start draft pick timer (20 seconds per pick).
+    this._draftTimer=20;
+    this._draftTimerMax=20;
+    const bar=$("draftTimerBar");
+    if(bar)bar.style.display="block";
+  },
+
+  // Auto-pick a draft card (called by timer timeout).
+  pickDraft(u){
+    const st=this.roundDraftState;
+    if(!st||!u)return;
+    st.picks.push(u);
+    st.drawIndex++;
+    GameAudio.sfx("draft_pick");
+    if(st.drawIndex>=st.drawCount){
+      this.selected=st.picks;
+      if(connected&&role==="guest"){
+        transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
+      }
+      this.battle();
+    }else{
+      this.drawOne();
+    }
   },
 
   // Phase 9: render the current draw (3 cards + progress dots).
@@ -7003,7 +7054,12 @@ const G={
 
   // Phase 9/16: draft card onclick — pick this unit, advance to next draw.
   // Phase 16: highlights picks that fill missing roles in current round army.
-  draftCard(u){    const card=document.createElement("div");
+  draftCard(u){
+    // Clear draft timer on pick.
+    this._draftTimer=undefined;
+    const bar=$("draftTimerBar");
+    if(bar)bar.style.display="none";
+    const card=document.createElement("div");
     // Phase 23: spell card rendering.
     if(u._isSpell){
       card.className="card rar-rare";
