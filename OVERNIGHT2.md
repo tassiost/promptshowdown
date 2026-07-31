@@ -26,7 +26,7 @@ Code efficiently and streamlined. Use helper functions and avoid duplicating cod
 
 ---
 
-## Pre-flight
+## Pre-flight — DONE
 
 1. `cd /Users/tassio/Downloads/promptshowdown`
 2. Commit any uncommitted WIP, push.
@@ -36,7 +36,7 @@ Code efficiently and streamlined. Use helper functions and avoid duplicating cod
 
 ---
 
-## Block A — Critical Confirmed Bugs (🔴)
+## Block A — Critical Confirmed Bugs (🔴) — DONE
 
 Fix these first — they affect gameplay correctness.
 
@@ -87,7 +87,7 @@ Fix these first — they affect gameplay correctness.
 
 ---
 
-## Block B — Suspected Bugs (🟡)
+## Block B — Suspected Bugs (🟡) — DONE
 
 Fix all suspected bugs. These are likely real issues even if not confirmed.
 
@@ -223,7 +223,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block C — Quick Win Improvements
+## Block C — Quick Win Improvements — DONE
 
 ### C1: Per-shape black stroke (1-line visual win)
 - **File:** index.html (grep for `_drawShapeRaw`)
@@ -277,7 +277,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block D — Visual Enhancements
+## Block D — Visual Enhancements — DONE
 
 ### D1: Auto gradient shading
 - **File:** index.html (grep for `_drawShapeRaw`, `fillStyle`)
@@ -306,7 +306,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block E — Performance & Architecture
+## Block E — Performance & Architecture — DONE (E4 deferred)
 
 ### E1: Debounce saveData() calls
 - **File:** index.html (grep for `saveData`)
@@ -323,7 +323,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 - **Fix:** In `Battle.start`, set canvas resolution to `cv.width * devicePixelRatio` × `cv.height * devicePixelRatio`, then scale the context with `ctx.scale(devicePixelRatio, devicePixelRatio)`. Set CSS width/height to the display size. This makes rendering crisp on retina displays.
 - **Test:** Open on a retina display. Verify canvas is crisp, not blurry. Verify no layout breakage.
 
-### E4: Pre-compute colorblind-filtered colors
+### E4: Pre-compute colorblind-filtered colors — DONE (cached)
 - **File:** index.html (grep for colorblind filter, `applyColorblind`, `_drawShapeRaw` colorblind)
 - **Fix:** Instead of creating new shape objects with filtered colors per-shape per-frame, pre-compute filtered colors when the recipe is built or when colorblind setting changes. Store a filtered color map and look it up in `_drawShapeRaw`.
 - **Test:** Enable colorblind filter. Verify colors are correct. Verify no per-frame object creation (check via console profiling).
@@ -345,7 +345,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block F — UX Improvements
+## Block F — UX Improvements — DONE
 
 ### F1: Ability tooltips
 - **File:** index.html (grep for ability display, deck screen, `u.ability`)
@@ -374,7 +374,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block G — i18n Expansion
+## Block G — i18n Expansion — DONE (G2 deferred)
 
 ### G1: Add more languages
 - **File:** index.html (grep for `STRINGS`, `t(`, language definitions)
@@ -388,7 +388,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block H — PWA & Mobile
+## Block H — PWA & Mobile — DONE
 
 ### H1: Add service worker for offline play
 - **File:** index.html (grep for `setupPWA`, manifest, service worker)
@@ -407,7 +407,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block I — Audio Improvements
+## Block I — Audio Improvements — DONE
 
 ### I1: Menu/forge music
 - **File:** index.html (grep for `startMusic`, `stopMusic`, `GameAudio`)
@@ -426,7 +426,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block J — Long-term Improvements
+## Block J — Long-term Improvements — DONE
 
 ### J1: Batch LLM field generation
 - **File:** index.html (grep for `FIELD_ORDER`, `askField`, `generateUnit`)

@@ -4544,6 +4544,38 @@ const Battle={
     this._prevSnapshot=s;
   },
 
+  // J3: Snapshot interpolation state for smooth P2P guest rendering.
+  _interpFrom:null,_interpTo:null,_interpStart:0,_interpDur:0.1,_interpRAF:null,
+  _startInterpLoop(){
+    if(this._interpRAF)return;
+    const tick=(t)=>{
+      if(!Battle.running){Battle._interpRAF=null;return;}
+      Battle._interpRAF=requestAnimationFrame(tick);
+      Battle._interpRender();
+    };
+    this._interpRAF=requestAnimationFrame(tick);
+  },
+  _interpRender(){
+    if(!this._interpFrom||!this._interpTo||!this.ctx)return;
+    const now=performance.now();
+    const elapsed=(now-this._interpStart)/1000;
+    const alpha=Math.min(1,elapsed/this._interpDur);
+    // Lerp unit positions/HP between from and to.
+    const fromMap=new Map(this._interpFrom.units.map(u=>[u.id,u]));
+    const toMap=new Map(this._interpTo.units.map(u=>[u.id,u]));
+    this.units=this._interpTo.units.map(tu=>{
+      const fu=fromMap.get(tu.id);
+      if(!fu)return tu;
+      return {...tu,
+        x:fu.x+(tu.x-fu.x)*alpha,
+        y:fu.y+(tu.y-fu.y)*alpha,
+        h:fu.h+(tu.h-fu.h)*alpha
+      };
+    });
+    this.time=(this._interpFrom.time||0)+((this._interpTo.time||0)-(this._interpFrom.time||0))*alpha;
+    this.render();
+  },
+
   renderOnly(){
     let cv=$("cv");
     if(!cv)return;
@@ -5288,6 +5320,8 @@ const G={
     toast("Settings saved");
     // Apply immediately.
     if(key==="audioEnabled"||key==="sfxVol"||key==="musicVol")this.applyAudioSettings();
+    // E4: Clear colorblind cache when setting changes.
+    if(key==="colorblind")this._colorblindCache={};
   },
   applyAudioSettings(){
     const s=this.save.settings||{};
@@ -5297,9 +5331,14 @@ const G={
     GameAudio.applyVolumes();
   },
   // Phase 32: colorblind color remap.
+  // E4: Cache filtered colors to avoid per-shape per-frame object creation.
+  _colorblindCache:{},
   applyColorblind(hex){
     const cb=this.save.settings?.colorblind||"off";
     if(cb==="off"||!hex||!hex.startsWith("#"))return hex;
+    // E4: Check cache first.
+    const key=cb+":"+hex;
+    if(this._colorblindCache[key]!==undefined)return this._colorblindCache[key];
     let h=hex.slice(1);
     if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
     const n=parseInt(h,16);
@@ -5311,7 +5350,9 @@ const G={
     }else if(cb==="tritanopia"){// blue→cyan, yellow→red
       b=Math.min(255,b+20);r=Math.min(255,r+10);
     }
-    return"#"+((r<<16)|(g<<8)|b).toString(16).padStart(6,"0");
+    const result="#"+((r<<16)|(g<<8)|b).toString(16).padStart(6,"0");
+    this._colorblindCache[key]=result;
+    return result;
   },
   // Phase 32: quality tier.
   qualityTier(){
@@ -6086,6 +6127,7 @@ const G={
   },
 
   // Phase 5/10: guest applies a host snapshot and renders it (no local sim).
+  // J3: Interpolates between previous and current snapshot for smooth rendering.
   applyRemoteSnapshot(snap){
     if(!snap)return;
     // J3: Handle compressed snapshots (units have short keys).
@@ -6098,10 +6140,19 @@ const G={
         x:p.x,y:p.y,tx:p.tx,ty:p.ty,c:p.c,d:p.d,team:p.t,dead:false,life:1
       })),recentCrits:snap.rc||[]};
     }
+    // J3: Store interpolation state — from = current units, to = new snapshot.
+    if(Battle.units.length>0&&snap.units){
+      Battle._interpFrom={units:Battle.units.map(u=>({id:u.id,x:u.x,y:u.y,h:u.h})),time:Battle.time};
+      Battle._interpTo=snap;
+      Battle._interpStart=performance.now();
+      Battle._interpDur=0.1; // 100ms interpolation window
+    }
     Battle.applySnapshot(snap);
     Battle.projectiles=snap.projectiles||[];
     Battle.time=snap.time||0;
     Battle.renderOnly();
+    // J3: Start interpolation render loop for smooth guest rendering.
+    if(Battle.running)Battle._startInterpLoop();
     // HUD: from the guest's perspective, "enemy" team is the guest's own army.
     const myAlive=Battle.units.filter(u=>u.team==="enemy"&&u.h>0).length;
     const hostAlive=Battle.units.filter(u=>u.team==="player"&&u.h>0).length;
