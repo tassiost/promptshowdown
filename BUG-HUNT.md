@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -67,12 +67,14 @@
 | **Round 11: Static Analysis (2 subagents)** | 50+ | 0 | 0 |
 | **Round 11: E2E Achievements/Difficulty/Fusion/Deck** | 40+ | 0 | 0 |
 | **Round 11: E2E Screens/MultiRound/Ads/Regression** | 25+ | 0 | 0 |
+| **Round 12: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
+| **Round 12: E2E Quests/Migration/Endless/Shop** | 20+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1270+** | **58** | **58** |
+| **Total** | **1360+** | **62** | **62** |
 
 ---
 
@@ -1000,3 +1002,55 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Profile screen** — uses optional chaining for arena lookups; win rate has guard clause.
 - **Tier list** — uses `Math.max(1, ...)` to prevent division by zero.
 - **Match history** — replays capped at 10 entries; handles missing data gracefully.
+
+---
+
+## Round 12 — Deep Static + E2E: Quests/Migration/Endless/Shop/Onboarding (2026-07-31)
+
+**Focus:** Quest system (daily generation, tracking, claim, streaks), save migration (all version paths), endless mode, i18n, settings toggles, edge cases (shop, onboarding, network), leaderboard, upgrade system.
+
+**Method:** Two parallel static analysis subagents (Quests/Migration/Endless/i18n/Settings, EdgeCases/Onboarding/Leaderboard/Shop/Upgrade) + E2E testing via Playwright.
+
+### Round 12: Bugs Found + Fixed (4 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 60 | **Shop free reroll on duplicate purchase**: When buying a unit already owned, coins were not deducted (correct) but the shop offer was auto-rerolled for free. Normal rerolls cost 10 coins. Players could exploit this for unlimited free rerolls. | Medium | Removed the auto-reroll on duplicate purchase — now returns early after showing "You already own X!" toast, without calling `_generateShopOffer()`. |
+| 61 | **Shop bypasses 50-unit collection cap**: `buyShopUnit()` directly pushed to collection without checking the 50-unit cap that `addForge()` enforces. Collection could grow unbounded through shop purchases. | High | Added `if(this.save.collection.length>50)this.save.collection.shift();` after pushing to collection in `buyShopUnit()`. |
+| 62 | **Network-received units bypass 50-unit cap**: P2P forge handler pushed to collection without checking the 50-unit cap. Collection could exceed 50 through network sharing. | Medium | Added `if(G.save.collection.length>50)G.save.collection.shift();` after pushing to collection in the network forge handler. |
+| 63 | **Onboarding doesn't navigate to correct screen**: Each onboarding step specifies a target screen (e.g., `screen:"draft"`), but the code never called `this.screen(step.screen)`. The coachmark appeared on whatever screen was active, causing target element to not be found. | Medium | Added `if(step.screen)this.screen(step.screen);` before calling `_showCoachmark()` in `_onboardNext()`. |
+
+### Round 12: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Quest generation (3 daily) | ✅ Pass | Generates 3 quests with correct structure. |
+| Quest tracking (forge, win, play) | ✅ Pass | Progress increments correctly. |
+| Quest claim (complete quest) | ✅ Pass | Coins awarded, marked as claimed. |
+| Quest claim (already claimed) | ✅ Pass | No double reward. |
+| Streak check (first login) | ✅ Pass | Count=1, lastLogin=today. |
+| Save migration v1→v12 | ✅ Pass | All fields initialized (collection, quests, achievements, replays, spellbook). |
+| Save migration v6→v12 | ✅ Pass | Version upgraded, fields initialized. |
+| Save migration v11→v12 | ✅ Pass | Spellbook and difficulty initialized. |
+| Endless mode battle | ✅ Pass | Arena 4+, endlessLevel=5, no NaN, 13 units. |
+| Shop duplicate purchase | ✅ Pass | No coins deducted, no reroll, no collection change. |
+| Shop 50-unit cap | ✅ Pass | Collection capped at 50 after purchase. |
+| Network forge cap | ✅ Pass | Collection capped at 50 after network receive. |
+| Onboarding screen navigation | ✅ Pass | `step.screen` check added to `_onboardNext`. |
+| Full bot match regression | ✅ Pass | Battle, 24 units, 0 console errors. |
+
+### Round 12: Verified Non-Bugs (from subagent reports)
+
+- **Quest streak/claim toasts not translatable** — many toasts throughout the codebase are hardcoded English; not a bug per se, but a future i18n improvement.
+- **Endless level bonus uses incremented level** — by design (bonus is for reaching the new level, not completing the old one). Comment says "escalating bonus".
+- **Endless milestone bonus uses incremented level** — same design choice as above.
+- **Onboarding coachmark target null** — `_closeCoachmark` already checks `if(this._onboardTarget)` before accessing, so no crash.
+- **Leaderboard crashes if ranked missing properties** — `_initRest` always initializes `ranked` with full properties; `rankedTier(undefined)` returns Bronze (no crash).
+- **Upgrade cost doesn't cap level** — upgrade is prevented past level 10 by the check at line 9833; UI showing high cost for corrupted saves is cosmetic only.
+- **loadoutUnits fallback assumes base non-empty** — `this.base` is a hardcoded array of 15 units; can't be empty.
+- **swapLoadoutSlot crash on empty collection** — collection always has at least base units; can't be empty in normal flow.
+- **Unit name sanitization incomplete for single quotes** — all `innerHTML` usages use double-quoted attributes; single quotes in names can't break out.
+- **applyUpgrades modifies in place** — all callers clone first via `cloneUnit()`; function is safe with current usage.
+- **Shop cost overflow with large collections** — collection is capped at 50, so max cost is 290 coins; can't overflow.
+- **upgradeUnit trusts passed cost** — single-player game, no race condition possible.
+- **Forge daily cap race condition** — `_forgeRunning` flag prevents concurrent forges.

@@ -3009,7 +3009,7 @@ function networkReceive(data){
       }else{
         let u=unit(data.d);
         if(!G.save.collection)G.save.collection=[];
-        if(!G.save.collection.some(x=>x.n===u.n)){G.save.collection.push(u);}
+        if(!G.save.collection.some(x=>x.n===u.n)){G.save.collection.push(u);if(G.save.collection.length>50)G.save.collection.shift();}
         if(!G.save.ai)G.save.ai=[];
         if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);}
         saveData(G.save);G.wins();
@@ -7015,6 +7015,7 @@ const G={
       return;
     }
     const step=steps[this.onboardStep];
+    if(step.screen)this.screen(step.screen);
     this._showCoachmark(step.text,step.target,()=>{
       this.onboardStep++;
       this._onboardNext();
@@ -9949,12 +9950,14 @@ const G={
     if(!this.save.collection)this.save.collection=[];
     if(!this.save.collection.some(c=>c.n===u.n)){
       this.save.collection.push({...u});
+      if(this.save.collection.length>50)this.save.collection.shift();
       this.save.coins-=cost;
       saveData(this.save);
       this.wins();
       toast("✓ Added "+u.n+" to collection!");
     }else{
-      toast("You already own "+u.n+"! Rerolling offer.");
+      toast("You already own "+u.n+"!");
+      return;
     }
     this._generateShopOffer();
     this.shop();
