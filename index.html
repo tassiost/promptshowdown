@@ -3524,22 +3524,52 @@ const Battle={
     setText("battleEnemy",enemies.length);
     setText("turn","T"+Math.floor(this.time));
     // Debug logging: log all battle stats every ~1s when Battle.debug is on.
+    // Includes positions, HP, all combat stats, status effects, abilities,
+    // target info, movement/attack detection, and projectile tracking.
     if(this.debug){
       this._debugT+=dt;
       if(this._debugT>=1){
         this._debugT=0;
-        console.group("Battle t="+this.time.toFixed(1)+" alive:P"+players.length+"/E"+enemies.length);
+        const pHP=players.reduce((s,u)=>s+Math.max(0,u.h),0);
+        const eHP=enemies.reduce((s,u)=>s+Math.max(0,u.h),0);
+        console.group("Battle t="+this.time.toFixed(1)+" P"+players.length+"("+pHP.toFixed(0)+"hp)/E"+enemies.length+"("+eHP.toFixed(0)+"hp) proj="+this.projectiles.length);
         for(const u of this.units){
           if(u.h<=0)continue;
           const tgt=u.target;
           const td=tgt?dist(u,tgt).toFixed(0):"-";
-          console.log(u.n+"["+u.team+"] pos=("+u.x.toFixed(0)+","+u.y.toFixed(0)+") hp="+u.h.toFixed(0)+"/"+u.mh.toFixed(0)+" dmg="+u.d+" range="+u.r+" speed="+u.s+" z="+u.z+" cool="+u.cool.toFixed(2)+" tgtDist="+td+" mov="+u.movement+" atkCond="+u.attackCondition);
+          const inRange=tgt?dist(u,tgt)<=u.r:"–";
+          const tgtHp=tgt?tgt.h.toFixed(0)+"/"+tgt.mh.toFixed(0):"-";
+          const sts=[];
+          if(u.poison>0)sts.push("poison:"+u.poison.toFixed(1)+"s");
+          if(u.slow>0)sts.push("slow:"+u.slow.toFixed(1)+"s");
+          if(u.stun>0)sts.push("stun:"+u.stun.toFixed(1)+"s");
+          if(u.shieldActive>0)sts.push("shield:"+u.shieldActive.toFixed(1)+"s");
+          if(u.cool>0)sts.push("cool:"+u.cool.toFixed(2));
+          if(u.abCool>0)sts.push("abCool:"+u.abCool.toFixed(2));
+          console.log(
+            u.n+"["+u.team+"] pos=("+u.x.toFixed(0)+","+u.y.toFixed(0)+")"+
+            " hp="+u.h.toFixed(0)+"/"+u.mh.toFixed(0)+
+            " dmg="+u.d+" range="+u.r+" speed="+u.s+" atkSpd="+u.a.toFixed(2)+
+            " z="+u.z+" crit="+u.crit+
+            " mov="+u.movement+"("+u.moveSpeedMod+"%) tgt="+u.targeting+
+            " atkCond="+u.attackCondition+
+            " ab="+u.ability+"/"+u.abilityTrigger+
+            " tgtDist="+td+"/"+u.r+(inRange===true?" [IN RANGE]":"")+
+            " tgtHp="+tgtHp+
+            " moved="+u.movedThisFrame+" atk="+u.attackedThisFrame+
+            (sts.length?" status=["+sts.join(",")+"]":"")
+          );
         }
         if(this.projectiles.length){
-          console.log("Projectiles:");
+          console.log("Projectiles ("+this.projectiles.length+"):");
           for(const p of this.projectiles){
             if(p.dead)continue;
-            console.log("  proj pos=("+p.x.toFixed(0)+","+p.y.toFixed(0)+") target=("+p.tx.toFixed(0)+","+p.ty.toFixed(0)+") life="+p.life.toFixed(2)+" d="+p.d+" team="+p.team);
+            const tgt=this.units.find(u=>u.id===p.targetId);
+            const tgtName=tgt?tgt.n:"?";
+            console.log("  proj["+p.team+"] pos=("+p.x.toFixed(0)+","+p.y.toFixed(0)+")→("+p.tx.toFixed(0)+","+p.ty.toFixed(0)+")"+
+              " d="+p.d+" life="+p.life.toFixed(2)+
+              " owner="+p.n+" target="+tgtName+
+              " ab="+p.ability);
           }
         }
         console.groupEnd();
@@ -3554,6 +3584,7 @@ const Battle={
     u.target=target; // Phase 24f: store target for eye tracking
     MOVEMENT[u.movement](u,target,dt);
     if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
+      if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+dist(u,target).toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
       this.attack(u,target,enemies);
       u.cool=1/u.a; // cooldown = 1 / attacks_per_second
       u.attackedThisFrame=true; // Phase 11: trigger attack animation
@@ -3590,16 +3621,21 @@ const Battle={
   takeDamage(attacker,target,enemies){
     if(target.h<=0)return;
     // dodge: 50% chance to completely avoid (was 20% in v4)
-    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");target.hasBeenHit=true;return;}
+    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");target.hasBeenHit=true;if(this.debug)console.log("[DODGE] t="+this.time.toFixed(2)+" "+target.n+" dodged "+attacker.n);return;}
     // shield: immune if active
-    if(target.shieldActive>0){this.log(target.n+" shielded!");target.hasBeenHit=true;return;}
+    if(target.shieldActive>0){this.log(target.n+" shielded!");target.hasBeenHit=true;if(this.debug)console.log("[SHIELD] t="+this.time.toFixed(2)+" "+target.n+" shielded vs "+attacker.n);return;}
     let dmg=attacker.d;
     // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
     if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+Math.max(0,1-attacker.h/attacker.mh);
     // crit
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
+    const hpBefore=target.h;
     target.h-=dmg;
+    // Debug: log melee damage (ranged hits are logged in updateProjectiles)
+    if(this.debug&&attacker.r<=RANGED_THRESHOLD){
+      console.log("[DMG] t="+this.time.toFixed(2)+" "+attacker.n+"→"+target.n+"["+target.team+"] d="+dmg.toFixed(1)+(crit?" CRIT":"")+" hp:"+hpBefore.toFixed(0)+"→"+target.h.toFixed(0));
+    }
     target.hasBeenHit=true; // Phase 10: for on_first_hit trigger
     // Phase 17: FX on hit.
     if(crit){
@@ -3728,6 +3764,7 @@ const Battle={
       if(dd<=sp){
         const foes=this.units.filter(u=>u.team!==p.team&&u.h>0);
         let hit=false;
+        let hitUnit=null;
         for(let f of foes){
           if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22+f.z){
             // Synthetic attacker carrying projectile properties.
@@ -3736,16 +3773,26 @@ const Battle={
             // For lifesteal on ranged units, heal the real owner instead of synth.
             const owner=this.units.find(u=>u.id===p.owner&&u.h>0);
             if(owner){synth.h=owner.h;synth.mh=owner.mh;synth.d=owner.d;synth.baseD=owner.baseD;}
+            const hpBefore=f.h;
             this.takeDamage(synth,f,foes);
             if(owner){
               if(synth.h>owner.h)owner.h=synth.h; // lifesteal
               if(synth.d>owner.d)owner.d=synth.d; // ramp
             }
-            hit=true;break;
+            hit=true;hitUnit=f;
+            if(this.debug)console.log("[HIT] t="+this.time.toFixed(2)+" "+p.n+" proj→"+f.n+"["+f.team+"] d="+p.d+" hp:"+hpBefore.toFixed(0)+"→"+f.h.toFixed(0)+" dist="+Math.hypot(f.x-p.tx,f.y-p.ty).toFixed(0));
+            break;
           }
         }
         p.dead=true;
-        if(!hit)this.log("shot missed");
+        if(!hit){
+          this.log("shot missed");
+          if(this.debug){
+            const tgt=this.units.find(u=>u.id===p.targetId);
+            const tgtPos=tgt?"("+tgt.x.toFixed(0)+","+tgt.y.toFixed(0)+")hp="+tgt.h.toFixed(0):"dead/gone";
+            console.log("[MISS] t="+this.time.toFixed(2)+" "+p.n+" proj missed at ("+p.tx.toFixed(0)+","+p.ty.toFixed(0)+") target="+tgtPos);
+          }
+        }
       }
       else{
         p.x+=(dx/dd)*sp;
@@ -4008,6 +4055,14 @@ const Battle={
         const playerHP=this.units.filter(u=>u.team==="player").reduce((s,u)=>s+Math.max(0,u.h),0);
         const enemyHP=this.units.filter(u=>u.team==="enemy").reduce((s,u)=>s+Math.max(0,u.h),0);
         this.winner=playerHP>enemyHP?"player":(enemyHP>playerHP?"enemy":"draw");
+        if(this.debug){
+          console.warn("[TIMEOUT] t="+this.time.toFixed(1)+" battle ended after 90s! winner="+this.winner+" P_HP="+playerHP.toFixed(0)+" E_HP="+enemyHP.toFixed(0));
+          console.log("[TIMEOUT] Final unit states:");
+          for(const u of this.units){
+            if(u.h<=0)continue;
+            console.log("  "+u.n+"["+u.team+"] pos=("+u.x.toFixed(0)+","+u.y.toFixed(0)+") hp="+u.h.toFixed(0)+"/"+u.mh.toFixed(0)+" mov="+u.movement+" range="+u.r+" tgt="+u.targeting+" tgtDist="+(u.target?dist(u,u.target).toFixed(0):"-"));
+          }
+        }
         BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
         BattleFX.shake(4);
         this.stop();
@@ -6149,6 +6204,18 @@ function setupPWA(){
 // Phase 7: tap the battle canvas to advance one tick (touch control).
 document.addEventListener("pointerdown",e=>{
   if(e.target&&e.target.id==="cv"){try{G.tick();}catch(err){/* ignore */}}
+});
+
+// Battle debug toggle: press 'D' during battle to enable/disable verbose logging.
+// Logs unit positions, HP, stats, status effects, abilities, projectiles,
+// attacks, hits, misses, and timeout diagnostics to the console.
+document.addEventListener("keydown",e=>{
+  if(e.key==="d"||e.key==="D"){
+    if(Battle.running){
+      Battle.debug=!Battle.debug;
+      console.log("[DEBUG] Battle debug logging "+(Battle.debug?"ENABLED":"DISABLED"));
+    }
+  }
 });
 
 // Phase 7: reset Battle.last on visibility change so dt doesn't jump.
