@@ -237,6 +237,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:rgba(245,158,11,.1);border:1px solid var(--warn);text-align:center;font-weight:700;">⭐ COMEBACK BONUS — 4th draw!</div>
 <div class="detail" id="draftHint" style="margin-bottom:8px;">Pick 1 unit</div>
 <div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
+<div id="draftCounterPicks" style="display:none;margin:4px 0;padding:8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;"></div>
 <div id="draftArmyPreview" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
 <div id="draftArea"></div>
 <div class="group">
@@ -348,6 +349,14 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <option value="utility">Utility</option>
 <option value="assassin">Assassin</option>
 <option value="bruiser">Bruiser</option>
+</select>
+<select id="deckSort" onchange="G.filterDeck()" style="font-size:.75rem;padding:4px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);">
+<option value="power">Sort: Power</option>
+<option value="name">Sort: Name</option>
+<option value="rarity">Sort: Rarity</option>
+<option value="level">Sort: Level</option>
+<option value="hp">Sort: HP</option>
+<option value="dmg">Sort: DMG</option>
 </select>
 </div>
 <div id="deckArea"></div>
@@ -6638,6 +6647,24 @@ const G={
         roleEl.innerHTML="";
       }
     }
+    // Counter-pick suggestions: in round 2+, suggest picks that counter enemy.
+    const cpEl=$("draftCounterPicks");
+    if(cpEl){
+      // Use enemy's previous round picks for counter-pick analysis.
+      const enemyUnits=this.prevEnemyPicks||null;
+      if(enemyUnits&&enemyUnits.length>0&&Match.round>1){
+        const suggestions=this._getCounterPickSuggestions(this.currentOffering,enemyUnits);
+        if(suggestions.length>0){
+          cpEl.style.display="block";
+          cpEl.innerHTML="<span style='color:var(--accent);font-weight:700;'>🎯 Counter picks vs last enemy:</span> "+
+            suggestions.map(s=>`<span style="color:${s.color};font-weight:700;">${s.name}</span> <span style="color:var(--muted);">(${s.reason})</span>`).join(" · ");
+        }else{
+          cpEl.style.display="none";
+        }
+      }else{
+        cpEl.style.display="none";
+      }
+    }
     // Phase 19a: comeback banner for 4th draw.
     const cb=$("comebackBanner");
     if(cb)cb.style.display=st.drawCount===4?"block":"none";
@@ -6670,10 +6697,74 @@ const G={
     this.updateRerollUI();
   },
 
+  // Get counter-pick suggestions based on enemy composition.
+  _getCounterPickSuggestions(offering,enemyUnits){
+    const suggestions=[];
+    // Analyze enemy composition.
+    const enemyRoles={};
+    const enemyAbilities={};
+    for(const u of enemyUnits){
+      if(!u)continue;
+      if(u.role)enemyRoles[u.role]=(enemyRoles[u.role]||0)+1;
+      if(u.ability&&u.ability!=="none")enemyAbilities[u.ability]=(enemyAbilities[u.ability]||0)+1;
+    }
+    for(const u of offering){
+      if(!u||u._isSpell)continue;
+      let reason=null;
+      // Counter enemy carries with counter/assassin units.
+      if((enemyRoles["carry"]||0)>=1&&u.role==="counter"){
+        reason="dives enemy carries";
+      }
+      // Counter enemy healing with executioner (high damage to finish through heals).
+      else if((enemyAbilities["heal"]||0)>0&&u.ability==="executioner"){
+        reason="executes through healing";
+      }
+      // Counter enemy frontline with splash damage.
+      else if((enemyRoles["frontline"]||0)>=1&&u.ability==="splash"){
+        reason="splash vs tanky frontline";
+      }
+      // Counter enemy dodge with splash (can't dodge AoE).
+      else if((enemyAbilities["dodge"]||0)>0&&u.ability==="splash"){
+        reason="splash bypasses dodge";
+      }
+      // Counter enemy shield with poison (DoT ignores shield).
+      else if((enemyAbilities["shield"]||0)>0&&u.ability==="poison"){
+        reason="poison bypasses shield";
+      }
+      // Counter enemy lifesteal with burst damage (executioner).
+      else if((enemyAbilities["lifesteal"]||0)>0&&u.ability==="executioner"){
+        reason="burst vs lifesteal";
+      }
+      // Counter enemy ramp with stun/slow.
+      else if((enemyAbilities["ramp"]||0)>0&&u.ability==="slow"){
+        reason="slows ramp units";
+      }
+      // Counter enemy cluster with chain lightning.
+      else if(enemyUnits.filter(u=>u&&u.h>0).length>=3&&u.ability==="chain_lightning"){
+        reason="chain vs clustered enemy";
+      }
+      // Counter enemy taunt with ranged units.
+      else if((enemyAbilities["taunt"]||0)>0&&u.r>100){
+        reason="ranged vs taunt";
+      }
+      // Suggest frontline if enemy has many carries.
+      else if((enemyRoles["carry"]||0)>=2&&u.role==="frontline"){
+        reason="tanks vs enemy carries";
+      }
+      // Suggest support if enemy has high damage.
+      else if((enemyRoles["carry"]||0)>=1&&u.role==="support"){
+        reason="sustain vs enemy damage";
+      }
+      if(reason){
+        suggestions.push({name:u.n,color:u.c,reason});
+      }
+    }
+    return suggestions.slice(0,3);
+  },
+
   // Phase 9/16: draft card onclick — pick this unit, advance to next draw.
   // Phase 16: highlights picks that fill missing roles in current round army.
-  draftCard(u){
-    const card=document.createElement("div");
+  draftCard(u){    const card=document.createElement("div");
     // Phase 23: spell card rendering.
     if(u._isSpell){
       card.className="card rar-rare";
@@ -6979,6 +7070,13 @@ const G={
   startBattle(){
     // Phase 21: store player's picks for bot counter-picking next round.
     this.prevPlayerPicks=this.selected?[...this.selected]:null;
+    // Store enemy's picks for counter-pick suggestions next round.
+    this.prevEnemyPicks=this.opponentPicks?[...this.opponentPicks]:null;
+    // Apply saved default battle speed.
+    const savedSpeed=this.save.defaultSpeed||1;
+    Battle.speed=savedSpeed;
+    const sb=$("speedBtn");
+    if(sb)sb.textContent=savedSpeed+"×";
     GameAudio.init();GameAudio.stopMusic();GameAudio.startMusic(); // Phase 30 + I1: switch to battle music
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
@@ -7523,6 +7621,9 @@ const G={
     Battle.speed=Battle.speed===1?2:Battle.speed===2?4:1;
     const btn=$("speedBtn");
     if(btn)btn.textContent=Battle.speed+"×";
+    // Save preferred speed.
+    this.save.defaultSpeed=Battle.speed;
+    saveData(this.save);
     // Restart auto timer with new speed if running.
     if(Battle.autoTimer)Battle.auto();
   },
@@ -7991,8 +8092,10 @@ const G={
     // Get filter values.
     const searchEl=$("deckSearch");
     const roleEl=$("deckRoleFilter");
+    const sortEl=$("deckSort");
     const searchTerm=(searchEl?.value||"").toLowerCase().trim();
     const roleFilter=roleEl?.value||"";
+    const sortBy=sortEl?.value||"power";
     // Filter collection.
     let filtered=coll;
     if(searchTerm){
@@ -8005,6 +8108,27 @@ const G={
     if(roleFilter){
       filtered=filtered.filter(u=>u.role===roleFilter);
     }
+    // Sort collection.
+    const rarityOrder={legendary:3,rare:2,common:1};
+    const abBonus={none:0,splash:15,heal:20,dodge:25,poison:15,spawn:20,lifesteal:20,explode:15,heal_burst:20,shield:25,rage:20,slow:10,ramp:25,thorns:15,blink_strike:25,frenzy:20,regen:15,cleanse:15,taunt:20,executioner:25,chain_lightning:25};
+    const unitPower=u=>{
+      const lvl=this.unitLevel(u.n);
+      const hp=u.h*(1+0.1*lvl),dmg=u.d*(1+0.1*lvl);
+      let s=hp*0.5+dmg*2+u.r*0.3+u.s*0.2+u.a*5+(u.crit||0)*20;
+      s+=abBonus[u.ability]||0;
+      s+=u.rar==="legendary"?30:u.rar==="rare"?15:0;
+      return s;
+    };
+    filtered=[...filtered].sort((a,b)=>{
+      switch(sortBy){
+        case "name":return a.n.localeCompare(b.n);
+        case "rarity":return (rarityOrder[b.rar]||0)-(rarityOrder[a.rar]||0)||unitPower(b)-unitPower(a);
+        case "level":return this.unitLevel(b.n)-this.unitLevel(a.n)||unitPower(b)-unitPower(a);
+        case "hp":return b.h-a.h;
+        case "dmg":return b.d-a.d;
+        default:return unitPower(b)-unitPower(a);
+      }
+    });
     // Show filter result count.
     if(searchTerm||roleFilter){
       const info=document.createElement("div");
