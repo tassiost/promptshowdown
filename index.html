@@ -256,6 +256,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <span id="livesBattle" style="font-size:.8rem;"></span>
 <span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
 <span id="turn">T0</span>
+<span id="battleTimer" style="color:var(--muted);font-size:.7rem;"></span>
 </div>
 <canvas id="cv"></canvas>
 <div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;"></div>
@@ -325,6 +326,19 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="synergyMeter" style="margin:10px 0;font-size:.8rem;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <h2 style="font-size:.85rem;margin-top:14px;">Collection</h2>
 <div class="detail" style="margin-bottom:8px;">Tap a unit with a duplicate to fuse (2 → +1 Lv)</div>
+<div style="display:flex;gap:4px;margin:8px 0;flex-wrap:wrap;justify-content:center;">
+<input id="deckSearch" type="text" placeholder="Search units..." oninput="G.filterDeck()" style="flex:1;min-width:120px;max-width:200px;font-size:.75rem;padding:4px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);">
+<select id="deckRoleFilter" onchange="G.filterDeck()" style="font-size:.75rem;padding:4px 8px;background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:var(--radius-sm);">
+<option value="">All Roles</option>
+<option value="frontline">Frontline</option>
+<option value="carry">Carry</option>
+<option value="support">Support</option>
+<option value="counter">Counter</option>
+<option value="utility">Utility</option>
+<option value="assassin">Assassin</option>
+<option value="bruiser">Bruiser</option>
+</select>
+</div>
 <div id="deckArea"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
@@ -3566,6 +3580,12 @@ const GameAudio={
       case "forge_whoosh":noise(0.5,0.1,1000,"bandpass");break;
       case "forge_reveal":make("sine",200,1200,0.4,0.1);break;
       case "ramp_up":make("sine",400,800,0.08,0.08);break;
+      case "coin":make("sine",880,880,0.05,0.08);setTimeout(()=>make("sine",1320,1320,0.08,0.06),50);break;
+      case "level_up":make("sine",440,440,0.08,0.08);setTimeout(()=>make("sine",554,554,0.08,0.08),80);setTimeout(()=>make("sine",659,659,0.15,0.1),160);break;
+      case "achievement":make("sine",659,659,0.1,0.1);setTimeout(()=>make("sine",880,880,0.1,0.1),100);setTimeout(()=>make("sine",1047,1047,0.3,0.12),200);break;
+      case "draft_pick":make("triangle",600,900,0.08,0.06);break;
+      case "reroll":make("sine",300,600,0.15,0.06);break;
+      case "error":make("sawtooth",200,150,0.15,0.08);break;
     }
   },
   // Procedural music — generative ambient loop.
@@ -4442,6 +4462,14 @@ const Battle={
     setText("battleHP",players.length);
     setText("battleEnemy",enemies.length);
     setText("turn","T"+Math.floor(this.time));
+    // Battle countdown timer: shows remaining time, turns red in last 15s.
+    const timerEl=$("battleTimer");
+    if(timerEl){
+      const remaining=Math.max(0,90-this.time);
+      if(remaining<=15){timerEl.style.color="#f84";timerEl.textContent="⏱ "+Math.ceil(remaining)+"s";}
+      else if(remaining<90){timerEl.style.color="var(--muted)";timerEl.textContent="⏱ "+Math.ceil(remaining)+"s";}
+      else{timerEl.textContent="";}
+    }
     // Debug logging: log all battle stats every ~1s when Battle.debug is on.
     // Includes positions, HP, all combat stats, status effects, abilities,
     // target info, movement/attack detection, and projectile tracking.
@@ -6573,6 +6601,7 @@ const G={
         if(!st)return;
         st.picks.push(u);
         st.drawIndex++;
+        GameAudio.sfx("draft_pick");
         if(st.drawIndex>=st.drawCount){
           this.selected=st.picks;
           if(connected&&role==="guest"){
@@ -6603,6 +6632,7 @@ const G={
       if(!st)return;
       st.picks.push(u);
       st.drawIndex++;
+      GameAudio.sfx("draft_pick");
       if(st.drawIndex>=st.drawCount){
         // All draws done → army locked → battle.
         this.selected=st.picks;
@@ -6620,8 +6650,9 @@ const G={
 
   // Phase 9: reroll re-rolls the current draw's cards.
   reroll(){
-    if(this.rerolls<=0)return;
+    if(this.rerolls<=0){GameAudio.sfx("error");return;}
     this.rerolls--;
+    GameAudio.sfx("reroll");
     this.drawOne(); // re-rolls the current offering
   },
 
@@ -7067,6 +7098,7 @@ const G={
       rw.style.display="flex";
       setText("xpGain","+"+(xpGain||0));
       setText("coinGain","+"+(coinGain||0));
+      if((coinGain||0)>0)setTimeout(()=>GameAudio.sfx("coin"),300);
     }
     // Phase 15: arena advancement notification.
     if(arenaAdvanced){
@@ -7250,16 +7282,19 @@ const G={
   },
   checkAchievements(){
     const a=this.save.achievements;
+    let unlocked=false;
     for(const key in this.achievements){
       if(!a[key]){
         try{
           if(this.achievements[key].check(this)){
             a[key]=true;
             toast("🏆 "+this.achievements[key].name+" unlocked!");
+            unlocked=true;
           }
         }catch(e){/* ignore single achievement check failure */}
       }
     }
+    if(unlocked)GameAudio.sfx("achievement");
     saveData(this.save);
   },
 
@@ -7642,14 +7677,52 @@ const G={
     // Phase 16: synergy meter — role balance analysis.
     this.renderSynergyMeter();
     // Render collection (all owned units, with fusion for duplicates).
+    this._renderCollection();
+  },
+  // Filter and render the collection based on search/role filter.
+  filterDeck(){
+    this._renderCollection();
+  },
+  _renderCollection(){
     let area=$("deckArea");
     if(!area)return;
     area.innerHTML="";
     const coll=this.collectionUnits();
+    // Get filter values.
+    const searchEl=$("deckSearch");
+    const roleEl=$("deckRoleFilter");
+    const searchTerm=(searchEl?.value||"").toLowerCase().trim();
+    const roleFilter=roleEl?.value||"";
+    // Filter collection.
+    let filtered=coll;
+    if(searchTerm){
+      filtered=filtered.filter(u=>
+        u.n.toLowerCase().includes(searchTerm)||
+        (u.ability&&u.ability!=="none"&&u.ability.toLowerCase().includes(searchTerm))||
+        (u.role&&u.role.toLowerCase().includes(searchTerm))
+      );
+    }
+    if(roleFilter){
+      filtered=filtered.filter(u=>u.role===roleFilter);
+    }
+    // Show filter result count.
+    if(searchTerm||roleFilter){
+      const info=document.createElement("div");
+      info.style.cssText="text-align:center;color:var(--muted);font-size:.72rem;margin:4px 0;";
+      info.textContent=`${filtered.length} of ${coll.length} units`;
+      area.appendChild(info);
+      if(filtered.length===0){
+        const empty=document.createElement("div");
+        empty.style.cssText="text-align:center;color:var(--muted);margin:12px 0;";
+        empty.textContent="No units match your filters.";
+        area.appendChild(empty);
+        return;
+      }
+    }
     // Count duplicates in collection for fusion.
     const counts={};
     for(let u of coll)counts[u.n]=(counts[u.n]||0)+1;
-    for(let u of coll){
+    for(let u of filtered){
       const lvl=this.unitLevel(u.n);
       const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
       const canFuse=counts[u.n]>=2;
@@ -7827,13 +7900,14 @@ const G={
 
   // Phase 6: spend coins to raise a unit's upgrade level.
   upgradeUnit(name,cost){
-    if(this.unitLevel(name)>=10){toast(t("max_level"));return;}
-    if(this.save.coins<cost){toast(t("not_enough_coins"));return;}
+    if(this.unitLevel(name)>=10){toast(t("max_level"));GameAudio.sfx("error");return;}
+    if(this.save.coins<cost){toast(t("not_enough_coins"));GameAudio.sfx("error");return;}
     this.save.coins-=cost;
     this.save.upgrades[name]=(this.save.upgrades[name]||0)+1;
     saveData(this.save);
     this.wins();
     toast("⬆ "+name+t("upgraded_to")+this.unitLevel(name));
+    GameAudio.sfx("level_up");
     this.upgrade();
   },
 
