@@ -237,6 +237,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:rgba(245,158,11,.1);border:1px solid var(--warn);text-align:center;font-weight:700;">⭐ COMEBACK BONUS — 4th draw!</div>
 <div class="detail" id="draftHint" style="margin-bottom:8px;">Pick 1 unit</div>
 <div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
+<div id="draftArmyPreview" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
 <div id="draftArea"></div>
 <div class="group">
 <button class="btn" id="rerollButton" onclick="G.reroll()">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
@@ -271,6 +272,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.togglePause()" style="width:auto;padding:12px 14px;" id="pauseBtn">⏸</button>
 <button class="btn red" onclick="G.skip()" style="width:auto;padding:12px 18px;">⏭</button>
 </div>
+<div id="battleControlsHint" style="text-align:center;font-size:.6rem;color:var(--muted);margin:4px 0;opacity:0.7;">Space: tick · P: pause · 1/2/3: speed · S: skip · A: auto</div>
 </div>
 
 <div class="screen" id="result">
@@ -6587,6 +6589,32 @@ const G={
     // Phase 19a: comeback banner for 4th draw.
     const cb=$("comebackBanner");
     if(cb)cb.style.display=st.drawCount===4?"block":"none";
+    // Army power preview: shows current picks' total power and role coverage.
+    const previewEl=$("draftArmyPreview");
+    if(previewEl){
+      const pickedUnits=st.picks.filter(p=>!p._isSpell);
+      if(pickedUnits.length>0){
+        previewEl.style.display="block";
+        // Calculate power score.
+        let power=0;
+        const roles=new Set();
+        for(const u of pickedUnits){
+          const lvl=this.unitLevel(u.n);
+          const hp=u.h*(1+0.1*lvl),dmg=u.d*(1+0.1*lvl);
+          let s=hp*0.5+dmg*2+u.r*0.3+u.s*0.2+u.a*5+(u.crit||0)*20;
+          const abBonus={none:0,splash:15,heal:20,dodge:25,poison:15,spawn:20,lifesteal:20,explode:15,heal_burst:20,shield:25,rage:20,slow:10,ramp:25,thorns:15,blink_strike:25,frenzy:20,regen:15,cleanse:15,taunt:20,executioner:25,chain_lightning:25};
+          s+=abBonus[u.ability]||0;
+          s+=u.rar==="legendary"?30:u.rar==="rare"?15:0;
+          power+=s;
+          if(u.role)roles.add(u.role);
+        }
+        const roleText=Array.from(roles).join(", ");
+        const remaining=st.drawCount-st.drawIndex;
+        previewEl.innerHTML=`<span style="color:var(--accent2);font-weight:700;">⚔️ Army Power: ${Math.round(power)}</span> · Roles: ${roleText||"none"} · ${remaining} pick${remaining!==1?"s":""} left`;
+      }else{
+        previewEl.style.display="none";
+      }
+    }
     this.updateRerollUI();
   },
 
