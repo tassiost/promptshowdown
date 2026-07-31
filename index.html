@@ -329,6 +329,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
   </div>
 </div>
 <div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--warn);text-align:center;font-weight:800;letter-spacing:1px;animation:victoryPulse 1.5s ease-in-out infinite;">⭐ COMEBACK BONUS — 4th draw!</div>
+<canvas id="draftCanvas" width="400" height="200" style="background:radial-gradient(ellipse at center,#1a2540 0%,#0d1526 70%);border:1px solid var(--border);border-radius:var(--radius-sm);max-width:100%;touch-action:none;"></canvas>
 <div class="detail" id="draftHint" style="margin-bottom:8px;font-size:.78rem;font-weight:700;color:var(--accent2);">Pick 1 unit</div>
 <div id="draftTimerBar" style="display:none;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;margin:4px 0 8px;max-width:280px;margin-left:auto;margin-right:auto;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);"><div id="draftTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
 <div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
@@ -403,6 +404,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <div class="screen" id="result">
 <h1 id="resultTitle">RESULT</h1>
 <div id="livesResult" style="font-size:.9rem;margin:10px;font-weight:600;text-align:center;"></div>
+<div id="survivorInfo" style="display:none;font-size:.78rem;margin:4px 10px;color:var(--accent2);font-weight:600;text-align:center;"></div>
 <div id="matchHint" style="font-size:.8rem;margin:10px;color:var(--warn);padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <div id="matchAnalysis" style="display:none;margin:10px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div class="reward" id="matchRewards" style="display:none;">
@@ -7799,16 +7801,91 @@ const G={
     this.selected=randomPicks;
     Match.start(lives,winner=>this.onMatchEnd(winner));
     if(endlessLvl>0||diff!=="normal")Match.livesEnemy=botLives;
-    // Skip draft and scout — go straight to battle.
+    // Continuous draft: go through normal draft flow (no more quick-skip).
     this.opponentPicks=Bot.draftRound(3);
-    this.showScout();
+  },
+
+  // Continuous draft: render the battlefield canvas showing placed units.
+  // Shows player units (survivors + current picks) and enemy units (bot survivors + revealed picks).
+  _draftPlayerUnits:[],   // units placed on battlefield during this draft
+  _draftEnemyUnits:[],   // enemy units revealed so far
+  _draftBotPicks:[],     // all bot picks for this round (revealed one per player pick)
+  _draftBotRevealed:0,   // how many bot picks have been revealed
+  playerSurvivors:[],    // units that survived from previous round
+  enemySurvivors:[],     // enemy units that survived from previous round
+
+  renderDraftBattlefield(){
+    const cv=$("draftCanvas");
+    if(!cv)return;
+    const ctx=cv.getContext("2d");
+    const w=cv.width,h=cv.height;
+    // Scale factor: draft canvas is 200px tall vs battle's 550px.
+    const sy=h/550,sx=w/400;
+    // Draw background gradient.
+    const g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w*0.7);
+    g.addColorStop(0,"#1a2540");
+    g.addColorStop(1,"#0d1526");
+    ctx.fillStyle=g;
+    ctx.fillRect(0,0,w,h);
+    // Draw center line (battlefield divider).
+    ctx.strokeStyle="rgba(255,255,255,0.08)";
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
+    // Draw all player units (survivors + current picks).
+    const allPlayer=[...this.playerSurvivors,...this._draftPlayerUnits];
+    for(const u of allPlayer){
+      const x=u.x*sx,y=u.y*sy;
+      // Team-colored dot.
+      ctx.fillStyle=u._isSurvivor?"#4af":"#6af";
+      ctx.globalAlpha=u._isSurvivor?0.6:1;
+      ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
+      // Outline.
+      ctx.strokeStyle="#000";ctx.lineWidth=1;ctx.stroke();
+      // Name label (small).
+      ctx.globalAlpha=1;
+      ctx.fillStyle="#4af";
+      ctx.font="6px sans-serif";
+      ctx.textAlign="center";
+      ctx.fillText(u.n?.substring(0,8)||"?",x,y-6);
+    }
+    // Draw all enemy units (survivors + revealed picks).
+    const allEnemy=[...this.enemySurvivors,...this._draftEnemyUnits];
+    for(const u of allEnemy){
+      const x=u.x*sx,y=u.y*sy;
+      ctx.fillStyle=u._isSurvivor?"#f44":"#f68";
+      ctx.globalAlpha=u._isSurvivor?0.6:1;
+      ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle="#000";ctx.lineWidth=1;ctx.stroke();
+      ctx.globalAlpha=1;
+      ctx.fillStyle="#f44";
+      ctx.font="6px sans-serif";
+      ctx.textAlign="center";
+      ctx.fillText(u.n?.substring(0,8)||"?",x,y-6);
+    }
+    ctx.textAlign="left";
+    // Unit count labels.
+    ctx.fillStyle="#4af";ctx.font="bold 10px sans-serif";
+    ctx.fillText("You: "+allPlayer.length,4,12);
+    ctx.fillStyle="#f44";
+    ctx.textAlign="right";
+    ctx.fillText("Enemy: "+allEnemy.length,w-4,12);
+    ctx.textAlign="left";
+  },
+
+  // Place a unit on the draft battlefield at its formation position.
+  _placeDraftUnit(u,isPlayer){
+    const [yMin,yMax]=this._formationY(u.role,isPlayer);
+    const xSpread=Q(40,160);
+    const xPos=isPlayer?xSpread:400-xSpread;
+    const placed={...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h};
+    return placed;
   },
 
   // Phase 9: called by Match.startRound() to start the sequential draft.
   startRoundDraft(){
     GameAudio.sfx("round_start"); // Phase 30
     // Rerolls are per-match: only reset on round 1.
-    if(Match.round===1)this.rerolls=3;
+    if(Match.round===1){this.rerolls=3;this.playerSurvivors=[];this.enemySurvivors=[];}
     // Determine draw count: 4th-draw comeback if player lost last round.
     // Guest uses host-sent draw count (comeback is from host's perspective).
     const drawCount=(connected&&role==="guest")?(this._hostDrawCount||3):(Match.comebackEligible()?4:3);
@@ -7816,8 +7893,19 @@ const G={
     this._pendingGuestDeck=null; // clear stale guest deck from previous round
     this.pendingHostArmy=null;   // clear stale host army from previous round
     this.selected=[];
+    // Continuous draft: reset placed units, generate bot picks for this round.
+    this._draftPlayerUnits=[];
+    this._draftEnemyUnits=[];
+    this._draftBotRevealed=0;
+    if(!Bot.loadout.length)Bot.generateLoadout(this.arenas[this.save.arena||0]?.botPool||this.base.map(u=>u.n));
+    const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
+    this._draftBotPicks=Bot.draftRound(drawCount);
+    // Mark survivors for visual distinction.
+    this.playerSurvivors=this.playerSurvivors.map(u=>({...u,_isSurvivor:true}));
+    this.enemySurvivors=this.enemySurvivors.map(u=>({...u,_isSurvivor:true}));
     this.screen("draft");
     this.updateLivesHUD();
+    this.renderDraftBattlefield();
     this.drawOne();
   },
 
@@ -7898,12 +7986,26 @@ const G={
     st.picks.push(u);
     st.drawIndex++;
     GameAudio.sfx("draft_pick");
+    // Continuous draft: place unit on battlefield canvas immediately.
+    if(!u._isSpell){
+      const placed=this._placeDraftUnit(u,true);
+      this._draftPlayerUnits.push(placed);
+    }
+    // Reveal one bot pick on the enemy side (simultaneous drafting).
+    if(this._draftBotPicks[this._draftBotRevealed]&&!this._draftBotPicks[this._draftBotRevealed]._isSpell){
+      const botPick=this._draftBotPicks[this._draftBotRevealed];
+      const botPlaced=this._placeDraftUnit(botPick,false);
+      this._draftEnemyUnits.push(botPlaced);
+    }
+    this._draftBotRevealed++;
+    this.renderDraftBattlefield();
     if(st.drawIndex>=st.drawCount){
       this.selected=st.picks;
       if(connected&&role==="guest"){
         transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
       }
-      this.battle();
+      // Skip scout — go straight to battle (continuous draft model).
+      this.startBattle();
     }else{
       this.drawOne();
     }
@@ -8081,25 +8183,7 @@ const G={
         `<div class="title" style="color:#fa4">✨ ${u.name}</div>`+
         `<div class="detail">${effectDesc}<br><span style="color:var(--accent2)">${triggerDesc}</span><br><span style="color:var(--muted)">${u.fxType}</span></div>`;
       card.style.borderColor="#fa4";
-      card.onclick=()=>{
-        const st=this.roundDraftState;
-        if(!st||this._draftPicking)return;
-        this._draftPicking=true;
-        this._clearDraftTimer();
-        st.picks.push(u);
-        st.drawIndex++;
-        GameAudio.sfx("draft_pick");
-        if(st.drawIndex>=st.drawCount){
-          this.selected=st.picks;
-          if(connected&&role==="guest"){
-            transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
-          }
-          this.battle();
-        }else{
-          this.drawOne();
-        }
-        this._draftPicking=false;
-      };
+      card.onclick=()=>this.pickDraft(u);
       return card;
     }
     card.className="card rar-"+u.rar;
@@ -8118,27 +8202,7 @@ const G={
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
       `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${abDesc}${roleLabel}${roleFillHint}</div>`;
     if(missingRole)card.style.borderColor="var(--ok)";
-    card.onclick=()=>{
-      const st=this.roundDraftState;
-      if(!st||this._draftPicking)return;
-      this._draftPicking=true;
-      this._clearDraftTimer();
-      st.picks.push(u);
-      st.drawIndex++;
-      GameAudio.sfx("draft_pick");
-      if(st.drawIndex>=st.drawCount){
-        // All draws done → army locked → battle.
-        this.selected=st.picks;
-        // Phase 18: guest sends their picks to the host.
-        if(connected&&role==="guest"){
-          transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
-        }
-        this.battle();
-      }else{
-        this.drawOne();
-      }
-      this._draftPicking=false;
-    };
+    card.onclick=()=>this.pickDraft(u);
     return card;
   },
 
@@ -8178,21 +8242,58 @@ const G={
     return cloneUnit(candidates[F(R()*candidates.length)]);
   },
 
-  // Phase 10: build an army (3 copies of each picked unit).
+  // Phase 10: build an army from survivors + new picks (1 copy per pick).
   // Phase 23: spells are separated from units.
   buildArmy(){
     const result=this._buildArmyFromPicks(this.selected,true,true);
     this.playerSpells=result.spells;
-    return result.units;
+    // Combine survivors with new picks.
+    const survivors=this.playerSurvivors.map(u=>{
+      const clean={...u};
+      delete clean._isSurvivor;
+      delete clean.team;
+      delete clean.deathT;
+      delete clean.animState;
+      delete clean.cool;
+      delete clean.abCool;
+      delete clean.poison;
+      delete clean.shieldActive;
+      delete clean.hitFlash;
+      delete clean.lungeT;
+      delete clean.dmgDealt;
+      delete clean.kills;
+      delete clean.lastAttacker;
+      clean.h=clean.mh; // heal to full between rounds
+      return clean;
+    });
+    return [...survivors,...result.units];
   },
 
-  // Phase 9/14: build a bot army from opponent picks (3 copies each).
+  // Phase 9/14: build a bot army from enemy survivors + bot picks (1 copy each).
   buildBotArmy(){
-    const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
-    const botPicks=this.opponentPicks||Bot.draftRound(botComeback?4:3);
+    const botPicks=this._draftBotPicks.length?this._draftBotPicks:Bot.draftRound(Match.comebackEligible()?4:3);
     const result=this._buildArmyFromPicks(botPicks,false,false);
     this.enemySpells=result.spells;
-    return result.units;
+    // Combine enemy survivors with new picks.
+    const survivors=this.enemySurvivors.map(u=>{
+      const clean={...u};
+      delete clean._isSurvivor;
+      delete clean.team;
+      delete clean.deathT;
+      delete clean.animState;
+      delete clean.cool;
+      delete clean.abCool;
+      delete clean.poison;
+      delete clean.shieldActive;
+      delete clean.hitFlash;
+      delete clean.lungeT;
+      delete clean.dmgDealt;
+      delete clean.kills;
+      delete clean.lastAttacker;
+      clean.h=clean.mh; // heal to full between rounds
+      return clean;
+    });
+    return [...survivors,...result.units];
   },
 
   // Phase 22: role-based formation y-bands.
@@ -8209,7 +8310,7 @@ const G={
     return bands[role]||bands.frontline;
   },
 
-  // Helper: build an army from picks (3 copies each, positioned by role).
+  // Helper: build an army from picks (1 copy per pick, positioned by role).
   // Phase 23: separates spells from units, returns {units, spells}.
   _buildArmyFromPicks(picks,applyUpg,isPlayer){
     const out=[];
@@ -8218,20 +8319,16 @@ const G={
       if(!pick)continue;
       if(pick._isSpell){spells.push(pick);continue;} // Phase 23: skip spells
       const [yMin,yMax]=this._formationY(pick.role,isPlayer);
-      for(let i=0;i<3;i++){
-        const u=applyUpg?this.applyUpgrades(cloneUnit(pick)):cloneUnit(pick);
-        const xSpread=Q(40,160); // player left, enemy right (mirrored below)
-        const xPos=isPlayer?xSpread:400-xSpread;
-        out.push({...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h});
-      }
+      const u=applyUpg?this.applyUpgrades(cloneUnit(pick)):cloneUnit(pick);
+      const xSpread=Q(40,160); // player left, enemy right (mirrored below)
+      const xPos=isPlayer?xSpread:400-xSpread;
+      out.push({...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h});
     }
     // Safety: if all picks were spells, add a default unit so the army isn't empty.
-    if(out.length===0){
+    if(out.length===0&&this.playerSurvivors.length===0&&isPlayer){
       const fallback=cloneUnit(this.base[0]);
       const [yMin,yMax]=this._formationY(fallback.role,isPlayer);
-      for(let i=0;i<3;i++){
-        out.push({...fallback,x:isPlayer?Q(40,160):400-Q(40,160),y:Q(yMin,yMax),h:fallback.h,mh:fallback.h});
-      }
+      out.push({...fallback,x:isPlayer?Q(40,160):400-Q(40,160),y:Q(yMin,yMax),h:fallback.h,mh:fallback.h});
     }
     return {units:out,spells};
   },
@@ -8422,7 +8519,7 @@ const G={
       setText("battleEnemy","?");
       return;
     }
-    // Phase 9: bot match — build enemy army from opponent picks.
+    // Phase 9: bot match — build enemy army from enemy survivors + bot picks.
     const enemies=this.buildBotArmy();
     this.screen("battle");
     this.updateLivesHUD();
@@ -8449,19 +8546,15 @@ const G={
       if(!pick)continue;
       if(pick._isSpell){spells.push(pick);continue;} // Phase 23
       const [yMin,yMax]=this._formationY(pick.role,false);
-      for(let i=0;i<3;i++){
-        const u=guestUpgrades?this._applyUpgradeLevel(cloneUnit(pick),guestUpgrades[pick.n]||0):this.applyUpgrades(cloneUnit(pick));
-        const xSpread=Q(40,160);
-        out.push({...u,x:400-xSpread,y:Q(yMin,yMax),h:u.h,mh:u.h});
-      }
+      const u=guestUpgrades?this._applyUpgradeLevel(cloneUnit(pick),guestUpgrades[pick.n]||0):this.applyUpgrades(cloneUnit(pick));
+      const xSpread=Q(40,160);
+      out.push({...u,x:400-xSpread,y:Q(yMin,yMax),h:u.h,mh:u.h});
     }
     // Safety: if all picks were spells, add a default unit so the army isn't empty.
     if(out.length===0){
       const fallback=cloneUnit(this.base[0]);
       const [yMin,yMax]=this._formationY(fallback.role,false);
-      for(let i=0;i<3;i++){
-        out.push({...fallback,x:400-Q(40,160),y:Q(yMin,yMax),h:fallback.h,mh:fallback.h});
-      }
+      out.push({...fallback,x:400-Q(40,160),y:Q(yMin,yMax),h:fallback.h,mh:fallback.h});
     }
     this.enemySpells=spells; // Phase 23: store guest spells
     return out;
@@ -8488,6 +8581,37 @@ const G={
   // Phase 8: Battle ended — delegate to Match for round/match logic.
   onBattleEnd(winner){
     this.stopSnapshots();
+    // Continuous draft: store surviving units for next round.
+    if(Match.active){
+      this.playerSurvivors=Battle.units.filter(u=>u.team==="player"&&u.h>0).map(u=>{
+        const clean={...u};
+        delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
+        delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
+        delete clean.shieldActive;delete clean.deathT;delete clean.animState;delete clean.animT;
+        delete clean.attackT;delete clean.movedThisFrame;delete clean.attackedThisFrame;
+        delete clean.prevX;delete clean.prevY;delete clean.prevH;delete clean.spawnT;
+        delete clean.hitFlash;delete clean.lungeT;delete clean.lungeDir;delete clean.abFlash;
+        delete clean.abFlashColor;delete clean.dmgDealt;delete clean.kills;delete clean.lastAttacker;
+        delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
+        delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
+        delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
+        return clean;
+      });
+      this.enemySurvivors=Battle.units.filter(u=>u.team==="enemy"&&u.h>0).map(u=>{
+        const clean={...u};
+        delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
+        delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
+        delete clean.shieldActive;delete clean.deathT;delete clean.animState;delete clean.animT;
+        delete clean.attackT;delete clean.movedThisFrame;delete clean.attackedThisFrame;
+        delete clean.prevX;delete clean.prevY;delete clean.prevH;delete clean.spawnT;
+        delete clean.hitFlash;delete clean.lungeT;delete clean.lungeDir;delete clean.abFlash;
+        delete clean.abFlashColor;delete clean.dmgDealt;delete clean.kills;delete clean.lastAttacker;
+        delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
+        delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
+        delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
+        return clean;
+      });
+    }
     // Phase 16: accumulate death log across rounds for post-match hint.
     if(Battle.deathLog&&Battle.deathLog.length){
       if(!Match.deathLog)Match.deathLog=[];
@@ -8532,6 +8656,13 @@ const G={
     GameAudio.stopMusic(); // Phase 30: stop battle music
     const lr=$("livesResult");
     if(lr)lr.innerText=`You ${this.livesHearts(livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(livesEnemy,DEFAULT_LIVES)}`;
+    // Show survivor count (continuous draft model).
+    const sr=$("survivorInfo");
+    if(sr){
+      const ps=this.playerSurvivors.length,es=this.enemySurvivors.length;
+      sr.innerText=`Survivors — You: ${ps} | Enemy: ${es}`;
+      sr.style.display=ps>0||es>0?"block":"none";
+    }
     // Hide match rewards (awarded on match end, not round end).
     const rw=$("matchRewards");if(rw)rw.style.display="none";
     const mm=$("matchMenu");if(mm)mm.style.display="none";
@@ -8562,6 +8693,9 @@ const G={
     const draw=winner==="draw";
     GameAudio.sfx(win?"match_win":draw?"match_lose":"match_lose"); // Phase 30
     GameAudio.stopMusic(); // Phase 30
+    // Clear survivors on match end.
+    this.playerSurvivors=[];
+    this.enemySurvivors=[];
     // Track win prediction accuracy.
     if(this._lastPrediction!==undefined){
       if(!this.save.predStats)this.save.predStats={correct:0,total:0,avgError:0};
