@@ -970,14 +970,12 @@ const Analytics={
   },
   _flush(){
     if(!this.endpoint||this.queue.length<10)return;
-    try{navigator.sendBeacon(this.endpoint,JSON.stringify(this.queue));}catch(e){}
-    this.queue=[];
+    try{if(navigator.sendBeacon(this.endpoint,JSON.stringify(this.queue)))this.queue=[];}catch(e){}
   },
   flushNow(){
     if(this.endpoint&&this.queue.length){
-      try{navigator.sendBeacon(this.endpoint,JSON.stringify(this.queue));}catch(e){}
+      try{if(navigator.sendBeacon(this.endpoint,JSON.stringify(this.queue)))this.queue=[];}catch(e){}
     }
-    this.queue=[];
   },
 };
 // Phase 7: load with crash recovery — fall back to backup if primary is corrupt.
@@ -4004,6 +4002,7 @@ const GameAudio={
   // SFX synthesizer — plays a named sound via oscillators/noise.
   sfx(name,opts={}){
     if(!this.ctx||!this.enabled)return;
+    if(this.ctx.state==="suspended")this.ctx.resume();
     const c=this.ctx;
     const pitch=opts.pitch||0;
     const make=(type,f0,f1,dur,gain,filter)=>{
@@ -4201,6 +4200,7 @@ const BattleFX={
   },
   // Hit flash: unit flashes white briefly.
   onHit(u){
+    if(G.save?.settings?.reducedMotion)return;
     u.hitFlash=0.08; // 80ms
   },
   // Crit burst: gold flash + 6-particle spark + screen shake.
@@ -4315,7 +4315,7 @@ const BattleFX={
   },
   // Spawn pop-in: scale 0->1 ease-out-back.
   onSpawn(u){
-    u.spawnT=0.001; // start spawn animation
+    if(!G.save?.settings?.reducedMotion)u.spawnT=0.001; // start spawn animation
     GameAudio.sfx("spawn"); // Phase 30
   },
   // Attack lunge: offset 4px toward target.
@@ -10699,7 +10699,7 @@ function setupPWA(){
       const swCode=`
         const CACHE="promptshowdown-v1";
         self.addEventListener("install",e=>{
-          e.waitUntil(caches.open(CACHE).then(c=>c.addAll([self.registration.scope])));
+          e.waitUntil(caches.open(CACHE).then(c=>c.addAll(["./"])));
           self.skipWaiting();
         });
         self.addEventListener("activate",e=>{self.clients.claim();});

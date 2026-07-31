@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14 + Round 15)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -73,12 +73,14 @@
 | **Round 13: E2E Canvas/Perf/Preset/P2P/Bot** | 20+ | 0 | 0 |
 | **Round 14: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
 | **Round 14: E2E Spells/Stats/Save/i18n/Draw** | 20+ | 0 | 0 |
+| **Round 15: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
+| **Round 15: E2E Forge/Ach/Screens/Settings/A11y** | 20+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1540+** | **69** | **69** |
+| **Total** | **1630+** | **73** | **73** |
 
 ---
 
@@ -1153,3 +1155,51 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Win prediction NaN with undefined unit properties** — `initRuntime` always sets all properties; can't be undefined in normal flow.
 - **Round draw awards 5 XP consolation** — by design (draws deserve some consolation).
 - **Arena advancement logic** — correct: only advances on win, endless mode only after last arena.
+
+---
+
+## Round 15 — Deep Static + E2E: Forge/Ach/Analytics/PWA/Audio/A11y (2026-07-31)
+
+**Focus:** Forge system (daily cap, reroll, keep, share), achievement tracking, analytics/PWA, AdSDK, accessibility (reduced motion, screen reader, keyboard), settings persistence, audio system, screen transitions, modal/overlay system.
+
+**Method:** Two parallel static analysis subagents (Forge/Achievements/Analytics/PWA/AdSDK, Accessibility/Settings/Audio/Screens/Modals) + E2E testing via Playwright.
+
+### Round 15: Bugs Found + Fixed (4 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 71 | **Service worker caches wrong URL**: `c.addAll([self.registration.scope])` cached a directory path instead of the actual page URL. The cache install would fail silently, preventing offline PWA use. | High | Changed to `c.addAll(["./"])` which resolves to the current page URL relative to the service worker scope. |
+| 72 | **Analytics flush loses data on send failure**: `_flush()` and `flushNow()` cleared the queue unconditionally, even if `navigator.sendBeacon()` failed (network error, endpoint unreachable). Queued analytics events were permanently lost. | Medium | Changed both functions to only clear the queue when `sendBeacon` returns `true` (success). Failed sends preserve the queue for retry. |
+| 73 | **Audio SFX doesn't resume suspended context**: After switching browser tabs, the audio context becomes suspended. `sfx()` checked `ctx` and `enabled` but didn't check `ctx.state`. SFX would silently fail until the user interacted with the page again. | Medium | Added `if(this.ctx.state==="suspended")this.ctx.resume();` at the start of `sfx()`. |
+| 74 | **Reduced motion doesn't disable hitFlash/onSpawn**: `BattleFX.onHit()` and `BattleFX.onSpawn()` didn't check `reducedMotion` setting. Users who disabled motion still saw hit flash (white tint) and spawn pop-in animation. | Low | Added `if(G.save?.settings?.reducedMotion)return;` to `onHit()` and conditional spawnT assignment in `onSpawn()`. |
+
+### Round 15: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Forge: generate (skip ad) | ✅ Pass | Unit generated via template fallback. |
+| Forge: keep | ✅ Pass | Unit added to collection, pendingForgeUnit cleared. |
+| Forge: daily cap | ✅ Pass | At cap (10), collection didn't grow. |
+| Forge: share unit | ✅ Pass | Share code generated successfully. |
+| Achievements: check | ✅ Pass | No crash, achievements unlocked (firstWin, rich, rich500). |
+| Screen transitions (7 screens) | ✅ Pass | All screens activate correctly, no multiple active. |
+| Settings: audioEnabled persist | ✅ Pass | False → reload → False. |
+| Settings: reducedMotion persist | ✅ Pass | True → reload → True. |
+| Settings: quality persist | ✅ Pass | "low" → reload → "low". |
+| Reduced motion: spawnT | ✅ Pass | spawnT=0 with reduced motion (animation skipped). |
+| Full bot match regression | ✅ Pass | Battle, 18-22 units, no NaN, 0 console errors. |
+
+### Round 15: Verified Non-Bugs (from subagent reports)
+
+- **Forge count wasted on generation failure** — generation always falls back to template; ad always completes (stub fallback). Count is never wasted.
+- **Imported shared unit bypasses daily forge cap** — by design; sharing is a separate mechanic from forging. Cap limits LLM/template generation, not imports.
+- **Achievement system has no reward mechanism** — by design (cosmetic achievements; quests have rewards).
+- **Analytics batch threshold (10 events)** — by design; `flushNow()` is called on `beforeunload` to flush remaining events.
+- **AdSDK showInterstitial during battle** — `onMatchEnd` is only called when battle ends, so interstitial can't show during battle.
+- **Service worker blob URL persistence** — known limitation of single-file PWAs; runtime caching (fetch handler) mitigates.
+- **tierlist vs tierList case mismatch** — screenMap correctly maps screen id (`tierlist`) to function name (`tierList`).
+- **Modal backdrop click doesn't close** — by design for confirm dialogs (prevents accidental dismissal of destructive actions).
+- **Escape key modal detection fragile** — works for all modals that use `z-index:9999` inline style (which all do).
+- **Audio missing default case in sfx switch** — silent fallback is intentional (no error for unknown sounds).
+- **Quality setting doesn't apply immediately** — applies on next battle/screen render; not a bug.
+- **Spell bar visibility** — handled by `Battle._renderSpellBar()` which sets display directly.
