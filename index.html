@@ -1449,9 +1449,9 @@ const BODY_PLANS={
       {t:"rect",x:1,y:2,w:4,h:10,c:c.primary,joint:"leg_swing"}
     ],
     animations:{
-      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
-      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
-      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+      idle:[{t:0,bob:0,breathe:0},{t:0.25,bob:0.5,breathe:0.5,ease:"easeInOut"},{t:0.5,bob:1,breathe:0},{t:0.75,bob:0.5,breathe:-0.5,ease:"easeInOut"},{t:1,bob:0,breathe:0}],
+      move:[{t:0,leg_swing:0,bob:0,arm_raise:0.1},{t:0.25,leg_swing:0.7,bob:0.5,arm_raise:0.3,ease:"easeInOut"},{t:0.5,leg_swing:1,bob:1,arm_raise:0.1},{t:0.75,leg_swing:0.3,bob:0.5,arm_raise:-0.1,ease:"easeInOut"},{t:1,leg_swing:0,bob:0,arm_raise:0.1}],
+      death:[{t:0,alpha:1,rot:0},{t:0.5,alpha:0.7,rot:45,ease:"easeIn"},{t:1,alpha:0,rot:90}]
     }
   }),
   quadruped:c=>({
@@ -1481,9 +1481,11 @@ const BODY_PLANS={
       {t:"line",x1:-8,y1:-4,x2:-14,y2:2,c:c.accent,w:3,joint:"tail_wag"}
     ],
     animations:{
-      idle:[{t:0,bob:0,tail_wag:0,arm_raise:0},{t:0.5,bob:1,tail_wag:0.5,arm_raise:0.2},{t:1,bob:0,tail_wag:0,arm_raise:0}],
-      move:[{t:0,leg_swing:0,bob:0,arm_raise:0.3},{t:0.5,leg_swing:1,bob:1,arm_raise:0.8},{t:1,leg_swing:0,bob:0,arm_raise:0.3}],
-      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+      idle:[{t:0,bob:0,tail_wag:0,arm_raise:0,breathe:0},{t:0.25,bob:0.5,tail_wag:0.3,arm_raise:0.1,breathe:0.5,ease:"easeInOut"},{t:0.5,bob:1,tail_wag:0.5,arm_raise:0.2,breathe:0},{t:0.75,bob:0.5,tail_wag:0.7,arm_raise:0.1,breathe:-0.5,ease:"easeInOut"},{t:1,bob:0,tail_wag:0,arm_raise:0,breathe:0}],
+      move:[{t:0,leg_swing:0,bob:0,arm_raise:0.3,wing_flap:0},{t:0.25,leg_swing:0.5,bob:0.5,arm_raise:0.6,wing_flap:0.5,ease:"easeOut"},{t:0.5,leg_swing:1,bob:1,arm_raise:0.8,wing_flap:1},{t:0.75,leg_swing:0.5,bob:0.5,arm_raise:0.6,wing_flap:0.5,ease:"easeIn"},{t:1,leg_swing:0,bob:0,arm_raise:0.3,wing_flap:0}],
+      death:[{t:0,alpha:1,rot:0},{t:0.5,alpha:0.6,rot:45,ease:"easeIn"},{t:1,alpha:0,rot:90}],
+      // Body-specific attack: dragon rears back then lunges forward.
+      attack:[{t:0,lunge:0,recoil:0,tail_wag:0},{t:0.3,lunge:-0.3,recoil:-0.5,tail_wag:0.3,ease:"easeIn"},{t:0.5,lunge:1,recoil:0.5,tail_wag:0.8,ease:"easeOut"},{t:1,lunge:0,recoil:0,tail_wag:0}]
     }
   }),
   serpent:c=>({
@@ -1494,9 +1496,9 @@ const BODY_PLANS={
       {t:"arc",cx:-18,cy:0,r:6,start:0,end:Math.PI,c:c.accent,w:6,joint:"tail_wag"}
     ],
     animations:{
-      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:1},{t:1,bob:0,tail_wag:0}],
-      move:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:1},{t:1,bob:0,tail_wag:0}],
-      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+      idle:[{t:0,bob:0,tail_wag:0,wobble:0},{t:0.25,bob:0.3,tail_wag:0.5,wobble:0.3,ease:"easeInOut"},{t:0.5,bob:0.5,tail_wag:1,wobble:0},{t:0.75,bob:0.3,tail_wag:0.5,wobble:-0.3,ease:"easeInOut"},{t:1,bob:0,tail_wag:0,wobble:0}],
+      move:[{t:0,bob:0,tail_wag:0,wobble:0},{t:0.25,bob:0.5,tail_wag:0.7,wobble:0.5,ease:"easeOut"},{t:0.5,bob:1,tail_wag:1,wobble:0},{t:0.75,bob:0.5,tail_wag:0.7,wobble:-0.5,ease:"easeIn"},{t:1,bob:0,tail_wag:0,wobble:0}],
+      death:[{t:0,alpha:1,rot:0},{t:0.5,alpha:0.5,rot:30,ease:"easeIn"},{t:1,alpha:0,rot:90}]
     }
   }),
   bird:c=>({
@@ -1508,9 +1510,11 @@ const BODY_PLANS={
       {t:"polygon",pts:[[4,-8],[12,-12],[10,-4]],c:c.accent,joint:"arm_raise"}
     ],
     animations:{
-      idle:[{t:0,bob:0,arm_raise:0},{t:0.5,bob:1,arm_raise:0.3},{t:1,bob:0,arm_raise:0}],
-      move:[{t:0,arm_raise:0,bob:0},{t:0.5,arm_raise:1,bob:1},{t:1,arm_raise:0,bob:0}],
-      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+      idle:[{t:0,bob:0,arm_raise:0},{t:0.25,bob:0.5,arm_raise:0.3,ease:"easeOut"},{t:0.5,bob:1,arm_raise:0.5},{t:0.75,bob:0.5,arm_raise:0.3,ease:"easeIn"},{t:1,bob:0,arm_raise:0}],
+      move:[{t:0,arm_raise:0,bob:0},{t:0.15,arm_raise:0.8,bob:0.5,ease:"easeOut"},{t:0.3,arm_raise:1,bob:1},{t:0.5,arm_raise:0.2,bob:0.5,ease:"easeInOut"},{t:0.7,arm_raise:1,bob:1},{t:0.85,arm_raise:0.8,bob:0.5,ease:"easeIn"},{t:1,arm_raise:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:0.5,alpha:0.5,rot:-30,ease:"easeIn"},{t:1,alpha:0,rot:-90}],
+      // Body-specific attack: bird dives forward with wings tucked.
+      attack:[{t:0,lunge:0,arm_raise:0,recoil:0},{t:0.2,lunge:0.3,arm_raise:0.5,recoil:0.2,ease:"easeIn"},{t:0.5,lunge:1,arm_raise:0.2,recoil:0.5,ease:"easeOut"},{t:1,lunge:0,arm_raise:0,recoil:0}]
     }
   }),
   insect:c=>({
@@ -1555,9 +1559,11 @@ const BODY_PLANS={
       {t:"circle",cx:0,cy:-5,r:3,c:c.accent,glow:6}
     ],
     animations:{
-      idle:[{t:0,bob:0},{t:0.5,bob:0.3},{t:1,bob:0}],
-      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:0.5,bob:0.5},{t:1,leg_swing:0,bob:0}],
-      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+      idle:[{t:0,bob:0,breathe:0},{t:0.5,bob:0.2,breathe:0.3,ease:"easeInOut"},{t:1,bob:0,breathe:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.3,leg_swing:0.5,bob:0.3,ease:"easeOut"},{t:0.5,leg_swing:1,bob:0.5},{t:0.7,leg_swing:0.5,bob:0.3,ease:"easeIn"},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:0.3,alpha:0.8,rot:20,ease:"easeIn"},{t:1,alpha:0,rot:90}],
+      // Body-specific attack: golem winds up then slams down heavily.
+      attack:[{t:0,lunge:0,recoil:0},{t:0.3,lunge:-0.2,recoil:-0.3,ease:"easeIn"},{t:0.5,lunge:0.8,recoil:0.8,ease:"easeOut"},{t:0.7,lunge:0.3,recoil:0.2},{t:1,lunge:0,recoil:0}]
     }
   }),
   ghost:c=>({
@@ -1568,9 +1574,9 @@ const BODY_PLANS={
       {t:"circle",cx:3,cy:-12,r:2,c:"#000"}
     ],
     animations:{
-      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
-      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
-      death:[{t:0,alpha:0.7,rot:0},{t:1,alpha:0,rot:0}]
+      idle:[{t:0,bob:0,wobble:0},{t:0.25,bob:0.5,wobble:0.5,ease:"easeInOut"},{t:0.5,bob:1,wobble:0},{t:0.75,bob:0.5,wobble:-0.5,ease:"easeInOut"},{t:1,bob:0,wobble:0}],
+      move:[{t:0,bob:0,wobble:0},{t:0.25,bob:0.5,wobble:0.3,ease:"easeOut"},{t:0.5,bob:1,wobble:0},{t:0.75,bob:0.5,wobble:-0.3,ease:"easeIn"},{t:1,bob:0,wobble:0}],
+      death:[{t:0,alpha:0.7,rot:0},{t:0.5,alpha:0.3,rot:0,ease:"easeIn"},{t:1,alpha:0,rot:0}]
     }
   }),
   fish:c=>({
@@ -2146,11 +2152,39 @@ const RecipeAssembler={
     for(const s of tailFeat(colors))shapes.push(scaleShape(s,totalScale));
     // Phase 25: cap at 20 shapes (drop lowest-priority: tail, then back, then head).
     while(shapes.length>20)shapes.splice(shapes.length-1,1);
+    // Phase 25: merge body-specific attack channels with weapon attack animation.
+    // Body attack keyframes provide body motion (lunge, lean, recoil) while
+    // weapon attack keyframes provide arm/weapon motion. We merge by unioning
+    // channels at matching keyframe times.
+    const bodyAttack=body.animations?.attack||[];
+    const weaponAttack=weaponTpl.attack||[];
+    let mergedAttack;
+    if(bodyAttack.length&&weaponAttack.length){
+      // Use weapon keyframe times as the base; interpolate body channels at those times.
+      const bodyInterp=(t)=>{
+        const out={};
+        for(const ch of ["lunge","lean","recoil","tail_wag","wing_flap","arm_raise"]){
+          let prev=bodyAttack[0],next=bodyAttack[bodyAttack.length-1];
+          for(let i=0;i<bodyAttack.length-1;i++){
+            if(t>=bodyAttack[i].t&&t<=bodyAttack[i+1].t){prev=bodyAttack[i];next=bodyAttack[i+1];break;}
+          }
+          const span=next.t-prev.t||1;
+          const f=(t-prev.t)/span;
+          if(prev[ch]!==undefined||next[ch]!==undefined){
+            out[ch]=(prev[ch]||0)+((next[ch]||0)-(prev[ch]||0))*f;
+          }
+        }
+        return out;
+      };
+      mergedAttack=weaponAttack.map(kf=>({...kf,...bodyInterp(kf.t)}));
+    }else{
+      mergedAttack=weaponAttack;
+    }
     return{
       shapes,
       animations:{
         ...body.animations,
-        attack:weaponTpl.attack
+        attack:mergedAttack
       },
       // Phase 25: visual modifier metadata for rendering.
       aura:attrs.aura||"none",

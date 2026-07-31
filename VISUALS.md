@@ -2,8 +2,8 @@
 
 **How units are drawn on the canvas.** No image assets, no sprite sheets — every unit is rendered procedurally from a data-driven recipe using Canvas 2D primitives.
 
-**File:** `index.html` (~9900 lines, single file)
-**Date:** 2026-07-31
+**File:** `index.html` (~10000 lines, single file)
+**Date:** 2026-07-31 (updated)
 
 ---
 
@@ -82,11 +82,11 @@ Stored on the unit object itself, preserved through P2P serialization and clonin
 
 ```javascript
 {
-  bodyPlan: "humanoid",      // 28 options
-  weaponType: "sword",       // 14 options
-  headFeature: "horns",      // 14 options
-  backFeature: "wings_bat",  // 14 options
-  tailFeature: "tail_long",  // 10 options
+  bodyPlan: "humanoid",      // 34 options
+  weaponType: "sword",       // 19 options
+  headFeature: "horns",      // 20 options
+  backFeature: "wings_bat",  // 20 options
+  tailFeature: "tail_long",  // 14 options
   aura: "fire",              // 12 options
   eyeStyle: "glowing",       // 12 options
   pattern: "scales",         // 12 options
@@ -126,7 +126,7 @@ The compiled visual definition, stored as `u.recipe`:
 
 ## 3. Color System
 
-### COLOR_MAP (line 1178)
+### COLOR_MAP (line 1284)
 
 Named colors → hex values. The LLM picks from these names, not raw hex:
 
@@ -134,8 +134,21 @@ Named colors → hex values. The LLM picks from these names, not raw hex:
 const COLOR_MAP = {
   green:"#4a7", blue:"#48f", red:"#f44", purple:"#a4f",
   yellow:"#fd4", orange:"#f84", black:"#222", white:"#eee",
-  brown:"#a72", gray:"#888", pink:"#f6c", cyan:"#0ff"
+  brown:"#a72", gray:"#888", pink:"#f6c", cyan:"#0ff",
+  teal:"#07a", magenta:"#e4f", lime:"#bf4", indigo:"#6495ed",
+  coral:"#f80", lavender:"#e6e6fa", gold:"#ffd700", silver:"#c0c0c0"
 };
+```
+
+### Per-Body-Plan Base Sizes (BODY_SIZE, line 1295)
+
+Each body plan has a base size multiplier that's applied on top of `SIZE_SCALE`. This makes large creatures like dragons physically bigger than humanoids, even at the same `sizeMod`:
+
+```javascript
+const BODY_SIZE = {
+  humanoid:1.0, dragon:1.25, golem:1.2, spider:0.9, bird:0.85, insect:0.8, ...
+};
+// Total scale = SIZE_SCALE[sizeMod] * BODY_SIZE[bodyPlan]
 ```
 
 ### Color Palette Construction (RecipeAssembler, line 1875-1879)
@@ -169,7 +182,7 @@ This gives every shape a 3D look without the body plans needing to specify gradi
 
 ## 4. Body Plans
 
-`BODY_PLANS` (line 1331-1762) — 28 body plans, each a function `(colors) => recipe`:
+`BODY_PLANS` (line 1441-1976) — 34 body plans, each a function `(colors) => recipe`:
 
 | Plan | Shapes | Joints | Description |
 |------|--------|--------|-------------|
@@ -201,6 +214,12 @@ This gives every shape a 3D look without the body plans needing to specify gradi
 | crystal | 5 (faceted body, 2 arms, core, shards) | arm_raise | Geometric |
 | construct | 5 (body, head, 2 arms, core) | arm_raise | Clockwork |
 | angel | 6 (body, head, 2 legs, halo) | leg_swing | Divine |
+| spider | 8 (body, head, 6 legs, 2 eyes) | leg_swing | Arachnid |
+| wyvern | 8 (body, head, 2 wings, 2 legs, tail) | wing_flap, tail_wag, leg_swing | Winged lizard |
+| treant | 8 (trunk, 2 branch arms, 2 legs, 3 leaves) | arm_raise, leg_swing | Tree creature |
+| kraken | 9 (body, head, 5 tentacles, 2 eyes) | tail_wag | Sea monster |
+| gargoyle | 8 (head, horns, torso, 2 wings, 2 legs) | wing_flap, leg_swing | Stone guardian |
+| wraith | 6 (head, flowing body, 2 arms, 2 eyes) | tail_wag, arm_raise | Phantom |
 
 Each body plan defines:
 - **`shapes[]`** — array of shape primitives positioned relative to unit center (0,0)
@@ -257,7 +276,7 @@ humanoid: c => ({
 
 ## 5. Weapons
 
-`WEAPONS` (line 1763-1786) — 14 weapon types, each adds a shape + an `attack` animation:
+`WEAPONS` (line 1999-2028) — 19 weapon types, each adds a shape + an `attack` animation:
 
 | Weapon | Shape | Attack Animation |
 |--------|-------|-----------------|
@@ -274,12 +293,17 @@ humanoid: c => ({
 | spear | long line | arm_raise: 0→1→0 |
 | rifle | rect | arm_raise: 0→0.3→0 |
 | wand | line (glowing) | arm_raise: 0→1→0 |
+| axe | polygon (blade head) | arm_raise: 0→1→0 |
+| trident | line (long) | arm_raise: 0→1→0 |
+| crossbow | rect | arm_raise: 0→0.5→0 (fast) |
+| orb | circle (glowing, glow:8) | arm_raise: 0→1→0 |
+| dual_blades | line (blade) | arm_raise: 0→1→0.3→1→0 (double swing) |
 | none | (no shape) | (no animation) |
 
-Each weapon also has an `fxType` for attack particles (`WEAPON_FX`, line 1184):
-- `bow`, `rifle` → `"projectile"` (fires a moving projectile)
-- `staff`, `shield`, `wand` → `"flash"` (instant flash at target)
-- `hammer`, `breath` → `"burst"` (area burst at target)
+Each weapon also has an `fxType` for attack particles (`WEAPON_FX`, line 1290):
+- `bow`, `rifle`, `crossbow` → `"projectile"` (fires a moving projectile)
+- `staff`, `shield`, `wand`, `orb` → `"flash"` (instant flash at target)
+- `hammer`, `breath`, `axe` → `"burst"` (area burst at target)
 - Others → `"none"` (melee hit)
 
 ### Weapon Styles (line 1868-1871)
@@ -305,7 +329,7 @@ Each weapon also has an `fxType` for attack particles (`WEAPON_FX`, line 1184):
 
 Seven categories of visual modifiers (Phase 25), each an enum of options that map to shape-generating functions:
 
-### Head Features (line 1812-1827) — 14 options
+### Head Features (line 2048-2066) — 20 options
 
 | Option | Visual |
 |--------|--------|
@@ -323,8 +347,14 @@ Seven categories of visual modifiers (Phase 25), each an enum of options that ma
 | antenna | Lines + glowing dots |
 | frill | Semi-transparent polygon |
 | beak | Orange triangle |
+| hood | Polygon hood over head |
+| mohawk | Spiked hair ridge |
+| goggles | Dual lens with cyan glow |
+| third_eye | Purple glowing eye on forehead |
+| flower_crown | Three colored flowers |
+| headphones | Arc + ear cups |
 
-### Back Features (line 1828-1843) — 14 options
+### Back Features (line 2068-2086) — 20 options
 
 | Option | Visual |
 |--------|--------|
@@ -342,8 +372,14 @@ Seven categories of visual modifiers (Phase 25), each an enum of options that ma
 | tentacles | Lines, `joint:"tail_wag"` |
 | fins | Triangle side fins |
 | crystal_growth | Glowing crystal polygons |
+| wings_bone | Skeletal wings with bone lines, `joint:"wing_flap"` |
+| wings_moth | Oval moth wings with eye spots, `joint:"wing_flap"` |
+| sail | Polygon sail fin |
+| quills | 4 line quills |
+| banner | Pole + flag, `joint:"recoil"` |
+| scarab_shell | Segmented shell with gradient |
 
-### Tail Features (line 1844-1855) — 10 options
+### Tail Features (line 2088-2095) — 14 options
 
 | Option | Visual |
 |--------|--------|
@@ -357,6 +393,10 @@ Seven categories of visual modifiers (Phase 25), each an enum of options that ma
 | tail_fluffy | Circle (soft) |
 | tail_barbed | Line + side spikes |
 | tail_split | Two diverging lines |
+| tail_mace | Line + spiked ball |
+| tail_feather | Feather-shaped tail |
+| tail_hook | Line + curved hook |
+| tail_ribbon | Flowing ribbon tail |
 
 ### Aura (line 1856-1858) — 12 options
 
@@ -377,24 +417,24 @@ Maps to a particle color. Does not add shapes — instead drives the per-frame a
 | blood | `#f44` |
 | tech | `#0ff` |
 
-### Eye Styles (line 1860-1862) — 12 options
+### Eye Styles (line 2104-2107) — 12 options
 
-Controls eye color and glow in `drawFace()`:
+Controls eye rendering in `drawFace()`. Each style now renders with **distinct geometry**, not just color changes:
 
-| Style | Eye Color | Glow |
+| Style | Rendering | Glow |
 |-------|-----------|------|
-| normal | `#000` (or fxType-derived) | no |
-| glowing | `#ff4` | yes |
-| slit | `#0f0` | no |
-| empty | `#000` | no |
-| visorglow | `#0ff` | yes |
-| compound | `#f44` | no |
+| normal | Two small ellipses (1.5×2px) | no |
+| glowing | Two small ellipses | yes (shadowBlur:6) |
+| slit | Ellipses with vertical black slit pupils (cat/reptile) | no |
+| empty | Hollow black circles (2.5px radius) | no |
+| visorglow | Horizontal bar across both eyes | yes (shadowBlur:6) |
+| compound | 4 small circles per eye in 90° arrangement (insect) | no |
 | closed | (no eyes drawn) | — |
-| star | `#ffd` | no |
-| cross | `#fff` | no |
-| spiral | `#a4f` | no |
-| visor | `#0f0` | no |
-| visor_red | `#f44` | no |
+| star | 10-pointed star-shaped eyes | yes (shadowBlur:6) |
+| cross | X-shaped line eyes (dazed/stunned) | no |
+| spiral | Hypnotic spiral pattern (20-segment stroke) | no |
+| visor | Horizontal bar across both eyes | no |
+| visor_red | Horizontal bar across both eyes (red) | no |
 
 ### Patterns (line 1864-1866) — 12 options
 
@@ -406,27 +446,31 @@ Surface textures drawn clipped to shape bounds (see [Surface Patterns](#12-surfa
 
 ### Combinatorics
 
-With 28 body plans × 14 weapons × 14 head features × 14 back features × 10 tail features × 12 auras × 12 eye styles × 12 patterns × 10 weapon styles × 12 primary colors × 12 accent colors × 3 sizes = **~21 million visual combinations**.
+With 34 body plans × 19 weapons × 20 head features × 20 back features × 14 tail features × 12 auras × 12 eye styles × 12 patterns × 10 weapon styles × 20 primary colors × 20 accent colors × 6 sizes = **~1.7 trillion visual combinations**.
 
 ---
 
 ## 7. RecipeAssembler
 
-`RecipeAssembler.build(attrs)` (line 1873-1924) — combines all visual layers into a single recipe:
+`RecipeAssembler.build(attrs)` (line 2125-2188) — combines all visual layers into a single recipe:
 
 ```
 1. Resolve colors from COLOR_MAP
 2. Compute head color = lighten(primary, 0.2)
-3. Compute scale from SIZE_SCALE[sizeMod]  (small=0.7, medium=1.0, large=1.3)
+3. Compute total scale = SIZE_SCALE[sizeMod] * BODY_SIZE[bodyPlan]
 4. Call body plan function → base shapes + animations
-5. Scale all body shapes by `scale`
+5. Scale all body shapes by totalScale
 6. Apply pattern to body shapes (add pattern field + c2 for gradient)
 7. Append weapon shape (scaled + weapon style modifiers applied)
 8. Append head feature shapes (scaled)
 9. Append back feature shapes (scaled)
 10. Append tail feature shapes (scaled)
 11. Cap at 20 shapes (drop lowest priority: tail → back → head)
-12. Merge animations: body animations + weapon attack animation
+12. Merge animations: body animations + merged attack animation
+    - Body attack keyframes (lunge, recoil, tail_wag, wing_flap) are
+      interpolated at weapon keyframe times and merged with weapon
+      attack channels (arm_raise, bow_draw). This gives each body plan
+      a unique attack motion on top of the weapon swing.
 13. Attach metadata: aura, auraColor, eyeStyle, eyeColor, pattern, face
 14. Return recipe
 ```
@@ -504,14 +548,17 @@ Each animation state is an array of keyframes:
 
 ```javascript
 idle: [
-  { t:0,   bob:0 },
-  { t:0.5, bob:1 },
-  { t:1,   bob:0 }
+  { t:0,    bob:0,    breathe:0 },
+  { t:0.25, bob:0.5,  breathe:0.5, ease:"easeInOut" },
+  { t:0.5,  bob:1,    breathe:0 },
+  { t:0.75, bob:0.5,  breathe:-0.5, ease:"easeInOut" },
+  { t:1,    bob:0,    breathe:0 }
 ]
 ```
 
 - `t` — normalized time within the animation (0 = start, 1 = end)
 - Other fields — channel values at that keyframe
+- `ease` — easing curve for the segment ending at this keyframe
 
 ### Interpolation (line 3099-3123)
 
@@ -548,6 +595,22 @@ else                       u.animState = "idle";
 ```
 
 Attack animation speed scales with the unit's attack speed (`u.a`). Frenzy doubles it.
+
+### Body-Specific Attack Animations
+
+Body plans can define an `attack` keyframe array that provides body motion during attacks (lunge, recoil, tail_wag, wing_flap). The RecipeAssembler merges these with the weapon's attack keyframes:
+
+1. Weapon keyframe times are used as the base timeline
+2. Body channels (`lunge`, `recoil`, `tail_wag`, `wing_flap`, `arm_raise`) are interpolated at each weapon keyframe time
+3. Merged keyframes contain both weapon channels (e.g. `arm_raise` from sword) and body channels (e.g. `lunge` from dragon)
+
+Current body plans with attack animations:
+
+| Body Plan | Attack Motion |
+|-----------|---------------|
+| dragon | Rears back (lunge:-0.3) then lunges forward (lunge:1) with tail wag |
+| bird | Dives forward (lunge:1) with wings tucked (arm_raise:0.2) |
+| golem | Winds up (lunge:-0.2) then slams down heavily (lunge:0.8, recoil:0.8) |
 
 ---
 
@@ -633,12 +696,13 @@ c.restore();
 
 ## 11. Faces
 
-`SpriteRenderer.drawFace(c, u, channels, state)` (line 3472) — draws eyes on humanoid-like units.
+`SpriteRenderer.drawFace(c, u, channels, state)` (line 3752) — draws eyes on humanoid-like units.
 
 ### Which Units Get Faces
 
 ```javascript
-const facedPlans = ["humanoid","undead","demon","beast-man","ghost","flying","monopod"];
+const facedPlans = ["humanoid","undead","demon","beast-man","ghost","flying",
+  "monopod","angel","wraith","gargoyle","spider","kraken","wyvern","treant"];
 ```
 
 Units with `bodyPlan` not in this list don't get faces. Units with `eyeStyle:"closed"` or `recipe.face:false` also skip faces.
@@ -659,14 +723,26 @@ Units with `bodyPlan` not in this list don't get faces. Units with `eyeStyle:"cl
 3. Else if `fxType === "shadow" || "arcane"` → magenta (`#f4f`)
 4. Else → black (`#000`)
 
-### Eye Drawing (line 3511-3522)
+### Eye Drawing (line 3870-3960)
 
-Two small ellipses (1.5×2px) positioned 3px apart, shifted by target tracking offset:
+Eyes are rendered differently based on `eyeStyle`:
 
-```javascript
-c.ellipse(hx-3+dx, hy+dy, 1.5*eyeScaleX, 2*eyeScaleY, 0, 0, Math.PI*2);  // left
-c.ellipse(hx+3+dx, hy+dy, 1.5*eyeScaleX, 2*eyeScaleY, 0, 0, Math.PI*2);  // right
-```
+| Style | Rendering |
+|-------|-----------|
+| normal/glowing | Two ellipses (1.5×2px) at (hx±3, hy) |
+| slit | Larger ellipses (2×3px) with vertical black slit pupils |
+| compound | 4 small circles per eye arranged in 90° pattern |
+| visor/visor_red/visorglow | Single horizontal bar (14px wide, 3px tall) across both eyes |
+| cross | X-shaped strokes (4 line segments per eye) |
+| star | 10-pointed star polygon per eye (alternating r=2.5/1) |
+| spiral | 20-segment spiral stroke per eye (increasing radius) |
+| empty | Hollow black circles (2.5px radius) |
+
+All eye styles support:
+- **Target tracking** — eyes shift toward `u.target` direction (up to 1.5px offset)
+- **Blink** — every 3-5s, eyes scale Y to 0.1 for 100ms
+- **Widen on attack** — eyes scale X to 1.3× during attack state
+- **Glow** — `shadowBlur` for glowing/visorglow/star styles
 
 ---
 
@@ -713,7 +789,31 @@ When a pattern is applied, the shape also gets `c2 = lighten(primary, 0.15)` for
    - Fall back to `AURA_MAP[u.recipe.aura]`
 3. If no color found, skip
 4. Spawn 1-2 particles per frame near the unit, capped by `MAX_PARTICLES` (60)
-5. Particles drift upward with slight horizontal spread, 0.4-0.6s lifetime
+5. Apply per-fxType particle behavior (velocity, lifetime, size)
+6. Apply per-aura unique behaviors (see below)
+
+### Particle Behaviors by fxType
+
+| fxType | Velocity | Lifetime | Size |
+|--------|----------|----------|------|
+| fire/explosion/fire_wall | Upward (20-40px/s) | 0.4-0.7s | 1.5-2.5px |
+| frost | Downward (10-20px/s) | 0.6-0.9s | 1-2px |
+| poison | Up + horizontal spread | 0.5-0.8s | 2-3px |
+| lightning | Random (±30px/s) | 0.1-0.2s | 1-2px |
+| heal_glow/holy | Upward (15-25px/s) | 0.5-0.8s | 1.5-2.5px |
+| shadow/arcane | Up + slight spread | 0.4-0.7s | 1.5-2.5px |
+| (default) | Upward (10px/s) | 0.4s | 2px |
+
+### Unique Aura Behaviors
+
+Four aura types have unique particle behaviors that override the fxType defaults:
+
+| Aura | Behavior |
+|------|----------|
+| void | Imploding particles — spiral inward toward unit center |
+| nature | Falling leaves — drift down with horizontal sway |
+| blood | Dripping droplets — fall straight down, heavier than frost |
+| tech | Digital squares — jittery, short-lived, high velocity |
 
 ### `deriveFxType(u)` (line 3752-3763)
 
