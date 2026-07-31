@@ -129,6 +129,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn primary" onclick="G.startMatchmaking()">⚔️ FIGHT</button>
 <button class="btn" id="forgeMenuBtn" onclick="G.forge()" style="display:none;">🔮 FORGE</button>
 <button class="btn" onclick="G.deck()">📋 DECK</button>
+<button class="btn" onclick="G.shop()">🛒 SHOP</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
@@ -212,6 +213,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="draftDots" style="font-size:1.2rem;margin:6px;letter-spacing:4px;"></div>
 <div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:rgba(245,158,11,.1);border:1px solid var(--warn);text-align:center;font-weight:700;">⭐ COMEBACK BONUS — 4th draw!</div>
 <div class="detail" id="draftHint" style="margin-bottom:8px;">Pick 1 unit</div>
+<div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
 <div id="draftArea"></div>
 <div class="group">
 <button class="btn" id="rerollButton" onclick="G.reroll()">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
@@ -304,6 +306,18 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div class="pill" style="margin:8px;">💰 <span id="upgradeCoins">0</span> coins</div>
 <div class="detail" style="margin-bottom:10px;">Spend coins to level up units (+10% HP/DMG per level)</div>
 <div id="upgradeArea"></div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="shop">
+<h2>🛒 Shop</h2>
+<div class="pill" style="margin:8px;">💰 <span id="shopCoins">0</span> coins</div>
+<div class="detail" style="margin-bottom:10px;">Buy a random unit for your collection. Cost scales with your collection size.</div>
+<div id="shopOffer" style="margin:10px 0;"></div>
+<div class="group">
+<button class="btn primary" onclick="G.buyShopUnit()" id="buyBtn">🎲 Buy Random Unit (<span id="shopCost">50</span> coins)</button>
+<button class="btn" onclick="G.rerollShop()">🔄 New Offer (10 coins)</button>
+</div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
@@ -4101,6 +4115,8 @@ const Battle={
     u.hitFlash=0;         // hit flash timer (counts down from 80ms)
     u.lungeT=0;           // attack lunge timer (counts down from 60ms)
     u.lungeDir={x:0,y:0}; // lunge direction
+    u.abFlash=0;          // ability activation flash timer
+    u.abFlashColor="#fff"; // ability flash color
     return u;
   },
 
@@ -4180,6 +4196,7 @@ const Battle={
     // Apply speed multiplier and pause.
     if(this.paused){this.render();return;}
     dt*=this.speed||1;
+    this._lastDt=dt;
     // FPS monitoring: compute rolling average every 30 frames, set quality tier.
     this._fpsFrames++;this._fpsAccum+=dt;
     if(this._fpsFrames>=30){
@@ -4257,6 +4274,7 @@ const Battle={
       // Phase 17: advance FX timers.
       if(u.hitFlash>0)u.hitFlash-=dt;
       if(u.lungeT>0)u.lungeT-=dt;
+      if(u.abFlash>0)u.abFlash-=dt;
       if(u.spawnT>0)u.spawnT+=dt/0.15; // 150ms spawn anim
       // Phase 24e: persistent unit aura.
       this.fxAura(u,dt);
@@ -4462,6 +4480,12 @@ const Battle={
 
   // Phase 10: triggered abilities (heal, spawn, explode, heal_burst, shield).
   triggerAbility(u,allies,enemies){
+    // Ability activation flash: colored ring around the unit.
+    const abColors={heal:"#34d399",spawn:"#fbbf24",explode:"#fb7185",heal_burst:"#34d399",shield:"#60a5fa",
+      blink_strike:"#a78bfa",frenzy:"#fb923c",cleanse:"#34d399",chain_lightning:"#4af",counter:"#a78bfa",
+      taunt:"#fb7185",regen:"#34d399",executioner:"#fb7185"};
+    u.abFlash=0.4;
+    u.abFlashColor=abColors[u.ability]||"#fff";
     switch(u.ability){
       case "heal":{
         const ally=lowestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h);
@@ -4890,13 +4914,29 @@ const Battle={
       if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
       if(u.poison>0){c.strokeStyle="#3f3";c.beginPath();c.arc(u.x,u.y,u.z+6,0,Math.PI*2);c.stroke();}
       if(u.slow>0){c.strokeStyle="#39f";c.beginPath();c.arc(u.x,u.y,u.z+9,0,Math.PI*2);c.stroke();}
-      // name + HP bar
+      // Ability activation flash: expanding colored ring.
+      if(u.abFlash>0){
+        const t=1-u.abFlash/0.4;
+        c.globalAlpha=Math.max(0,1-t);
+        c.strokeStyle=u.abFlashColor||"#fff";
+        c.lineWidth=3;
+        c.beginPath();
+        c.arc(u.x,u.y,u.z+4+t*15,0,Math.PI*2);
+        c.stroke();
+        c.lineWidth=1;
+        c.globalAlpha=1;
+      }
+      // name + HP bar (smooth animated HP bar).
       c.fillStyle="#fff";c.font="9px sans-serif";c.textAlign="center";
       c.fillText(u.n,u.x,u.y-16);
       c.fillStyle="#222";
       c.fillRect(u.x-18,u.y-12,36,5);
-      c.fillStyle="#0f0";
-      c.fillRect(u.x-18,u.y-12,36*Math.max(0,u.h/u.mh),5);
+      // Smooth HP bar: lerp displayed HP toward actual HP.
+      if(u.dispH===undefined)u.dispH=u.h;
+      u.dispH+=(u.h-u.dispH)*Math.min(1,(this._lastDt||0.05)*8);
+      const hpRatio=Math.max(0,u.dispH/u.mh);
+      c.fillStyle=hpRatio>0.5?"#34d399":hpRatio>0.25?"#fbbf24":"#fb7185";
+      c.fillRect(u.x-18,u.y-12,36*hpRatio,5);
     }
     // projectiles
     for(let p of this.projectiles){
@@ -6194,6 +6234,17 @@ const G={
     if(dd)dd.innerText=dots.trim();
     const dh=$("draftHint");
     if(dh)dh.innerText=`Draw ${st.drawIndex+1} of ${st.drawCount}: Pick 1 unit`;
+    // Role balance indicator: show picked roles so far as colored pills.
+    const roleEl=$("draftRoles");
+    if(roleEl){
+      const pickedRoles=st.picks.filter(p=>!p._isSpell).map(p=>p.role);
+      if(pickedRoles.length){
+        const roleColors={frontline:"#fb7185",carry:"#fbbf24",support:"#34d399",counter:"#a78bfa",utility:"#60a5fa",assassin:"#f472b6",bruiser:"#fb923c"};
+        roleEl.innerHTML=pickedRoles.map(r=>`<span style="background:${roleColors[r]||"#888"};color:#fff;padding:2px 8px;border-radius:10px;font-size:.6rem;font-weight:700;">${r}</span>`).join("");
+      }else{
+        roleEl.innerHTML="";
+      }
+    }
     // Phase 19a: comeback banner for 4th draw.
     const cb=$("comebackBanner");
     if(cb)cb.style.display=st.drawCount===4?"block":"none";
@@ -7306,6 +7357,130 @@ const G={
     this.wins();
     toast("⬆ "+name+t("upgraded_to")+this.unitLevel(name));
     this.upgrade();
+  },
+
+  // Shop: buy random procedurally-generated units with coins.
+  shopCost(){return 40+(this.collectionUnits().length*5);},
+  _shopOffer:null,
+  // Generate a random procedural unit (no LLM needed).
+  _randomProcUnit(){
+    const roles=UNIT_SCHEMA.properties.role.enum;
+    const abilities=UNIT_SCHEMA.properties.ability.enum;
+    const bodyPlans=UNIT_SCHEMA.properties.bodyPlan.enum;
+    const weapons=UNIT_SCHEMA.properties.weaponType.enum;
+    const movements=UNIT_SCHEMA.properties.movement.enum;
+    const targetings=UNIT_SCHEMA.properties.targeting.enum;
+    const triggers=UNIT_SCHEMA.properties.abilityTrigger.enum;
+    const colors=Object.keys(COLOR_MAP);
+    const headFeatures=UNIT_SCHEMA.properties.headFeature.enum;
+    const backFeatures=UNIT_SCHEMA.properties.backFeature.enum;
+    const auras=UNIT_SCHEMA.properties.aura.enum;
+    const patterns=UNIT_SCHEMA.properties.patternEnum||UNIT_SCHEMA.properties.pattern.enum;
+    const names=["Zyx","Vorn","Krell","Mist","Drek","Thal","Wraith","Gnash","Pyr","Slyth","Vex","Quor","Brak","Felx","Drax","Nyx","Zorn","Kael","Rux","Thyx"];
+    const role=roles[F(R()*roles.length)];
+    const ability=abilities[F(R()*abilities.length)];
+    const isPassive=PASSIVE_ABILITIES.has(ability);
+    const trigger=isPassive?"never":triggers.filter(t=>t!=="never")[F(R()*(triggers.length-1))];
+    // Stat ranges based on role.
+    const hpBase={frontline:120,carry:60,support:50,counter:70,utility:60,assassin:40,bruiser:90};
+    const dmgBase={frontline:15,carry:30,support:10,counter:20,utility:12,assassin:35,bruiser:18};
+    const rangeBase={frontline:40,carry:120,support:80,counter:50,utility:100,assassin:35,bruiser:45};
+    const hp=hpBase[role]+F(R()*40)-20;
+    const dmg=dmgBase[role]+F(R()*10)-5;
+    const range=rangeBase[role]+F(R()*40)-20;
+    const u={
+      n:names[F(R()*names.length)]+F(R()*99),
+      role,
+      targeting:targetings[F(R()*targetings.length)],
+      movement:movements[F(R()*movements.length)],
+      attackCondition:"always",
+      abilityTrigger:trigger,
+      moveSpeedMod:80+F(R()*40),
+      h:Math.max(20,hp),d:Math.max(5,dmg),r:Math.max(30,range),s:60+F(R()*40),a:1,
+      ability,
+      bodyPlan:bodyPlans[F(R()*bodyPlans.length)],
+      weaponType:weapons[F(R()*weapons.length)],
+      c:COLOR_MAP[colors[F(R()*colors.length)]],
+      c2:COLOR_MAP[colors[F(R()*colors.length)]],
+      sizeMod:["small","medium","large"][F(R()*3)],
+      headFeature:headFeatures[F(R()*headFeatures.length)],
+      backFeature:backFeatures[F(R()*backFeatures.length)],
+      tailFeature:"none",
+      aura:auras[F(R()*auras.length)],
+      eyeStyle:"normal",
+      pattern:patterns[F(R()*patterns.length)],
+      weaponStyle:"standard",
+      rar:R()<0.7?"common":(R()<0.95?"rare":"legendary"),
+    };
+    return u;
+  },
+  shop(){
+    this.screen("shop");
+    setText("shopCoins",this.save.coins||0);
+    setText("shopCost",this.shopCost());
+    if(!this._shopOffer)this._generateShopOffer();
+    this._renderShopOffer();
+  },
+  _generateShopOffer(){
+    // Generate 3 random procedural units.
+    const offering=[];
+    for(let i=0;i<3;i++)offering.push(this._randomProcUnit());
+    this._shopOffer=offering;
+  },
+  _renderShopOffer(){
+    const area=$("shopOffer");
+    if(!area)return;
+    area.innerHTML="";
+    if(!this._shopOffer||!this._shopOffer.length){
+      area.innerHTML="<div class='detail'>No units available. Play matches to unlock more.</div>";
+      return;
+    }
+    const group=document.createElement("div");
+    group.className="group";
+    for(const u of this._shopOffer){
+      // Simple card for shop (not draftCard which needs roundDraftState).
+      const card=document.createElement("div");
+      card.className="card rar-"+(u.rar||"common");
+      const abDesc=ABILITY_DESCRIPTIONS?.[u.ability]||"";
+      card.innerHTML=
+        `<div class="title" style="color:${u.c}">${u.n}</div>`+
+        `<div class="detail">${u.role||""} · ${u.h}HP · ${u.d}DMG<br>${u.ability!=="none"?`<span style="color:var(--accent2)">${u.ability}</span>`:""}${abDesc?"<br>"+abDesc:""}</div>`;
+      card.onclick=()=>this.showUnitDetail(u);
+      group.appendChild(card);
+    }
+    area.appendChild(group);
+    const btn=$("buyBtn");
+    if(btn){
+      const cost=this.shopCost();
+      btn.disabled=this.save.coins<cost;
+      btn.innerHTML=`🎲 Buy Random Unit (${cost} coins)`;
+    }
+  },
+  buyShopUnit(){
+    const cost=this.shopCost();
+    if(this.save.coins<cost){toast(t("not_enough_coins"));return;}
+    if(!this._shopOffer||!this._shopOffer.length){toast("No units available");return;}
+    // Pick a random unit from the current offer.
+    const u=this._shopOffer[F(R()*this._shopOffer.length)];
+    // Add to collection (if not already there).
+    if(!this.save.collection)this.save.collection=[];
+    if(!this.save.collection.some(c=>c.n===u.n)){
+      this.save.collection.push({...u});
+    }
+    this.save.coins-=cost;
+    saveData(this.save);
+    this.wins();
+    toast("✓ Added "+u.n+" to collection!");
+    this._generateShopOffer();
+    this.shop();
+  },
+  rerollShop(){
+    const cost=10;
+    if(this.save.coins<cost){toast(t("not_enough_coins"));return;}
+    this.save.coins-=cost;
+    saveData(this.save);
+    this._generateShopOffer();
+    this.shop();
   },
 
   reset(){showConfirm("Reset progress?",()=>{localStorage.removeItem(SAVE_KEY);location.reload();});}
