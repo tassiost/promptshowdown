@@ -291,6 +291,9 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="matchDmgChart" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="matchSurvivors" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <div id="matchRounds" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
+<div id="matchShare" style="display:none;margin:10px;text-align:center;">
+<button class="btn" onclick="G.shareMatchResult()" style="font-size:.75rem;padding:4px 12px;">📤 Share Result</button>
+</div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:12px;">
 <button class="btn primary" id="nextRound">Next Round</button>
 <button class="btn" id="matchMenu" style="display:none;" onclick="G.menu()">Menu</button>
@@ -6214,6 +6217,29 @@ const G={
       saveData(this.save);
     }catch(e){}
   },
+  // Share match result as text via clipboard or Web Share API.
+  shareMatchResult(){
+    const replays=this.save.replays||[];
+    const r=replays[0];
+    if(!r){toast("No match to share");return;}
+    const win=r.winner==="player";
+    const arenaName=this.arenas[r.arena]?.n||"Unknown";
+    const roundIcons=(r.roundHistory||[]).map(h=>h.winner==="player"?"✅":"❌").join("");
+    const units=(r.units||[]).join(", ");
+    const mvpText=r.mvp?` | MVP: ${r.mvp.name} (${r.mvp.dmg} dmg)`:"";
+    const endlessText=r.endlessLevel>0?` Endless Lv${r.endlessLevel}`:"";
+    const text=`🎮 Prompt Showdown\n${win?"🏆 VICTORY":"💀 DEFEAT"}${endlessText}\n⚔️ ${arenaName} | ${roundIcons}${mvpText}\n📋 Army: ${units}\nPlay: https://tassiost.github.io/promptshowdown/`;
+    if(navigator.share){
+      navigator.share({title:"Prompt Showdown Result",text}).catch(()=>{});
+    }else if(navigator.clipboard){
+      navigator.clipboard.writeText(text).then(()=>{
+        toast("📋 Result copied to clipboard!");
+        GameAudio.sfx("ui_click");
+      }).catch(()=>toast("Share failed"));
+    }else{
+      toast("Sharing not supported on this device");
+    }
+  },
   // Phase 37: import shared unit from URL.
   importUnitFromURL(){
     const params=new URLSearchParams(location.search);
@@ -7293,6 +7319,7 @@ const G={
     // Hide match rewards (awarded on match end, not round end).
     const rw=$("matchRewards");if(rw)rw.style.display="none";
     const mm=$("matchMenu");if(mm)mm.style.display="none";
+    const share=$("matchShare");if(share)share.style.display="none";
     const nr=$("nextRound");
     if(nr){
       nr.style.display="block";
@@ -7539,6 +7566,9 @@ const G={
     }
     const mm=$("matchMenu");
     if(mm)mm.style.display="inline-block";
+    // Show share button on match end.
+    const share=$("matchShare");
+    if(share)share.style.display="block";
   },
 
   // Phase 16: generate a one-line strategy hint based on loadout roles
@@ -8180,10 +8210,12 @@ const G={
         const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
         // Show upgraded stats (apply upgrade bonuses for display).
         const disp=lvl>0?this.applyUpgrades(cloneUnit(u)):u;
+        const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+        const abIcon=u.ability&&u.ability!=="none"?abIcons[u.ability]||"":"";
         const card=document.createElement("div");
         card.className="card";
         card.style.borderColor="var(--accent)";
-        card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${disp.h} HP · ${disp.d} DMG<br><span style="color:var(--accent2)">SLOT ${i+1}</span></div>`;
+        card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${disp.h} HP · ${disp.d} DMG${abIcon?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"<br><span style=\"color:var(--muted)\">no ability</span>"}<br><span style="color:var(--accent2)">SLOT ${i+1}</span></div>`;
         SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
         card.onclick=()=>this.swapLoadoutSlot(i);
         la.appendChild(card);
@@ -8267,7 +8299,9 @@ const G={
       const fuseHint=canFuse?`<br><span style="color:var(--legendary)">tap to fuse</span>`:"";
       const inLoadout=this.save.loadout.includes(u.n);
       const slotTag=inLoadout?`<br><span style="color:var(--accent2)">in loadout</span>`:"<br><span style=\"color:var(--muted)\">tap to slot</span>";
-      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
+      const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+      const abIcon=abIcons[u.ability]||"";
+      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"";
       const card=document.createElement("div");
       card.className="card";
       card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
