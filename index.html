@@ -84,7 +84,9 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 .input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
 .input:focus{border-color:var(--accent);}
 #cv{background:radial-gradient(ellipse at center,#1a2540 0%,#0d1526 70%);border:1px solid var(--border);touch-action:none;max-width:100%;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg),inset 0 0 40px rgba(0,0,0,.4);}
-#battleLog{position:fixed;right:5px;top:70px;width:120px;max-height:140px;overflow:auto;background:rgba(11,17,32,.9);border:1px solid var(--border);font-size:8px;padding:5px;border-radius:var(--radius-sm);color:var(--muted);}
+#battleLog{position:fixed;right:5px;top:70px;width:160px;max-height:180px;overflow:hidden;background:rgba(11,17,32,.85);border:1px solid var(--border);font-size:.65rem;padding:6px;border-radius:var(--radius-sm);color:var(--muted);pointer-events:none;}
+#battleLog div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05);animation:logFade .5s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@keyframes logFade{from{opacity:0;transform:translateX(10px);}to{opacity:1;transform:translateX(0);}}
 /* Spell bar */
 .spellBtn{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--accent);border-radius:8px;padding:6px 10px;cursor:pointer;font-size:.7rem;font-weight:700;color:var(--accent2);transition:all .15s ease;position:relative;min-width:60px;text-align:center;box-shadow:0 2px 8px rgba(124,58,237,.3);}
 .spellBtn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 4px 16px rgba(124,58,237,.5);border-color:var(--accent2);}
@@ -4503,7 +4505,8 @@ const Battle={
       this.recentCrits=this.recentCrits.filter(rc=>this.time-rc.t<2);
     }
     else {BattleFX.onHit(target);GameAudio.sfx("hit");} // Phase 30
-    this.log(attacker.n+(crit?" CRIT ":" hits ")+target.n+" "+F(dmg));
+    // Only log crits to kill feed (regular hits are too noisy).
+    if(crit)this.log(`<span style="color:${attacker.c}">${attacker.n}</span> CRIT <span style="color:${target.c}">${target.n}</span> ${F(dmg)}`);
     // lifesteal: heal attacker for 50% of damage dealt
     if(attacker.ability==="lifesteal")attacker.h=Math.min(attacker.mh,attacker.h+dmg*0.5);
     // slow: debuff target for 1s (refreshes, doesn't stack)
@@ -4518,7 +4521,8 @@ const Battle={
     if(attacker.ability==="poison"){target.poison=3.0;target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
     // thorns: reflect 30% of damage back to attacker
     if(target.ability==="thorns"&&attacker.h>0){attacker.h-=dmg*0.3;this.log(target.n+" thorns "+attacker.n);}
-    // Phase 20: track last attacker for ramp-on-kill.
+    // Phase 20: track last attacker for ramp-on-kill and kill feed.
+    target.lastAttacker=attacker;
     if(attacker.ability==="ramp")target.lastAttacker=attacker;
   },
 
@@ -4530,6 +4534,10 @@ const Battle={
       taunt:"#fb7185",regen:"#34d399",executioner:"#fb7185"};
     u.abFlash=0.4;
     u.abFlashColor=abColors[u.ability]||"#fff";
+    // Log ability activation to kill feed (skip "none" ability).
+    if(u.ability&&u.ability!=="none"){
+      this.log(`<span style="color:${abColors[u.ability]||"#fff"}">✨ ${u.n}</span> ${u.ability.replace(/_/g," ")}`);
+    }
     switch(u.ability){
       case "heal":{
         const ally=lowestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h);
@@ -4672,9 +4680,10 @@ const Battle={
     }
     BattleFX.onDeath(u); // Phase 17: death burst FX
     GameAudio.sfx("death"); // Phase 30
-    // Kill feed: log who killed whom.
+    // Kill feed: log who killed whom with colored names.
     const killerName=killer&&killer.n?killer.n:"unknown";
-    this.log("💀 "+killerName+" killed "+u.n);
+    const killerColor=killer&&killer.c?killer.c:"#fff";
+    this.log(`<span style="color:${killerColor}">${killerName}</span> 💀 <span style="color:${u.c}">${u.n}</span>`);
     // Phase 16: track death order for post-match hint.
     if(!this.deathLog)this.deathLog=[];
     this.deathLog.push({n:u.n,role:u.role,team:u.team,t:this.time,killer:killerName});
@@ -4722,7 +4731,6 @@ const Battle={
         }
         p.dead=true;
         if(!hit){
-          this.log("shot missed");
           if(this.debug){
             const tgt=this.units.find(u=>u.id===p.targetId);
             const tgtPos=tgt?"("+tgt.x.toFixed(0)+","+tgt.y.toFixed(0)+")hp="+tgt.h.toFixed(0):"dead/gone";
@@ -5023,7 +5031,9 @@ const Battle={
     let el=$("battleLog");
     if(!el)return;
     el.innerHTML+="<div>"+t+"</div>";
-    while(el.children.length>20){el.firstChild.remove();}
+    while(el.children.length>8){el.firstChild.remove();}
+    // Auto-scroll to bottom.
+    el.scrollTop=el.scrollHeight;
   },
 
   // Spawn a floating damage number.
@@ -7525,7 +7535,11 @@ const G={
     if(!meter)return;
     const units=this.loadoutUnits();
     const roles={};
-    for(const u of units)if(u.role)roles[u.role]=(roles[u.role]||0)+1;
+    const abilities={};
+    for(const u of units){
+      if(u.role)roles[u.role]=(roles[u.role]||0)+1;
+      if(u.ability&&u.ability!=="none")abilities[u.ability]=(abilities[u.ability]||0)+1;
+    }
     // Build role summary.
     const roleList=Object.entries(roles).map(([r,c])=>`${r}:${c}`).join(" · ");
     // Warnings for missing/overloaded roles.
@@ -7535,7 +7549,32 @@ const G={
     if(!roles["support"])warnings.push("⚠ No support — no healing");
     if(!roles["counter"])warnings.push("⚠ No counter — can't dive enemy carries");
     const warnText=warnings.length?`<br><span style="color:#f84">${warnings.join("<br>")}</span>`:`<br><span style="color:#4f4">✓ Balanced loadout</span>`;
-    meter.innerHTML=`<b>Roles:</b> ${roleList||"empty"}${warnText}`;
+    // Synergy score: 0-100 based on role coverage, ability diversity, and role balance.
+    let score=0;
+    const roleCount=Object.keys(roles).length;
+    score+=roleCount*15; // 15 per unique role
+    if(roles["frontline"]&&roles["carry"])score+=10; // frontline+carry combo
+    if(roles["support"])score+=10; // healing
+    if(roles["counter"])score+=5; // divers
+    const abilityCount=Object.keys(abilities).length;
+    score+=Math.min(20,abilityCount*5); // ability diversity
+    // Penalty for too many duplicates.
+    const dups=Object.values(roles).filter(c=>c>2).length;
+    score-=dups*10;
+    score=Math.max(0,Math.min(100,score));
+    const scoreColor=score>=70?"#4f4":score>=40?"#fa0":"#f84";
+    const scoreLabel=score>=70?"Excellent":score>=40?"Decent":"Needs Work";
+    // Ability synergy notes.
+    const synergyNotes=[];
+    if(abilities["heal"]||abilities["heal_burst"])synergyNotes.push("💚 Healing synergy");
+    if(abilities["taunt"]&&(abilities["heal"]||abilities["shield"]))synergyNotes.push("🛡️ Tank + support combo");
+    if(abilities["rage"]&&roles["frontline"])synergyNotes.push("🔥 Rage frontline");
+    if(abilities["executioner"]&&abilities["slow"])synergyNotes.push("⚔️ Slow + execute combo");
+    if(abilities["lifesteal"]&&roles["carry"])synergyNotes.push("🩸 Lifesteal carry");
+    const synergyText=synergyNotes.length?`<br><span style="color:var(--accent2);font-size:.7rem">${synergyNotes.join(" · ")}</span>`:"";
+    meter.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><b>Roles:</b><span>${roleList||"empty"}</span></div>`+
+      `<div style="margin:4px 0;"><b>Synergy:</b> <span style="color:${scoreColor};font-weight:700;">${score}/100 (${scoreLabel})</span></div>`+
+      `${warnText}${synergyText}`;
   },
 
   // Phase 13: swap a loadout slot — cycle to next collection unit.
