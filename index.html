@@ -168,7 +168,7 @@ h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var
 <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
 <span>Language</span>
 <select id="setLang" onchange="G.saveSetting('lang',this.value)" style="padding:4px;font-size:.8rem;">
-<option value="en">English</option><option value="es">Español</option><option value="pt">Português</option>
+<option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="de">Deutsch (beta)</option><option value="fr">Français (beta)</option><option value="ja">日本語 (beta)</option>
 </select>
 </label>
 </div>
@@ -476,6 +476,42 @@ const STRINGS={
     result_tut:"Vença 3 rodadas para vencer a partida. Boa sorte!",
     round_won:"RODADA VENCIDA",round_lost:"RODADA PERDIDA",next_round:"PRÓXIMA RODADA",
     win:"VITÓRIA",lose:"DERROTA",menu:"← Voltar",
+  },
+  de:{
+    title:"PROMPT SHOWDOWN",fight:"⚔️ KÄMPFEN",forge:"🔮 SCHMIEDEN",deck:"📋 DECK",upgrade:"⬆ UPGRADE",
+    reset:"↺ ZURÜCKSETZEN",howto:"❓ So spielt man",settings:"⚙️ Einstellungen",quests:"📋 Quests",ranked:"🏆 Rangliste",
+    welcome:"Willkommen! Dein 4-Karten-Deck ist deine Armee. Tippe DECK um es zu sehen.",
+    fight_tut:"Tippe KÄMPFEN um ein Match zu starten. Du draftest 3 Einheiten pro Runde.",
+    draft_tut:"Wähle 1 Karte pro Zug. Neu würfeln wenn sie dir nicht gefällt.",
+    scout_tut:"Aufklären! Tippe um zu sehen was dein Gegner gewählt hat.",
+    battle_tut:"KÄMPFE! Einheiten kämpfen automatisch. Beobachte und passe an.",
+    result_tut:"Gewinne 3 Runden um das Match zu gewinnen. Viel Glück!",
+    round_won:"RUNDE GEWONNEN",round_lost:"RUNDE VERLOREN",next_round:"NÄCHSTE RUNDE",
+    win:"SIEG",lose:"NIEDERLAGE",menu:"← Zurück",
+  },
+  fr:{
+    title:"PROMPT SHOWDOWN",fight:"⚔️ COMBATTRE",forge:"🔮 FORGER",deck:"📋 DECK",upgrade:"⬆ AMÉLIORER",
+    reset:"↺ RÉINITIALISER",howto:"❓ Comment jouer",settings:"⚙️ Réglages",quests:"📋 Quêtes",ranked:"🏆 Classement",
+    welcome:"Bienvenue ! Votre deck de 4 cartes est votre armée. Touchez DECK pour le voir.",
+    fight_tut:"Touchez COMBATTRE pour commencer. Vous drafterez 3 unités par tour.",
+    draft_tut:"Choisissez 1 carte par tirage. Relancez si ça ne vous plaît pas.",
+    scout_tut:"Reconnaissance ! Touchez pour révéler les choix de l'adversaire.",
+    battle_tut:"COMBATTEZ ! Les unités se battent automatiquement. Observez et adaptez.",
+    result_tut:"Gagnez 3 tours pour remporter le match. Bonne chance !",
+    round_won:"TOUR GAGNÉ",round_lost:"TOUR PERDU",next_round:"TOUR SUIVANT",
+    win:"VICTOIRE",lose:"DÉFAITE",menu:"← Retour",
+  },
+  ja:{
+    title:"PROMPT SHOWDOWN",fight:"⚔️ 戦う",forge:"🔮 鍛造",deck:"📋 デッキ",upgrade:"⬆ 強化",
+    reset:"↺ リセット",howto:"❓ 遊び方",settings:"⚙️ 設定",quests:"📋 クエスト",ranked:"🏆 ランク",
+    welcome:"ようこそ！4枚のカードがあなたの軍隊です。デッキをタップして確認。",
+    fight_tut:"戦うをタップして試合開始。各ラウンドで3ユニットをドラフト。",
+    draft_tut:"各ドローから1枚選択。気に入らなければ再ロール。",
+    scout_tut:"偵察！タップして相手の選択を公開。",
+    battle_tut:"戦え！ユニットは自動で戦う。観察して次ラウンドに活かす。",
+    result_tut:"3ラウンド勝利で試合勝利。幸運を！",
+    round_won:"ラウンド勝利",round_lost:"ラウンド敗北",next_round:"次ラウンド",
+    win:"勝利",lose:"敗北",menu:"← 戻る",
   },
 };
 function t(key){
