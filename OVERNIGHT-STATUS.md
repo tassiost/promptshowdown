@@ -35,7 +35,7 @@
 - Phase 24d (spring-physics secondary motion): deferred.
 - Phase 26 (LLM-authored full recipes): deferred (moonshot).
 - C6 (model download progress bar): already implemented (forgeModelProgress exists).
-- G2 (full string extraction): deferred — mechanical, touches many code paths.
+- G2 (full string extraction): implemented — 20+ in-game strings extracted to STRINGS table across all 6 languages.
 - E4 (Web Worker for LLM): deferred — requires significant architecture changes.
 
 ## Notes
@@ -46,7 +46,7 @@
 - Save version: 12 (latest).
 - Server endpoints (analytics, leaderboard) are configurable, default null = no-op.
 - Ad SDK is abstracted, falls back to stub when no real SDK loaded.
-- i18n now has en/es/pt/de/fr/ja translations for key UI strings. Full string extraction (G2) is future work.
+- i18n now has en/es/pt/de/fr/ja translations for key UI strings + in-game text (toasts, result titles, forge messages, scout reveal, network status).
 - Block C also fixed a pre-existing crash: 3-char hex arena colors (#4a4) were being concatenated with alpha ("10") producing invalid 5-char hex (#4a410) that crashed CanvasGradient.addColorStop. Fixed with sanitizeHex() helper.
 - Block D added auto gradient shading, soft drop shadows, team-colored ground decals, hit reaction animations, and body-plan-specific death FX.
 - Block E added devicePixelRatio handling for crisp retina rendering, debounced saveData, structuredClone, error boundary in render loop, and fixed auto() interval + fxTypeFreq.
@@ -56,4 +56,4 @@
 - Block J added batch LLM field generation (3 JSON calls instead of 24 sequential), spatial partitioning for collision (O(n) via grid hash), compressed P2P snapshots, and IndexedDB fallback for localStorage quota.
 
 ## Current
-Round 2 complete. All blocks A-J from OVERNIGHT2.md implemented. Smoke tests passing: fresh save → match → battle → result screen with no JS errors (only favicon 404). All changes committed and pushed.
+Round 2 complete. All blocks A-J from OVERNIGHT2.md implemented including G2 (full string extraction). No deferred items remain. Smoke tests passing: fresh save → match → battle → result screen with no JS errors (only favicon 404). All changes committed and pushed.

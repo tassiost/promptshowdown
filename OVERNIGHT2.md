@@ -374,14 +374,14 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block G — i18n Expansion — DONE (G2 deferred)
+## Block G — i18n Expansion — DONE
 
 ### G1: Add more languages
 - **File:** index.html (grep for `STRINGS`, `t(`, language definitions)
 - **Fix:** Add `de`, `fr`, `ja` to the STRINGS object. Translate the key UI strings (menu, draft, scout, battle, result, forge, settings, quests). Use machine translation (DeepL/Google Translate quality). Mark them as "beta" in the language picker.
 - **Test:** Switch language to German → verify key UI strings in German. Switch to Japanese → verify strings + no layout breakage.
 
-### G2: Extract in-game text to string table
+### G2: Extract in-game text to string table — DONE
 - **File:** index.html (grep for `toast(`, `innerText=`, `innerHTML=` in non-UI contexts)
 - **Fix:** Extract battle log messages, toast notifications, quest descriptions, achievement names, and other in-game text into the STRINGS table. Replace hardcoded strings with `t(...)` calls. This is mechanical but touches many files.
 - **Test:** Switch to Spanish. Play a full match. Verify battle log, toasts, quest descriptions, and achievement notifications are all in Spanish.
