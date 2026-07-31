@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13 + Round 14)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -71,12 +71,14 @@
 | **Round 12: E2E Quests/Migration/Endless/Shop** | 20+ | 0 | 0 |
 | **Round 13: Static Analysis (2 subagents)** | 60+ | 3 | 3 |
 | **Round 13: E2E Canvas/Perf/Preset/P2P/Bot** | 20+ | 0 | 0 |
+| **Round 14: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
+| **Round 14: E2E Spells/Stats/Save/i18n/Draw** | 20+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1450+** | **65** | **65** |
+| **Total** | **1540+** | **69** | **69** |
 
 ---
 
@@ -1104,3 +1106,50 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Spell zone buff_dmg uses u.baseD** — `initRuntime` sets `u.baseD` for all units including summoned minions (initRuntime is called at line 4686).
 - **Summoned minions don't have recipe** — by design (simple geometric shapes for performance).
 - **Canvas context null in renderOnly** — `getContext("2d")` is called fresh; if it returns null, the function returns early.
+
+---
+
+## Round 14 — Deep Static + E2E: Spells/Stats/Save/i18n/Draw (2026-07-31)
+
+**Focus:** Spell cooldown edge cases (zero/negative magnitude, zero radius/duration), unit stat scaling (upgrade level 10/100, fusion+upgrade), save corruption recovery (invalid JSON, null, missing version), i18n completeness (all 6 languages, missing keys), UI rendering edge cases, match end full flow (win/lose/draw), comeback mechanic, arena advancement, streak/rewards, win prediction.
+
+**Method:** Two parallel static analysis subagents (Spells/Stats/SaveCorruption/i18n/UI, MatchEnd/Comeback/Arena/Streaks/Prediction) + E2E testing via Playwright.
+
+### Round 14: Bugs Found + Fixed (4 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 67 | **saveData doesn't validate null/undefined**: `saveData(null)` or `saveData(undefined)` would write the string `"null"` to localStorage, corrupting the save. On reload, `JSON.parse("null")` returns `null`, crashing the game. | Critical | Added `if(!data||typeof data!=="object")return;` guard at the start of `saveData()`. |
+| 68 | **buff_dmg one-shot spell compounds on current damage**: The one-shot `SPELL_EFFECT.buff_dmg` used `u.d*(1+mag/100)` which compounds on already-buffed damage (from composition bonuses or previous casts). The zone version correctly used `u.baseD`. Same issue for `buff_speed`. | Medium | Changed one-shot `buff_dmg` to use `u.baseD` with `_buffDmgApplied` tracking (same pattern as zone version). Changed `buff_speed` to use `_baseSpeedMod` with `_buffSpeedApplied` tracking. Added `_baseSpeedMod` initialization in `initRuntime`. |
+| 69 | **buff_speed one-shot spell compounds on current speed**: Same as #68 — `buff_speed` added to current `moveSpeedMod` instead of base, causing stacking with repeated casts. | Medium | Fixed together with #68 — uses `_baseSpeedMod` + `_buffSpeedApplied` with `Math.max` to prevent stacking. |
+| 70 | **Draw condition treated as loss**: `onMatchEnd(winner)` used `const win=winner==="player"` which treated draws as losses — no XP, no coins, win streak reset, ranked loss counted. Draws are possible (timeout, mutual destruction, equal HP at time limit). | High | Added `const draw=winner==="draw"` and a dedicated draw branch: awards partial rewards (15 XP, 5 coins), preserves win streak, doesn't count as ranked loss. Elo uses 0.5 score for draws. Added `match_draw` i18n key to all 6 languages. Result screen shows "DRAW" instead of "MATCH LOST". |
+
+### Round 14: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Spell cooldown calculation | ✅ Pass | 3s for low magnitude, scaling up for high (6.67s for mag=100). |
+| Save corruption: invalid JSON | ✅ Pass | Game recovers, creates fresh save (v12). |
+| Save corruption: null | ✅ Pass | Game recovers, creates fresh save. |
+| Save corruption: missing version | ✅ Pass | Game recovers, migrates to v12. |
+| Stat scaling: level 10 | ✅ Pass | No NaN, valid stats. |
+| Stat scaling: level 100 (overflow) | ✅ Pass | No NaN, valid stats. |
+| i18n: match_draw in all 6 languages | ✅ Pass | en:DRAW, es:EMPATE, pt:EMPATE, de:UNENTSCHIEDEN, fr:ÉGALITÉ, ja:引き分け. |
+| Draw: coins awarded | ✅ Pass | 100 → 105 (+5 partial reward). |
+| Draw: XP awarded | ✅ Pass | 100 → 115 (+15 partial reward). |
+| Draw: win streak preserved | ✅ Pass | 3 → 3 (not reset). |
+| Draw: no ranked loss | ✅ Pass | 0 → 0 (not counted as loss). |
+| Draw: result title | ✅ Pass | Shows "DRAW" (not "MATCH LOST"). |
+| Full bot match regression | ✅ Pass | Battle, 18 units, no NaN. |
+
+### Round 14: Verified Non-Bugs (from subagent reports)
+
+- **saveDataDebounced data loss on unload** — `beforeunload` handler already calls `saveDataNow(G.save)`, flushing pending debounced saves.
+- **Daily bonus awarded multiple times per day** — by design ("first win of the day" bonus, only awards on actual wins, not draws).
+- **Spell zone summon unlimited minions** — capped at 3 per tick, minions have 8s TTL, zones have limited duration.
+- **t() returns key for missing translation** — by design (fallback to key string, no crash).
+- **Unit stat display shows NaN for corrupt stats** — only possible with manually corrupted saves; not a game bug.
+- **Fusion preview innerHTML with unit names** — unit names are sanitized by `unit()` factory (strips `<>`, replaces `"` with `'`).
+- **Win prediction NaN with undefined unit properties** — `initRuntime` always sets all properties; can't be undefined in normal flow.
+- **Round draw awards 5 XP consolation** — by design (draws deserve some consolation).
+- **Arena advancement logic** — correct: only advances on win, endless mode only after last arena.

@@ -689,6 +689,7 @@ const CURRENT_VERSION=12; // Phase 37: bumped for replays.
 // E1: Debounced saveData — batches writes within 500ms.
 let _saveTimer=null;
 function saveData(data){
+  if(!data||typeof data!=="object")return;
   try{
     const prev=localStorage.getItem(SAVE_KEY);
     if(prev)localStorage.setItem(SAVE_BACKUP_KEY,prev);
@@ -781,7 +782,7 @@ const STRINGS={
     round_won:"ROUND WON",round_lost:"ROUND LOST",next_round:"NEXT ROUND",
     win:"VICTORY",lose:"DEFEAT",menu:"← Back",
     // G2: In-game text strings.
-    match_won:"MATCH WON!🏆",match_lost:"MATCH LOST",
+    match_won:"MATCH WON!🏆",match_lost:"MATCH LOST",match_draw:"DRAW",
     settings_saved:"Settings saved",share_copied:"📋 Share link copied!",share_failed:"Share failed",
     invalid_link:"Invalid share link",spell_added_share:"✓ Spell added from share link!",
     unit_added_share:"✓ Unit added from share link!",spell_added_book:"Spell added to spellbook!",
@@ -805,7 +806,7 @@ const STRINGS={
     result_tut:"Gana 3 rondas para llevar el partido. ¡Buena suerte!",
     round_won:"RONDA GANADA",round_lost:"RONDA PERDIDA",next_round:"SIGUIENTE RONDA",
     win:"VICTORIA",lose:"DERROTA",menu:"← Volver",
-    match_won:"¡PARTIDA GANADA!🏆",match_lost:"PARTIDA PERDIDA",
+    match_won:"¡PARTIDA GANADA!🏆",match_lost:"PARTIDA PERDIDA",match_draw:"EMPATE",
     settings_saved:"Ajustes guardados",share_copied:"📋 ¡Enlace copiado!",share_failed:"Error al compartir",
     invalid_link:"Enlace inválido",spell_added_share:"✓ ¡Hechizo añadido!",
     unit_added_share:"✓ ¡Unidad añadida!",spell_added_book:"¡Hechizo añadido al grimorio!",
@@ -829,7 +830,7 @@ const STRINGS={
     result_tut:"Vença 3 rodadas para vencer a partida. Boa sorte!",
     round_won:"RODADA VENCIDA",round_lost:"RODADA PERDIDA",next_round:"PRÓXIMA RODADA",
     win:"VITÓRIA",lose:"DERROTA",menu:"← Voltar",
-    match_won:"PARTIDA VENCIDA!🏆",match_lost:"PARTIDA PERDIDA",
+    match_won:"PARTIDA VENCIDA!🏆",match_lost:"PARTIDA PERDIDA",match_draw:"EMPATE",
     settings_saved:"Ajustes salvos",share_copied:"📋 Link copiado!",share_failed:"Falha ao compartilhar",
     invalid_link:"Link inválido",spell_added_share:"✓ Feitiço adicionado!",
     unit_added_share:"✓ Unidade adicionada!",spell_added_book:"Feitiço adicionado ao grimório!",
@@ -853,7 +854,7 @@ const STRINGS={
     result_tut:"Gewinne 3 Runden um das Match zu gewinnen. Viel Glück!",
     round_won:"RUNDE GEWONNEN",round_lost:"RUNDE VERLOREN",next_round:"NÄCHSTE RUNDE",
     win:"SIEG",lose:"NIEDERLAGE",menu:"← Zurück",
-    match_won:"MATCH GEWONNEN!🏆",match_lost:"MATCH VERLOREN",
+    match_won:"MATCH GEWONNEN!🏆",match_lost:"MATCH VERLOREN",match_draw:"UNENTSCHIEDEN",
     settings_saved:"Einstellungen gespeichert",share_copied:"📋 Link kopiert!",share_failed:"Teilen fehlgeschlagen",
     invalid_link:"Ungültiger Link",spell_added_share:"✓ Zauber hinzugefügt!",
     unit_added_share:"✓ Einheit hinzugefügt!",spell_added_book:"Zauber zum Zauberbuch hinzugefügt!",
@@ -877,7 +878,7 @@ const STRINGS={
     result_tut:"Gagnez 3 tours pour remporter le match. Bonne chance !",
     round_won:"TOUR GAGNÉ",round_lost:"TOUR PERDU",next_round:"TOUR SUIVANT",
     win:"VICTOIRE",lose:"DÉFAITE",menu:"← Retour",
-    match_won:"MATCH GAGNÉ !🏆",match_lost:"MATCH PERDU",
+    match_won:"MATCH GAGNÉ !🏆",match_lost:"MATCH PERDU",match_draw:"ÉGALITÉ",
     settings_saved:"Réglages enregistrés",share_copied:"📋 Lien copié !",share_failed:"Échec du partage",
     invalid_link:"Lien invalide",spell_added_share:"✓ Sort ajouté !",
     unit_added_share:"✓ Unité ajoutée !",spell_added_book:"Sort ajouté au grimoire !",
@@ -901,7 +902,7 @@ const STRINGS={
     result_tut:"3ラウンド勝利で試合勝利。幸運を！",
     round_won:"ラウンド勝利",round_lost:"ラウンド敗北",next_round:"次ラウンド",
     win:"勝利",lose:"敗北",menu:"← 戻る",
-    match_won:"試合勝利！🏆",match_lost:"試合敗北",
+    match_won:"試合勝利！🏆",match_lost:"試合敗北",match_draw:"引き分け",
     settings_saved:"設定を保存しました",share_copied:"📋 リンクをコピーしました！",share_failed:"共有に失敗",
     invalid_link:"無効なリンク",spell_added_share:"✓ スペルを追加しました！",
     unit_added_share:"✓ ユニットを追加しました！",spell_added_book:"スペルを魔導書に追加しました！",
@@ -4579,8 +4580,8 @@ const SPELL_EFFECT={
       u.x+=dx/d*force;u.y+=dy/d*force;
     });
   },
-  buff_dmg(units,spec){units.forEach(u=>{u.d=Math.round(u.d*(1+(spec.magnitude||20)/100));});},
-  buff_speed(units,spec){units.forEach(u=>{u.moveSpeedMod=(u.moveSpeedMod||100)+(spec.magnitude||20);});},
+  buff_dmg(units,spec){units.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(spec.magnitude||20)/100);u.d=Math.round((u.baseD||u.d)*u._buffDmgApplied);});},
+  buff_speed(units,spec){units.forEach(u=>{u._buffSpeedApplied=Math.max(u._buffSpeedApplied||0,spec.magnitude||20);u.moveSpeedMod=(u._baseSpeedMod||u.moveSpeedMod||100)+u._buffSpeedApplied;});},
 };
 // Phase 23: Spell object — resolves a spell spec into an effect at battle time.
 const Spell={
@@ -4746,6 +4747,7 @@ const Battle={
     u.stun=0;          // stun remaining seconds
     u.mh=u.mh||u.h;    // max hp
     u.baseD=u.baseD||u.d; // Phase 20: base damage for ramp cap
+    u._baseSpeedMod=u.moveSpeedMod||100; // base speed for buff_speed (prevents stacking)
     u.fxType=u.fxType||deriveFxType(u); // Phase 24e: cached aura type
     u.patrolT=0;       // Phase 10: patrol movement timer
     u.firstHitUsed=false; // Phase 10: on_first_hit flag
@@ -7078,7 +7080,7 @@ const G={
   computeElo(rating,opponentRating,win,isBot){
     const k=isBot?25:32;
     const expected=1/(1+Math.pow(10,(opponentRating-rating)/400));
-    const score=win?1:0;
+    const score=win===true?1:win===null?0.5:0; // null = draw
     const delta=Math.round(k*(score-expected));
     return Math.max(500,rating+delta);
   },
@@ -8462,7 +8464,8 @@ const G={
   // Phase 8: Match ended — award XP/coins, show match result, update wins.
   onMatchEnd(winner){
     const win=winner==="player";
-    GameAudio.sfx(win?"match_win":"match_lose"); // Phase 30
+    const draw=winner==="draw";
+    GameAudio.sfx(win?"match_win":draw?"match_lose":"match_lose"); // Phase 30
     GameAudio.stopMusic(); // Phase 30
     // Track win prediction accuracy.
     if(this._lastPrediction!==undefined){
@@ -8517,9 +8520,9 @@ const G={
     const r=this.save.ranked;
     if(r){
       const oldRating=r.rating;
-      r.rating=this.computeElo(r.rating,1000,win,!connected);
+      r.rating=this.computeElo(r.rating,1000,draw?null:win,!connected);
       if(r.rating>r.peakRating)r.peakRating=r.rating;
-      if(win)r.wins++;else r.losses++;
+      if(win)r.wins++;else if(!draw)r.losses++;
     }
     if(win){
       vibrate([40,30,40]); // Phase 7: victory haptic
@@ -8574,6 +8577,14 @@ const G={
       }
       saveData(this.save);
       this.checkAchievements();
+    }else if(draw){
+      // Draw: award partial rewards, don't reset win streak.
+      this.save._lastMatchWon=false;
+      xpGain=15;
+      coinGain=5;
+      this.save.xp=(this.save.xp||0)+xpGain;
+      this.save.coins=(this.save.coins||0)+coinGain;
+      saveData(this.save);
     }else{
       // Loss: reset win streak.
       this.save._lastMatchWon=false;
@@ -8586,7 +8597,7 @@ const G={
     this.screen("result");
     const titleEl=$("resultTitle");
     if(titleEl){
-      titleEl.innerText=win?t("match_won"):t("match_lost");
+      titleEl.innerText=win?t("match_won"):draw?t("match_draw"):t("match_lost");
       titleEl.classList.remove("result-victory","result-defeat");
       // Force reflow to restart animation.
       void titleEl.offsetWidth;
