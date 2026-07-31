@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9 + Round 10 + Round 11 + Round 12 + Round 13)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -69,12 +69,14 @@
 | **Round 11: E2E Screens/MultiRound/Ads/Regression** | 25+ | 0 | 0 |
 | **Round 12: Static Analysis (2 subagents)** | 60+ | 4 | 4 |
 | **Round 12: E2E Quests/Migration/Endless/Shop** | 20+ | 0 | 0 |
+| **Round 13: Static Analysis (2 subagents)** | 60+ | 3 | 3 |
+| **Round 13: E2E Canvas/Perf/Preset/P2P/Bot** | 20+ | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **1360+** | **62** | **62** |
+| **Total** | **1450+** | **65** | **65** |
 
 ---
 
@@ -1054,3 +1056,51 @@ No bugs found. All subagent findings were verified as non-bugs.
 - **Shop cost overflow with large collections** — collection is capped at 50, so max cost is 290 coins; can't overflow.
 - **upgradeUnit trusts passed cost** — single-player game, no race condition possible.
 - **Forge daily cap race condition** — `_forgeRunning` flag prevents concurrent forges.
+
+---
+
+## Round 13 — Deep Static + E2E: Canvas/P2P/Performance/Presets/Bot (2026-07-31)
+
+**Focus:** P2P networking (message handlers, disconnect, role reset), canvas rendering (resize, DPR, scale accumulation), touch/mobile events, performance (many units, particle limit), snapshot system, preset system (save/load/delete, XSS), SpriteRenderer, Bot AI, spell zones, death log/kill feed.
+
+**Method:** Two parallel static analysis subagents (P2P/Canvas/Touch/Performance/Snapshots, Presets/SpriteRenderer/BotAI/Spells/DeathLog) + E2E testing via Playwright.
+
+### Round 13: Bugs Found + Fixed (3 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 64 | **Canvas scale accumulates on resize**: `resizeCanvas()` called `Battle.ctx.scale(dpr,dpr)` without resetting the transform first. Each resize event multiplied the scale, causing increasingly distorted rendering. | High | Added `Battle.ctx.setTransform(1,0,0,1,0,0)` before `scale(dpr,dpr)` in `resizeCanvas()`. |
+| 65 | **P2P disconnect doesn't reset role**: `disconnect()` cleared `room`, `sendNet`, and `connected` but didn't reset `role` to `"none"`. After disconnect, the player could still think they're host/guest, causing state mismatch on reconnect. | Medium | Added `role="none"` to `disconnect()`. |
+| 66 | **P2P message handlers crash on missing data.d**: Multiple message handlers (`role_tiebreak`, `deck`, `opponent_picks`, `round_deck`, etc.) accessed `data.d` fields without checking if `data.d` exists. Malformed messages would crash the handler. | High | Added a guard at the top of `networkReceive`: `if(data.t!=="role"&&data.t!=="ping"&&data.t!=="pong"&&!data.d)return;` |
+
+### Round 13: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Canvas initial render | ✅ Pass | 380x550, no NaN. |
+| Canvas after 4 resizes | ✅ Pass | No NaN, battle still running, correct dimensions. |
+| 50 units in battle | ✅ Pass | No NaN, all alive, no console errors. |
+| Preset save (direct) | ✅ Pass | Preset stored correctly. |
+| Preset load | ✅ Pass | Loadout restored correctly. |
+| Preset delete | ✅ Pass | Preset removed. |
+| Preset XSS (img/onerror) | ✅ Pass | `<` and `>` stripped, `onerror` is text content only, no img element, no onerror attribute. |
+| Death log | ✅ Pass | 17 entries after 10s of battle. |
+| Kill feed | ✅ Pass | Display toggled correctly. |
+| Bot draft (3 picks) | ✅ Pass | 3 picks, valid units. |
+| Bot comeback (4 picks) | ✅ Pass | 4 picks, valid units. |
+| Snapshot functions | ✅ Pass | startSnapshots/stopSnapshots exist. |
+| Full bot match regression | ✅ Pass | Battle, 7 units, 0 console errors. |
+
+### Round 13: Verified Non-Bugs (from subagent reports)
+
+- **P2P interpolation RAF leak** — the interpolation loop checks `if(!Battle.running)` and self-terminates when battle stops.
+- **Per-frame array allocations** — performance concern but not a bug; 60fps with <50 units is fine.
+- **Per-frame Map allocations in interpolation** — same as above; P2P guest only.
+- **Touch events double-firing** — canvas has `touch-action:none` in CSS; click handler is sufficient.
+- **opponent_picks message not sent by host** — guest uses `round_start` message for scout screen; `opponent_picks` handler is unused but harmless.
+- **NaN if u.z undefined** — `initRuntime` always sets `u.z`; can't be undefined in normal flow.
+- **Match.opponentPicks not validated** — always called with an array from `Match` state.
+- **Preset index-based identification** — `Object.keys()` preserves insertion order for string keys per ECMAScript spec; indices are stable.
+- **Spell zone buff_dmg uses u.baseD** — `initRuntime` sets `u.baseD` for all units including summoned minions (initRuntime is called at line 4686).
+- **Summoned minions don't have recipe** — by design (simple geometric shapes for performance).
+- **Canvas context null in renderOnly** — `getContext("2d")` is called fresh; if it returns null, the function returns early.

@@ -2803,7 +2803,7 @@ let sendNet=null;
 let connected=false;
 let role="none";
 let _peerId=null;
-function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;}}
+function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;role="none";}}
 
 function setupNetwork(id){
   if(!joinRoom){
@@ -2915,6 +2915,8 @@ let suppressP2PErrors=false;
 //   round_deck    : guest→host {picks (serialized units with recipes)}
 function networkReceive(data){
   try{
+    // Guard: most message types require data.d; skip if missing.
+    if(data.t!=="role"&&data.t!=="ping"&&data.t!=="pong"&&!data.d)return;
     // P2P Test: handle ping/pong for latency testing.
     if(data.t==="ping"){
       transmit("pong",{ts:data.d?.ts});
@@ -10803,6 +10805,7 @@ function resizeCanvas(){
   cv.height=dispH*dpr;
   Battle.canvasH=dispH;
   Battle.canvasW=dispW;
+  Battle.ctx.setTransform(1,0,0,1,0,0);
   Battle.ctx.scale(dpr,dpr);
 }
 window.addEventListener("resize",resizeCanvas);
