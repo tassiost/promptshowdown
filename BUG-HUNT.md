@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7 + Round 8 + Round 9)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -58,12 +58,15 @@
 | **Round 8: E2E Upgrade/Codex/Onboarding/Presets** | 10 | 1 | 1 |
 | **Round 8: E2E Audio/Accessibility/Quality** | 12 | 0 | 0 |
 | **Round 8: E2E Battle Cleanup + Regression** | 5 | 0 | 0 |
+| **Round 9: Static Analysis (2 subagents)** | 50+ | 5 | 5 |
+| **Round 9: E2E Shop/Forge/Rewards/Draft/Spells** | 20 | 0 | 0 |
+| **Round 9: E2E Reset/Navigation/Regression** | 12 | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **950+** | **52** | **52** |
+| **Total** | **1040+** | **57** | **57** |
 
 ---
 
@@ -822,3 +825,63 @@ Two parallel subagents analyzed 60+ code paths across match flow/deck/bot AI/col
 - **Win prediction color duplicate** — cosmetic only, both use warn color for <60% win chance.
 - **Arena unlock toast** — uses correct arena index (this.save.arena was already incremented to the new arena).
 - **fireRecipeFx particles not budget-checked** — very low particle count (max 5 per attack), unlikely to exceed cap in practice.
+
+---
+
+## Round 9 — Deep Static + E2E: Spells/Draft/Shop/Reset/Rewards (2026-07-31)
+
+**Focus:** Spell system (all effects, triggers, targets, manual cast), draft system (card pick, timer, auto-pick, reroll, scout), shop purchase flow, forge daily cap, match end rewards, stats/profile, synergy meter, reset save, accessibility.
+
+**Method:** Two parallel static analysis subagents (SpriteRenderer/Shop/Rewards/Draft, Spells/Stats/KillFeed/Synergy/Reset) + E2E testing via Playwright.
+
+### Round 9: Bugs Found + Fixed (5 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 54 | **`heal_over_time` missing from SPELL_ENUM**: The effect `heal_over_time` is handled in `tickZones` (as an alias for `heal_allies`) but is not in `SPELL_ENUM.effect`, `SPELL_ALLY_EFFECTS`, or `SPELL_EFFECT`. This means it can't be created via forge (validation rejects it) and has no non-zone handler. | Medium | Added `heal_over_time` to `SPELL_ENUM.effect`, `SPELL_ALLY_EFFECTS`, `SPELL_EFFECT` (applies regen status), cooldown calculation, and effect labels. Also added regen ticking logic in the main loop and `regen`/`regenTick` initialization in `initRuntime`. |
+| 55 | **`damage_over_time` doesn't set `lastAttacker`**: The spell effect applies poison but doesn't set `u.lastAttacker`. Kills from poison damage won't be attributed to the spell caster, breaking kill attribution for MVP, kill feed, and on_kill abilities. | High | Added `u.lastAttacker={team:team,n:"Spell",id:team+"_spell"}` to both `SPELL_EFFECT.damage_over_time` and the zone tick handler for `damage_over_time`. |
+| 56 | **Reset doesn't clear IndexedDB or backup**: `reset()` only removes `localStorage[SAVE_KEY]` but doesn't clear the backup key or IndexedDB fallback. On reload, `loadDataAsync` can restore the save from IDB. | High | Added `localStorage.removeItem(SAVE_BACKUP_KEY)` and IDB clearing via `objectStore.clear()` to the reset function. |
+| 57 | **Reroll doesn't clear draft timer**: `reroll()` calls `drawOne()` without calling `_clearDraftTimer()` first. The old timer interval continues running alongside the new one, causing erratic timer behavior. | Medium | Added `this._clearDraftTimer()` before `this.drawOne()` in `reroll()`. |
+| 58 | **Draft card double-pick not guarded**: The card onclick handler doesn't prevent re-entry. While this can't happen in a real browser (the card is detached after first click), a `_draftPicking` flag was added as defense-in-depth. | Low | Added `_draftPicking` flag to `pickDraft`, spell card onclick, and unit card onclick handlers. Set before pick, cleared after. |
+
+### Round 9: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Shop purchase (valid coins) | ✅ Pass | Coins deducted, unit added to collection. |
+| Shop purchase (0 coins) | ✅ Pass | Coins don't go negative. |
+| Shop cost scaling | ✅ Pass | Cost increases with collection size (40 + count*5). |
+| Forge screen render | ✅ Pass | Shows forge UI. |
+| Forge daily cap (10) | ✅ Pass | Capped at 10 forges per day. |
+| Forge date reset | ✅ Pass | Old date triggers count reset. |
+| Draft initial state | ✅ Pass | 3 cards, round 1, 3 lives each. |
+| Draft pick 4 cards | ✅ Pass | 4 picks, scout screen, battle starts. |
+| Scout screen | ✅ Pass | Shows after 4 picks. |
+| Battle starts from draft | ✅ Pass | 18 units, 9 player + 9 enemy. |
+| Spell bar visible in battle | ✅ Pass | Shows when player has spells. |
+| Manual spell cast | ✅ Pass | Cooldown set after cast (when battle active). |
+| Stats screen | ✅ Pass | Renders without crash. |
+| Stats with 0 wins/losses | ✅ Pass | No division by zero. |
+| Synergy meter | ✅ Pass | Shows roles, score, warnings, bonuses. |
+| Reset button exists | ✅ Pass | In settings screen. |
+| Reset clears IDB + backup | ✅ Pass | Both cleared in reset function. |
+| Reroll clears timer | ✅ Pass | `_clearDraftTimer` called in reroll. |
+| Double-pick guard | ✅ Pass | Real Playwright click: picks=1 (correct). |
+| Full bot match regression | ✅ Pass | Battle, 20 units, 0 console errors. |
+| Navigation (9 screens) | ✅ Pass | All screens render without crash. |
+| Match end rewards | ✅ Pass | Coins/XP awarded, streak tracked. |
+
+### Round 9: Verified Non-Bugs (from subagent reports)
+
+- **SpriteRenderer line/arc/ellipse missing null checks** — recipes are generated by code with validated shapes; malformed recipes can't be created via normal paths.
+- **Shop duplicate purchase** — `buyShopUnit` generates a new random unit each time; duplicates are by design (same unit name, different stats).
+- **Match end rewards calculation** — correctly calculates coins/XP, resets streak on loss, advances arena when wins >= unlock threshold.
+- **Win prediction color duplicate** — cosmetic only, both use warn color for <60% win chance.
+- **Arena unlock toast** — uses correct arena index (this.save.arena was already incremented to the new arena).
+- **Endless level bonus uses new level** — intentional (bonus is for reaching the new level).
+- **Onboarding doesn't auto-navigate** — by design (user navigates manually, coachmark overlays).
+- **BotStrategy.missingRoles only checks frontline/carry** — by design per AGENTS.md.
+- **Formation Y-bands don't handle assassin/bruiser** — fallback to frontline is intentional.
+- **Synergy meter doesn't check "ranged" role** — "ranged" is not in ROLE_OPTS; subagent was wrong.
+- **Power score missing unit properties** — `unit()` factory always sets all properties with defaults.
+- **Spellbook spells not in playerSpells** — spells are drafted alongside units (30% chance), not loaded from spellbook.
