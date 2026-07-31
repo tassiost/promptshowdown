@@ -258,6 +258,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <canvas id="cv"></canvas>
 <div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;"></div>
 <div id="battleLog"></div>
+<div id="compBonus" style="display:none;position:fixed;left:5px;top:70px;max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
 <div class="group">
@@ -279,6 +280,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 </div>
 <div id="matchMVP" style="display:none;margin:10px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--accent);text-align:center;"></div>
 <div id="matchDmgChart" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
+<div id="matchSurvivors" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <div id="matchRounds" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:280px;margin-top:12px;">
 <button class="btn primary" id="nextRound">Next Round</button>
@@ -4178,6 +4180,46 @@ const Battle={
     return u;
   },
 
+  // Team composition bonuses: rewards role diversity with stat bonuses.
+  applyCompositionBonuses(){
+    const bonuses=this.calcCompositionBonuses(this.units.filter(u=>u.team==="player"));
+    const enemyBonuses=this.calcCompositionBonuses(this.units.filter(u=>u.team==="enemy"));
+    for(const u of this.units){
+      const b=u.team==="player"?bonuses:enemyBonuses;
+      if(b.hpPct){u.h=Math.round(u.h*(1+b.hpPct));u.mh=u.h;}
+      if(b.dmgPct)u.d=Math.round(u.d*(1+b.dmgPct));
+      if(b.speedPct)u.s=Math.round(u.s*(1+b.speedPct));
+    }
+    this.playerBonuses=bonuses;
+    this.enemyBonuses=enemyBonuses;
+  },
+  calcCompositionBonuses(army){
+    const roles=new Set();
+    const abilities=new Set();
+    for(const u of army){
+      if(u.role)roles.add(u.role);
+      if(u.ability&&u.ability!=="none")abilities.add(u.ability);
+    }
+    const bonuses={hpPct:0,dmgPct:0,speedPct:0,labels:[]};
+    // Role diversity bonus: +3% HP per unique role (max 5 roles = 15% HP).
+    const roleCount=roles.size;
+    if(roleCount>=3){bonuses.hpPct+=0.03*(roleCount-2);bonuses.labels.push(`+${3*(roleCount-2)}% HP (role diversity)`);}
+    // Frontline + Carry combo: +5% damage to carries.
+    if(roles.has("frontline")&&roles.has("carry")){bonuses.dmgPct+=0.05;bonuses.labels.push("+5% DMG (frontline+carry)");}
+    // Support present: +5% HP to all.
+    if(roles.has("support")){bonuses.hpPct+=0.05;bonuses.labels.push("+5% HP (support)");}
+    // Counter present: +5% speed to all.
+    if(roles.has("counter")){bonuses.speedPct+=0.05;bonuses.labels.push("+5% SPD (counter)");}
+    // Ability diversity: +2% damage per unique ability (max 4 = 8%).
+    const abCount=abilities.size;
+    if(abCount>=2){const abBonus=Math.min(0.08,0.02*(abCount-1));bonuses.dmgPct+=abBonus;bonuses.labels.push(`+${Math.round(abBonus*100)}% DMG (ability diversity)`);}
+    // Healing synergy: heal + heal_burst = +5% HP.
+    if(abilities.has("heal")&&abilities.has("heal_burst")){bonuses.hpPct+=0.05;bonuses.labels.push("+5% HP (double heal)");}
+    // Tank + support: taunt + heal/shield = +10% HP.
+    if(abilities.has("taunt")&&(abilities.has("heal")||abilities.has("shield"))){bonuses.hpPct+=0.10;bonuses.labels.push("+10% HP (tank+support)");}
+    return bonuses;
+  },
+
   // Phase 10: single units array; team set on each unit.
   // Phase 23: accept spells arg {player:[],enemy:[]}.
   start(units,enemies,onEnd,spells){
@@ -4186,6 +4228,10 @@ const Battle={
       ...units.map(u=>({...u,team:"player"})),
       ...enemies.map(u=>({...u,team:"enemy"}))
     ].map(u=>this.initRuntime(u));
+    // Apply team composition bonuses based on role diversity.
+    this.applyCompositionBonuses();
+    // Show composition bonuses on battle screen.
+    this._renderCompBonus();
     // Phase 17: trigger spawn FX for all units.
     for(const u of this.units)BattleFX.onSpawn(u);
     this.projectiles=[];
@@ -5139,9 +5185,18 @@ const Battle={
     return 6;
   },
 
+  // Render composition bonus indicator.
+  _renderCompBonus(){
+    const el=$("compBonus");
+    if(!el)return;
+    const b=this.playerBonuses;
+    if(!b||!b.labels||b.labels.length===0){el.style.display="none";return;}
+    el.style.display="block";
+    el.innerHTML="<b style='color:var(--accent)'>⚡ Bonuses</b><br>"+b.labels.map(l=>`<div style='color:var(--accent2);font-size:.55rem;margin:1px 0;'>${l}</div>`).join("");
+  },
+
   // Render the spell bar with clickable spell buttons.
-  _renderSpellBar(){
-    const bar=$("spellBar");
+  _renderSpellBar(){    const bar=$("spellBar");
     if(!bar)return;
     if(!this.playerSpells||!this.playerSpells.length){bar.style.display="none";return;}
     bar.style.display="flex";
@@ -7032,6 +7087,21 @@ const G={
     }else if(roundsEl){
       roundsEl.style.display="none";
     }
+    // Unit survival summary.
+    const survEl=$("matchSurvivors");
+    if(survEl){
+      const playerTeam=connected&&role==="guest"?"enemy":"player";
+      const survivors=Battle.units.filter(u=>u.team===playerTeam&&u.h>0);
+      const total=Battle.units.filter(u=>u.team===playerTeam).length;
+      if(total>0){
+        survEl.style.display="block";
+        const survNames=survivors.map(u=>`<span style="color:${u.c}">${u.n}</span>`).join(", ");
+        survEl.innerHTML=`<div style='font-weight:700;font-size:.8rem;margin-bottom:4px;'>Army Status</div>`+
+          `<div style='font-size:.75rem;'>${survivors.length}/${total} survived${survivors.length>0?`: ${survNames}`:" — full wipe"}</div>`;
+      }else{
+        survEl.style.display="none";
+      }
+    }
     // Phase 16: post-match strategy hint.
     const hint=this.generateMatchHint(win);
     const mh=$("matchHint");
@@ -7607,17 +7677,22 @@ const G={
     score=Math.max(0,Math.min(100,score));
     const scoreColor=score>=70?"#4f4":score>=40?"#fa0":"#f84";
     const scoreLabel=score>=70?"Excellent":score>=40?"Decent":"Needs Work";
-    // Ability synergy notes.
-    const synergyNotes=[];
-    if(abilities["heal"]||abilities["heal_burst"])synergyNotes.push("💚 Healing synergy");
-    if(abilities["taunt"]&&(abilities["heal"]||abilities["shield"]))synergyNotes.push("🛡️ Tank + support combo");
-    if(abilities["rage"]&&roles["frontline"])synergyNotes.push("🔥 Rage frontline");
-    if(abilities["executioner"]&&abilities["slow"])synergyNotes.push("⚔️ Slow + execute combo");
-    if(abilities["lifesteal"]&&roles["carry"])synergyNotes.push("🩸 Lifesteal carry");
-    const synergyText=synergyNotes.length?`<br><span style="color:var(--accent2);font-size:.7rem">${synergyNotes.join(" · ")}</span>`:"";
+    // Calculate actual composition bonuses (same as battle).
+    const fakeArmy=units.map(u=>({role:u.role,ability:u.ability}));
+    const roleSet=new Set(fakeArmy.map(u=>u.role).filter(Boolean));
+    const abSet=new Set(fakeArmy.map(u=>u.ability).filter(a=>a&&a!=="none"));
+    const bonusLabels=[];
+    if(roleSet.size>=3)bonusLabels.push(`+${3*(roleSet.size-2)}% HP (role diversity)`);
+    if(roleSet.has("frontline")&&roleSet.has("carry"))bonusLabels.push("+5% DMG (frontline+carry)");
+    if(roleSet.has("support"))bonusLabels.push("+5% HP (support)");
+    if(roleSet.has("counter"))bonusLabels.push("+5% SPD (counter)");
+    if(abSet.size>=2)bonusLabels.push(`+${Math.min(8,2*(abSet.size-1))}% DMG (ability diversity)`);
+    if(abSet.has("heal")&&abSet.has("heal_burst"))bonusLabels.push("+5% HP (double heal)");
+    if(abSet.has("taunt")&&(abSet.has("heal")||abSet.has("shield")))bonusLabels.push("+10% HP (tank+support)");
+    const bonusText=bonusLabels.length?`<br><span style="color:var(--accent2);font-size:.7rem;">⚡ Active Bonuses: ${bonusLabels.join(" · ")}</span>`:"";
     meter.innerHTML=`<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><b>Roles:</b><span>${roleList||"empty"}</span></div>`+
       `<div style="margin:4px 0;"><b>Synergy:</b> <span style="color:${scoreColor};font-weight:700;">${score}/100 (${scoreLabel})</span></div>`+
-      `${warnText}${synergyText}`;
+      `${warnText}${bonusText}`;
   },
 
   // Phase 13: swap a loadout slot — cycle to next collection unit.
