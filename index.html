@@ -2227,13 +2227,13 @@ const TEMPLATES=[
   {kw:["bomber","grenadier","suicide","explosive"],a:{role:"counter",targeting:"enemy_cluster",movement:"chase",attackCondition:"never",abilityTrigger:"on_death",moveSpeedMod:130,hp:50,dmg:30,range:40,speed:100,ability:"explode",bodyPlan:"mechanical",weaponType:"none",primaryColor:"gray",accentColor:"orange",sizeMod:"small"}},
   {kw:["turtle","shell","crab","tortoise"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:50,hp:150,dmg:8,range:30,speed:30,ability:"shield",bodyPlan:"quadruped",weaponType:"claws",primaryColor:"green",accentColor:"brown",sizeMod:"large"}},
   {kw:["wall","tower","turret","crystal","fortress"],a:{role:"frontline",targeting:"closest",movement:"hold",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:50,hp:200,dmg:15,range:120,speed:30,ability:"slow",bodyPlan:"structure",weaponType:"none",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
-  {kw:["dragon","drake","elder dragon"],a:{role:"carry",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:90,dmg:20,range:60,speed:70,ability:"ramp",bodyPlan:"dragon",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large",headFeature:"horns_curved",backFeature:"wings_dragon",tailFeature:"tail_spade",aura:"fire",eyeStyle:"glowing",pattern:"scales",weaponStyle:"glowing"}},
+  {kw:["dragon","elder dragon"],a:{role:"carry",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,hp:90,dmg:20,range:60,speed:70,ability:"ramp",bodyPlan:"dragon",weaponType:"breath",primaryColor:"red",accentColor:"orange",sizeMod:"large",headFeature:"horns_curved",backFeature:"wings_dragon",tailFeature:"tail_spade",aura:"fire",eyeStyle:"glowing",pattern:"scales",weaponStyle:"glowing"}},
   {kw:["snake","serpent","naga","eel"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:110,hp:60,dmg:16,range:40,speed:80,ability:"poison",bodyPlan:"serpent",weaponType:"claws",primaryColor:"green",accentColor:"yellow",sizeMod:"medium"}},
   {kw:["phoenix","eagle","harpy","bird"],a:{role:"carry",targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:130,hp:55,dmg:16,range:120,speed:90,ability:"dodge",bodyPlan:"bird",weaponType:"claws",primaryColor:"orange",accentColor:"yellow",sizeMod:"small"}},
   {kw:["mantis","centipede","caterpillar","beetle"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
   {kw:["ant ","antman","formic"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:50,dmg:14,range:30,speed:100,ability:"poison",bodyPlan:"insect",weaponType:"claws",primaryColor:"black",accentColor:"red",sizeMod:"small"}},
   {kw:["golem","construct","elemental"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:60,hp:160,dmg:16,range:40,speed:35,ability:"shield",bodyPlan:"golem",weaponType:"hammer",primaryColor:"gray",accentColor:"cyan",sizeMod:"large"}},
-  {kw:["ghost","specter","spirit","phantom"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,hp:50,dmg:14,range:50,speed:70,ability:"dodge",bodyPlan:"ghost",weaponType:"none",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
+  {kw:["ghost","specter","spirit"],a:{role:"counter",targeting:"lowest_hp",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:90,hp:50,dmg:14,range:50,speed:70,ability:"dodge",bodyPlan:"ghost",weaponType:"none",primaryColor:"cyan",accentColor:"white",sizeMod:"medium"}},
   {kw:["fish","mermaid","octopus","squid","siren"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,hp:70,dmg:14,range:60,speed:60,ability:"slow",bodyPlan:"aquatic",weaponType:"claws",primaryColor:"blue",accentColor:"purple",sizeMod:"medium"}},
   {kw:["skeleton","zombie","lich","undead"],a:{role:"frontline",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_death",moveSpeedMod:70,hp:60,dmg:12,range:35,speed:50,ability:"spawn",bodyPlan:"undead",weaponType:"sword",primaryColor:"gray",accentColor:"green",sizeMod:"medium"}},
   {kw:["demon","devil","imp"],a:{role:"counter",targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"on_low_hp",moveSpeedMod:120,hp:65,dmg:18,range:35,speed:90,ability:"rage",bodyPlan:"demon",weaponType:"claws",primaryColor:"red",accentColor:"black",sizeMod:"medium"}},
@@ -2459,15 +2459,15 @@ const ENUM_FIELDS={
   attackCondition:["always","only_if_healthy","only_if_target_low","never"],
   abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
   ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"],
-  bodyPlan:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel"],
-  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand"],
+  bodyPlan:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel","spider","wyvern","treant","kraken","gargoyle","wraith"],
+  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"],
   primaryColor:Object.keys(COLOR_MAP),
   accentColor:Object.keys(COLOR_MAP),
-  sizeMod:["small","medium","large"],
+  sizeMod:["tiny","small","medium","large","huge","colossal"],
   // Phase 25: visual modifier enums.
-  headFeature:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed","mask","eyepatch","tiara","antenna","frill","beak"],
-  backFeature:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent","wings_insect","wings_angel","jetpack","tentacles","fins","crystal_growth"],
-  tailFeature:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger","tail_fluffy","tail_barbed","tail_split"],
+  headFeature:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed","mask","eyepatch","tiara","antenna","frill","beak","hood","mohawk","goggles","third_eye","flower_crown","headphones"],
+  backFeature:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent","wings_insect","wings_angel","jetpack","tentacles","fins","crystal_growth","wings_bone","wings_moth","sail","quills","banner","scarab_shell"],
+  tailFeature:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger","tail_fluffy","tail_barbed","tail_split","tail_mace","tail_feather","tail_hook","tail_ribbon"],
   aura:["none","fire","frost","poison","lightning","holy","shadow","arcane","void","nature","blood","tech"],
   eyeStyle:["normal","glowing","slit","empty","visorglow","compound","closed","star","cross","spiral","visor","visor_red"],
   pattern:["none","stripes","spots","scales","runes","cracks","gradient_two_tone","circuit","tribal","stars","hexagons","marble"],
@@ -3525,8 +3525,8 @@ const SpriteRenderer={
         g=c.createRadialGradient(ox+shape.cx-(shape.r||4)*0.3,oy+shape.cy-(shape.r||4)*0.3,1,
           ox+shape.cx,oy+shape.cy,shape.r||4);
       }else{
-        const x=shape.x!==undefined?shape.x:shape.cx-10;
-        const y=shape.y!==undefined?shape.y:shape.cy-10;
+        const x=shape.x!==undefined?shape.x:(shape.cx||0)-10;
+        const y=shape.y!==undefined?shape.y:(shape.cy||0)-10;
         const w=shape.w!==undefined?shape.w:20;
         const h=shape.h!==undefined?shape.h:20;
         g=c.createLinearGradient(ox+x,oy+y,ox+x+w,oy+y+h);
@@ -4155,11 +4155,13 @@ function deriveFxType(u){
   if(u.ability==="heal"||u.ability==="heal_burst")return"heal_glow";
   if(u.ability==="explode")return"explosion";
   if(u.ability==="shield")return"holy";
-  if(u.weaponType==="staff")return"arcane";
-  if(u.bodyPlan==="ghost"||u.bodyPlan==="undead")return"shadow";
-  if(u.bodyPlan==="dragon")return"fire";
+  if(u.weaponType==="staff"||u.weaponType==="orb")return"arcane";
+  if(u.bodyPlan==="ghost"||u.bodyPlan==="undead"||u.bodyPlan==="wraith")return"shadow";
+  if(u.bodyPlan==="dragon"||u.bodyPlan==="wyvern")return"fire";
   if(u.bodyPlan==="bird")return"frost";
-  if(u.bodyPlan==="plant")return"holy";
+  if(u.bodyPlan==="plant"||u.bodyPlan==="treant")return"holy";
+  if(u.bodyPlan==="spider"||u.bodyPlan==="kraken")return"poison";
+  if(u.bodyPlan==="gargoyle")return"shadow";
   return null;
 }
 const BattleFX={
