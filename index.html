@@ -265,6 +265,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="battleLog"></div>
 <div id="compBonus" style="display:none;position:fixed;left:5px;top:70px;max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
 <div id="battleStats" style="display:none;position:fixed;right:5px;top:70px;max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
+<div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:80px;transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
 <div class="group">
@@ -4340,6 +4341,25 @@ const Battle={
     this.canvasH=dispH;
     this.ctx=cv.getContext("2d");
     this.ctx.scale(dpr,dpr);
+    // Unit inspection: click on a unit to see its stats.
+    cv.onclick=(e)=>{
+      const rect=cv.getBoundingClientRect();
+      const x=(e.clientX-rect.left);
+      const y=(e.clientY-rect.top);
+      // Find the closest unit within click radius.
+      let closest=null,closestDist=Infinity;
+      for(const u of this.units){
+        if(u.h<=0)continue;
+        const dx=u.x-x,dy=u.y-y;
+        const d=Math.sqrt(dx*dx+dy*dy);
+        if(d<closestDist&&d<u.z+10){closest=u;closestDist=d;}
+      }
+      if(closest){
+        this._showUnitInspector(closest);
+      }else{
+        this._hideUnitInspector();
+      }
+    };
     this.last=performance.now();
     cancelAnimationFrame(this.frame);
     this.frame=requestAnimationFrame(this.loop.bind(this));
@@ -5254,6 +5274,9 @@ const Battle={
     // Hide battle stats overlay.
     const stats=$("battleStats");
     if(stats)stats.style.display="none";
+    // Hide unit inspector.
+    const inspector=$("unitInspector");
+    if(inspector)inspector.style.display="none";
   },
 
   // Spell cooldown based on effect power.
@@ -5297,6 +5320,64 @@ const Battle={
       `<div style="color:var(--accent2);">Kills: <b>${s.playerKills}</b> vs <b style="color:var(--warn)">${s.enemyKills}</b></div>`+
       `<div style="color:var(--accent2);">DPS: <b>${dps}</b> (peak: ${s.peakDPS})</div>`+
       `<div style="color:var(--accent2);">Units: <b>${playerAlive}</b> vs <b style="color:var(--warn)">${enemyAlive}</b></div>`;
+  },
+
+  // Show unit inspector panel with detailed stats.
+  _showUnitInspector(u){
+    const el=$("unitInspector");
+    if(!el)return;
+    const teamColor=u.team==="player"?"var(--accent2)":"var(--warn)";
+    const teamLabel=u.team==="player"?"ALLY":"ENEMY";
+    const hpPct=Math.round(u.h/u.mh*100);
+    const hpColor=hpPct>50?"var(--ok)":hpPct>25?"var(--warn)":"#fb7185";
+    const abilityDesc={
+      none:"No special ability",
+      splash:"Deals AoE damage to nearby enemies",
+      heal:"Heals lowest-HP ally periodically",
+      dodge:"Chance to dodge incoming attacks",
+      poison:"Applies damage over time to enemies",
+      spawn:"Spawns additional units",
+      lifesteal:"Heals self based on damage dealt",
+      explode:"Explodes on death, damaging nearby enemies",
+      heal_burst:"Burst heals all allies",
+      shield:"Shields allies from damage",
+      rage:"Gains damage when allies die",
+      slow:"Slows enemy movement",
+      ramp:"Gains damage over time",
+      thorns:"Reflects damage to attackers",
+      blink_strike:"Teleports to target and strikes",
+      frenzy:"Attacks faster when low HP",
+      regen:"Regenerates HP over time",
+      cleanse:"Removes negative status effects",
+      taunt:"Forces enemies to target this unit",
+      executioner:"Deals bonus damage to low-HP enemies",
+      chain_lightning:"Lightning chains between enemies"
+    };
+    const abText=u.ability&&u.ability!=="none"?`<span style="color:#0ff;font-weight:700;">${u.ability}</span>`:"none";
+    const abDesc=abilityDesc[u.ability]||"Unknown ability";
+    el.style.display="block";
+    el.innerHTML=
+      `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">`+
+      `<span style="color:${u.c};font-weight:700;font-size:.85rem;">${u.n}</span>`+
+      `<span style="color:${teamColor};font-size:.6rem;font-weight:700;background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:8px;">${teamLabel}</span></div>`+
+      `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;">`+
+      `<div>❤️ HP: <b style="color:${hpColor};">${Math.round(u.h)}/${u.mh}</b></div>`+
+      `<div>⚔️ DMG: <b>${u.d}</b></div>`+
+      `<div>📏 Range: <b>${u.r}</b></div>`+
+      `<div>🏃 Speed: <b>${u.s}</b></div>`+
+      `<div>🎯 Role: <b>${u.role||"-"}</b></div>`+
+      `<div>💀 Kills: <b>${u.kills||0}</b></div>`+
+      `<div>💥 Dmg Dealt: <b>${Math.round(u.dmgDealt||0)}</b></div>`+
+      `<div>🔮 Ability: ${abText}</div></div>`+
+      `<div style="font-size:.65rem;color:var(--muted);border-top:1px solid var(--border);padding-top:4px;">${abDesc}</div>`+
+      (u.shieldActive>0?`<div style="color:#fff;font-size:.65rem;margin-top:2px;">🛡️ Shield active</div>`:"")+
+      (u.stun>0?`<div style="color:#ff0;font-size:.65rem;margin-top:2px;">⚡ Stunned</div>`:"")+
+      (u.poison>0?`<div style="color:#3f3;font-size:.65rem;margin-top:2px;">☠️ Poisoned</div>`:"")+
+      (u.slow>0?`<div style="color:#39f;font-size:.65rem;margin-top:2px;">🐌 Slowed</div>`:"");
+  },
+  _hideUnitInspector(){
+    const el=$("unitInspector");
+    if(el)el.style.display="none";
   },
 
   // Render the spell bar with clickable spell buttons.
@@ -7077,6 +7158,12 @@ const G={
     Battle.speed=savedSpeed;
     const sb=$("speedBtn");
     if(sb)sb.textContent=savedSpeed+"×";
+    // Store win prediction for accuracy tracking.
+    const predEl=document.getElementById("winPrediction");
+    if(predEl){
+      const match=predEl.innerText.match(/(\d+)% win chance/);
+      if(match)this._lastPrediction=parseInt(match[1]);
+    }
     GameAudio.init();GameAudio.stopMusic();GameAudio.startMusic(); // Phase 30 + I1: switch to battle music
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
@@ -7231,6 +7318,21 @@ const G={
     const win=winner==="player";
     GameAudio.sfx(win?"match_win":"match_lose"); // Phase 30
     GameAudio.stopMusic(); // Phase 30
+    // Track win prediction accuracy.
+    if(this._lastPrediction!==undefined){
+      if(!this.save.predStats)this.save.predStats={correct:0,total:0,avgError:0};
+      const ps=this.save.predStats;
+      const actual=win?100:0;
+      const error=Math.abs(this._lastPrediction-actual);
+      ps.total++;
+      // "Correct" if prediction was >50% and won, or <50% and lost.
+      if((this._lastPrediction>50&&win)||(this._lastPrediction<50&&!win)||(this._lastPrediction===50)){
+        ps.correct++;
+      }
+      ps.avgError=Math.round((ps.avgError*(ps.total-1)+error)/ps.total);
+      saveData(this.save);
+      this._lastPrediction=undefined;
+    }
     // Phase 33: quest tracking + streak check (handles midnight rollover).
     Quests.checkStreak();
     if(win)Quests.track("match_win");
@@ -7306,6 +7408,13 @@ const G={
         arenaAdvanced=true;
         coinGain+=30+this.save.endlessLevel*10; // escalating bonus
         this.save.coins+=30+this.save.endlessLevel*10;
+        // Milestone bonus every 5 levels.
+        if(this.save.endlessLevel%5===0){
+          const milestoneBonus=100+this.save.endlessLevel*20;
+          coinGain+=milestoneBonus;
+          this.save.coins+=milestoneBonus;
+          this._endlessMilestone=this.save.endlessLevel;
+        }
       }
       saveData(this.save);
       this.checkAchievements();
@@ -7333,6 +7442,11 @@ const G={
     if(arenaAdvanced){
       if(this.save.endlessLevel){
         setTimeout(()=>toast(`♾️ Endless Level ${this.save.endlessLevel}! +${30+this.save.endlessLevel*10}💰 bonus`),500);
+        if(this._endlessMilestone){
+          const mb=100+this._endlessMilestone*20;
+          setTimeout(()=>toast(`🌟 MILESTONE! Endless Level ${this._endlessMilestone}! +${mb}💰 bonus!`),1000);
+          this._endlessMilestone=null;
+        }
       }else{
         const arena=this.arenas[this.save.arena];
         setTimeout(()=>toast(`⚔️ Unlocked ${arena.n}! +50💰 bonus`),500);
@@ -8551,6 +8665,20 @@ const G={
         html+=`<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:${color};color:#fff;border-radius:4px;font-size:.7rem;font-weight:700;">${icon}</div>`;
       }
       html+="</div>";
+    }
+    // Win prediction accuracy.
+    const ps=this.save.predStats;
+    if(ps&&ps.total>0){
+      const acc=Math.round(ps.correct/ps.total*100);
+      const accColor=acc>=70?"var(--ok)":acc>=50?"var(--warn)":"#fb7185";
+      html+="<div style='margin:14px 0 6px;font-weight:700;font-size:.85rem;'>🔮 Prediction Accuracy</div>";
+      html+=`<div style="display:flex;gap:8px;justify-content:center;font-size:.75rem;">`+
+        `<div style="background:var(--card);border:1px solid ${accColor};border-radius:var(--radius-sm);padding:8px 12px;text-align:center;">`+
+        `<div style="font-size:1.1rem;font-weight:700;color:${accColor};">${acc}%</div>`+
+        `<div style="font-size:.6rem;color:var(--muted);">Correct (${ps.correct}/${ps.total})</div></div>`+
+        `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;text-align:center;">`+
+        `<div style="font-size:1.1rem;font-weight:700;color:var(--accent2);">${ps.avgError}%</div>`+
+        `<div style="font-size:.6rem;color:var(--muted);">Avg Error</div></div></div>`;
     }
     el.innerHTML=html;
   },
