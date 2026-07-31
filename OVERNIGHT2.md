@@ -306,7 +306,7 @@ Fix all suspected bugs. These are likely real issues even if not confirmed.
 
 ---
 
-## Block E — Performance & Architecture — DONE (E4 deferred)
+## Block E — Performance & Architecture — DONE
 
 ### E1: Debounce saveData() calls
 - **File:** index.html (grep for `saveData`)
