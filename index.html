@@ -239,8 +239,10 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
 <div class="group">
 <button class="btn primary" onclick="G.tick()" style="width:auto;padding:12px 18px;">⏵</button>
-<button class="btn" onclick="G.auto()" style="width:auto;padding:12px 18px;">⏩</button>
-<button class="btn red" onclick="G.skip()" style="width:auto;padding:12px 18px;">✕</button>
+<button class="btn" onclick="G.auto()" style="width:auto;padding:12px 18px;" id="autoBtn">⏩</button>
+<button class="btn" onclick="G.cycleSpeed()" style="width:auto;padding:12px 12px;font-size:.7rem;" id="speedBtn">1×</button>
+<button class="btn" onclick="G.togglePause()" style="width:auto;padding:12px 14px;" id="pauseBtn">⏸</button>
+<button class="btn red" onclick="G.skip()" style="width:auto;padding:12px 18px;">⏭</button>
 </div>
 </div>
 
@@ -2490,6 +2492,8 @@ function networkReceive(data){
         if(c==="tick")Battle.tick();
         else if(c==="auto")Battle.auto();
         else if(c==="skip")Battle.skip();
+        else if(c==="speed")G.cycleSpeed();
+        else if(c==="pause")G.togglePause();
       }
     }
     if(data.t==="forge"){
@@ -3914,11 +3918,11 @@ const SPELL_SHAPE={
 };
 // Phase 23: spell effect — applies the effect to affected units.
 const SPELL_EFFECT={
-  damage(units,spec){units.forEach(u=>{u.h-=spec.magnitude||30;});},
+  damage(units,spec){units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false);});},
   damage_over_time(units,spec){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;});},
   slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
   stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
-  heal_allies(units,spec){units.forEach(u=>{u.h=Math.min(u.mh,u.h+(spec.magnitude||30));});},
+  heal_allies(units,spec){units.forEach(u=>{const heal=spec.magnitude||30;u.h=Math.min(u.mh,u.h+heal);if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,"+"+Math.round(heal),u.team,false);});},
   shield_allies(units,spec){units.forEach(u=>{u.shieldActive=Math.max(u.shieldActive,spec.duration||2);});},
   summon(units,spec,team,b){
     const count=Math.min(spec.magnitude>40?3:spec.magnitude>20?2:1,3);
@@ -4054,6 +4058,9 @@ const Battle={
   canvasH:550,       // Phase 10: for hold_midpoint movement
   onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
   autoTimer:null,
+  speed:1,           // battle speed multiplier (1, 2, 4)
+  paused:false,      // battle paused flag
+  damageNums:[],     // floating damage numbers {x,y,val,life,team,crit}
   spells:[],         // Phase 23: active spell entries {spec,team,fired,lastFire}
   zones:[],          // Phase 23: persistent spell zones
   playerSpells:[],   // manually-castable player spells {spec, cooldown, maxCD}
@@ -4115,6 +4122,8 @@ const Battle={
     this._prevSnapshot=null; // Phase 17: clear snapshot diff state
     this._processedCrits=null; // Phase 17: clear processed crit tracking
     this.deathLog=[];      // Phase 16: clear death order log
+    this.damageNums=[];    // clear floating damage numbers
+    this.paused=false;     // reset pause flag
     // Phase 23: init spells + zones.
     this.spells=[];
     this.zones=[];
@@ -4168,6 +4177,9 @@ const Battle={
     if(dt<this.targetFrameTime())return;
     this.last=time;
     dt=Math.min(dt,0.05);
+    // Apply speed multiplier and pause.
+    if(this.paused){this.render();return;}
+    dt*=this.speed||1;
     // FPS monitoring: compute rolling average every 30 frames, set quality tier.
     this._fpsFrames++;this._fpsAccum+=dt;
     if(this._fpsFrames>=30){
@@ -4210,6 +4222,8 @@ const Battle={
         if(ps.cooldown>0)ps.cooldown-=dt;
       }
     }
+    // Update floating damage numbers.
+    this.updateDmgNums(dt);
     // 1. status ticks + death animation + minion TTL
     for(let u of this.units){
       if(u.h<=0){
@@ -4404,6 +4418,8 @@ const Battle={
     if(crit){dmg*=2;vibrate(25);}
     const hpBefore=target.h;
     target.h-=dmg;
+    // Spawn floating damage number.
+    this.spawnDmgNum(target.x,target.y-target.z-8,Math.round(dmg),target.team,crit);
     // Debug: log melee damage (ranged hits are logged in updateProjectiles)
     if(this.debug&&attacker.r<=RANGED_THRESHOLD){
       console.log("[DMG] t="+this.time.toFixed(2)+" "+attacker.n+"→"+target.n+"["+target.team+"] d="+dmg.toFixed(1)+(crit?" CRIT":"")+" hp:"+hpBefore.toFixed(0)+"→"+target.h.toFixed(0));
@@ -4586,9 +4602,12 @@ const Battle={
     }
     BattleFX.onDeath(u); // Phase 17: death burst FX
     GameAudio.sfx("death"); // Phase 30
+    // Kill feed: log who killed whom.
+    const killerName=killer&&killer.n?killer.n:"unknown";
+    this.log("💀 "+killerName+" killed "+u.n);
     // Phase 16: track death order for post-match hint.
     if(!this.deathLog)this.deathLog=[];
-    this.deathLog.push({n:u.n,role:u.role,team:u.team,t:this.time});
+    this.deathLog.push({n:u.n,role:u.role,team:u.team,t:this.time,killer:killerName});
   },
 
   // Phase 24e: per-unit aura wrapper (calls BattleFX.unitAura).
@@ -4905,6 +4924,8 @@ const Battle={
     }
     // Phase 17: draw particles on top.
     BattleFX.drawParticles(c);
+    // Draw floating damage numbers on top of everything.
+    this.drawDmgNums(c);
     // Phase 17: restore shake transform.
     if(shake>0)c.restore();
     // Phase 17: draw round-end flash (after shake restore, full canvas).
@@ -4916,6 +4937,43 @@ const Battle={
     if(!el)return;
     el.innerHTML+="<div>"+t+"</div>";
     while(el.children.length>20){el.firstChild.remove();}
+  },
+
+  // Spawn a floating damage number.
+  spawnDmgNum(x,y,val,team,crit){
+    if(!this.damageNums)this.damageNums=[];
+    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,team,crit:!!crit,vy:-40});
+    if(this.damageNums.length>40)this.damageNums.shift();
+  },
+
+  // Update + render floating damage numbers.
+  updateDmgNums(dt){
+    if(!this.damageNums||!this.damageNums.length)return;
+    for(const d of this.damageNums){
+      d.life-=dt;
+      d.y+=d.vy*dt;
+      d.vy+=60*dt; // slight deceleration
+    }
+    this.damageNums=this.damageNums.filter(d=>d.life>0);
+  },
+  drawDmgNums(c){
+    if(!this.damageNums||!this.damageNums.length)return;
+    for(const d of this.damageNums){
+      const alpha=Math.min(1,d.life/0.3);
+      c.globalAlpha=alpha;
+      c.font=`bold ${d.crit?"14px":"10px"} sans-serif`;
+      c.textAlign="center";
+      const isHeal=typeof d.val==="string"&&d.val.startsWith("+");
+      const color=d.crit?"#fbbf24":isHeal?"#34d399":d.team==="player"?"#fb7185":"#fca5a5";
+      c.fillStyle=color;
+      c.strokeStyle="rgba(0,0,0,0.8)";
+      c.lineWidth=3;
+      const txt=d.crit?"💥"+d.val:""+d.val;
+      c.strokeText(txt,d.x,d.y);
+      c.fillText(txt,d.x,d.y);
+    }
+    c.globalAlpha=1;
+    c.textAlign="left";
   },
 
   checkEnd(){
@@ -5016,17 +5074,37 @@ const Battle={
   },
 
   auto(){
-    if(this.autoTimer)clearInterval(this.autoTimer);
+    if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    const interval=50/(this.speed||1);
     this.autoTimer=setInterval(()=>{
       if(!this.running){clearInterval(this.autoTimer);this.autoTimer=null;return;}
       this.tick();
-    },50);
+    },interval);
   },
 
+  // Skip to end: fast-simulate the rest of the battle without rendering.
   skip(){
-    this.winner="enemy";
-    this.stop();
-    if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip handler failed: "+(e&&e.message||e));}
+    if(!this.running)return;
+    let safety=2000; // max iterations to prevent infinite loop
+    while(this.running&&safety-->0){
+      this.update(0.05*(this.speed||1));
+      this.checkEnd();
+    }
+    if(safety<=0){this.winner="draw";this.stop();}
+  },
+
+  // Toggle pause.
+  togglePause(){
+    this.paused=!this.paused;
+    const btn=$("pauseBtn");
+    if(btn)btn.textContent=this.paused?"▶":"⏸";
+    if(this.paused&&this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    if(!this.paused&&this.autoTimer===null){
+      // Resume auto-play if it was running before pause.
+      // Check if auto button is in "playing" state.
+      const autoBtn=$("autoBtn");
+      if(autoBtn&&autoBtn.classList.contains("primary"))this.auto();
+    }
   },
 
   // Phase 10: snapshot uses single units array.
@@ -5297,7 +5375,7 @@ const Bot={
   },
 
   // Phase 21: strategic draft — role-fill + counter-pick.
-  // Returns array of picked units (3-4 units).
+  // Returns array of picked units (3-4 units) + optional spells.
   draftRound(drawCount,scoutedPlayerPicks){
     const picks=[];
     const pool=[...this.loadout];
@@ -5310,6 +5388,12 @@ const Bot={
         const idx=pool.findIndex(u=>u.n===pick.n&&u.role===pick.role);
         if(idx>=0)pool.splice(idx,1);
       }
+    }
+    // 30% chance to add a spell from the player's spellbook (mirrors player's draft chance).
+    const spellbook=G.save?.spellbook||[];
+    if(spellbook.length&&R()<0.3){
+      const spell=spellbook[F(R()*spellbook.length)];
+      picks.push({...spell,_isSpell:true});
     }
     return picks;
   },
@@ -6697,6 +6781,18 @@ const G={
   skip(){
     if(connected&&role==="guest"){transmit("cmd",{cmd:"skip"});return;}
     Battle.skip();
+  },
+  cycleSpeed(){
+    if(connected&&role==="guest"){transmit("cmd",{cmd:"speed"});return;}
+    Battle.speed=Battle.speed===1?2:Battle.speed===2?4:1;
+    const btn=$("speedBtn");
+    if(btn)btn.textContent=Battle.speed+"×";
+    // Restart auto timer with new speed if running.
+    if(Battle.autoTimer)Battle.auto();
+  },
+  togglePause(){
+    if(connected&&role==="guest"){transmit("cmd",{cmd:"pause"});return;}
+    Battle.togglePause();
   },
 
   // Phase 5/10: guest applies a host snapshot and renders it (no local sim).
