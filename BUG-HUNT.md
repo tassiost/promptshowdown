@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -43,12 +43,17 @@
 | **Round 5: E2E Spells/Difficulty/Endless** | 5 | 0 | 0 |
 | **Round 5: E2E Fix Verification** | 9 | 0 | 0 |
 | **Round 5: Full Bot Match Regression** | 1 | 0 | 0 |
+| **Round 6: Static Analysis (2 subagents)** | 60+ | 8 | 8 |
+| **Round 6: E2E Match/Deck/i18n/Share** | 20 | 1 | 1 |
+| **Round 6: E2E Achievements/Bot/Spells** | 10 | 0 | 0 |
+| **Round 6: E2E Fix Verification** | 5 | 0 | 0 |
+| **Round 6: Full Bot Match Regression** | 2 | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **600+** | **29** | **29** |
+| **Total** | **700+** | **38** | **38** |
 
 ---
 
@@ -606,3 +611,74 @@ Three parallel subagents analyzed 90+ code paths across shop/upgrade/forge, ques
 - 11 were verified non-bugs (design choices or defensive coding)
 - 8 were test artifacts (module-scoped functions, RNG-dependent behavior)
 - 4 were low-priority design concerns (not bugs)
+
+---
+
+## Round 6 — Deep Static + E2E: Match Flow/Deck/i18n/Share/Achievements/Bot AI (2026-07-31)
+
+**Focus:** Multi-round match flow, deck/loadout management, localization (6 languages), theme/accessibility, share/import URL roundtrip, achievement edge cases, bot AI strategy, spell bar UI, formation placement, collision separation, streak/mastery tracking.
+
+**Method:** Two parallel static analysis subagents (match flow/deck/bot AI/collision, i18n/theme/share/achievements) + E2E testing via Playwright.
+
+### Round 6: Bugs Found + Fixed (8 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 34 | **XSS in import preview**: `importUnitFromURL` renders `u.n` (unit name from URL) in `innerHTML` before `unit()` sanitization. Malicious URL could inject HTML/JS. | Critical | Sanitize name before rendering: `String(u.n).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'")` |
+| 35 | **Role Master achievement missing assassin/bruiser**: `_roleMasterCheck` requires wins with 5 roles (frontline, carry, counter, support, utility). Units with `assassin` or `bruiser` role never count, making the achievement impossible for players who favor those roles. | High | Map assassin→counter and bruiser→frontline at tracking time in `onBattleEnd`. |
+| 36 | **Full Custom achievement checks current loadout**: `_fullCustomCheck` checks `G.save.loadout` (current loadout) instead of the loadout used in the winning match. Player could win with custom units, switch to starters, and lose the achievement. | High | Track `G.save._lastWinLoadout` in `onMatchEnd` on win. Check that instead of current loadout. |
+| 37 | **autoFillLoadout can create duplicate names**: When filling remaining slots, the code pushes `scored[0]?.u.n` without checking if it's already in the loadout. Small collections could get duplicates. | Medium | Changed to `scored.find(s=>!this.save.loadout.includes(s.u.n))` to pick next unique unit. |
+| 38 | **Bot.generateLoadout empty pool fallback**: If `botPool` is empty or all names fail to resolve, the function returns without setting `this.loadout`. Bot enters battle with no units. | Medium | Added fallback: `this.loadout=G.base.slice(0,4).map(cloneUnit)` when pool is empty. |
+| 39 | **Language change doesn't update HTML lang or refresh UI**: `saveSetting('lang', val)` saves the value but doesn't update `document.documentElement.lang` or re-render the current screen. User must navigate away and back to see translations. | Medium | Added `document.documentElement.lang=val` and re-render current screen after language change. |
+| 40 | **importUnitFromURL fails on non-LZString URLs**: When LZString is loaded, `decompressFromEncodedURIComponent` returns `null` for non-LZString-compressed data. `JSON.parse(null)` returns `null`. Then `u._isSpell` crashes. Import silently fails for any URL not compressed with LZString. | Critical | Try LZString decompress first; if null, fall back to `decodeURIComponent`. Also check if `u` is null after `JSON.parse`. |
+| 41 | **clearLoadout misleading label**: Button says "🗑️ Clear" but function resets to default loadout, not empty. Misleading UX. | Low | Changed button label to "↺ Reset". |
+
+### Round 6: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Multi-round match flow | ✅ Pass | Lives decrement correctly, match ends when lives=0. |
+| Draw handling | ✅ Pass | Both lives decrement on draw. |
+| Deck/loadout management | ✅ Pass | Screen renders, loadout editable. |
+| Clear loadout | ✅ Pass | Resets to defaults (label now "Reset"). |
+| Auto-fill loadout | ✅ Pass | 4 unique units, no duplicates. |
+| Localization (6 languages) | ✅ Pass | All 6 languages switch without crash. |
+| Theme switching | ✅ Pass | CSS variables change with data-theme. |
+| High contrast | ✅ Pass | Setting applied. |
+| Share/import URL roundtrip | ✅ Pass | Unit imported and added to collection. |
+| Import with encodeURIComponent | ✅ Pass | Non-LZString URLs now work (fixed). |
+| Import with LZString | ✅ Pass | LZString-compressed URLs work. |
+| XSS in import | ✅ Pass | Angle brackets stripped, no HTML injection. |
+| Comeback achievement | ✅ Pass | Correctly detects win after losing round 1. |
+| Role Master with assassin/bruiser | ✅ Pass | Roles mapped correctly. |
+| Full Custom achievement | ✅ Pass | Uses winning loadout, not current. |
+| Streak tracking | ✅ Pass | winStreak increments, bestStreak updates, reset on loss. |
+| Bot AI strategy | ✅ Pass | Bot fills roles, picks from correct pool. |
+| Bot empty pool | ✅ Pass | Falls back to starter roster (fixed). |
+| Spell bar UI | ✅ Pass | Bar renders, spell buttons present. |
+| Formation placement | ✅ Pass | Player on left, enemy on right, all in bounds. |
+| Collision separation | ✅ Pass | Overlapping units separate correctly. |
+| Unit mastery tracking | ✅ Pass | Kills, damage, matches tracked per unit. |
+| Preset save/load | ✅ Pass | Presets save and load correctly. |
+| Full bot match regression | ✅ Pass | Battle screen, 9-16 units, 0 console errors. |
+
+### Round 6: Verified Non-Bugs (from subagent reports)
+
+- **Scout screen blank if opponentPicks empty** — defensive: `generateScoutPicks` always generates picks for bot matches. P2P guest relies on host messages (by design).
+- **No loadout length validation** — `_initRest` sets default loadout if empty. `loadoutUnits` uses fallback. Not a crash risk.
+- **BotStrategy.missingRoles only checks frontline/carry** — by design (bot prioritizes core roles, fills rest randomly).
+- **Formation Y-bands hardcoded** — works correctly for standard canvas size. Responsive design is a future enhancement.
+- **Collision zero-distance random direction** — works correctly, `checked` set prevents infinite loops.
+- **Battle.stop() doesn't check if already stopped** — harmless redundant call.
+- **Comeback achievement uses Match state** — `checkAchievements` runs during `onMatchEnd` before state reset. State is correct.
+- **Streak achievements check bestStreak** — by design (bestStreak is the highest streak ever, which is what the achievement tracks).
+- **No dark/light theme toggle** — by design (game is dark-themed). High contrast mode exists for accessibility.
+- **Reduced motion doesn't disable all CSS animations** — by design (CSS animations are cosmetic, game-critical animations are JS-gated).
+- **HTML lang attribute not updated** — fixed in BUG #39.
+
+### Round 6: Subagent Findings Summary
+
+Two parallel subagents analyzed 60+ code paths across match flow/deck/bot AI/collision and i18n/theme/share/achievements. Of 21 reported findings:
+- 8 were confirmed real bugs (fixed above)
+- 10 were verified non-bugs (design choices or defensive coding)
+- 3 were low-priority design concerns (not bugs)

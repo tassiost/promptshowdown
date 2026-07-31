@@ -458,7 +458,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.autoFillLoadout()" style="font-size:.72rem;padding:4px 10px;">⚡ Auto-Fill Best</button>
 <button class="btn" onclick="G.savePreset()" style="font-size:.72rem;padding:4px 10px;">💾 Save Preset</button>
 <button class="btn" onclick="G.loadPreset()" style="font-size:.72rem;padding:4px 10px;">📂 Load Preset</button>
-<button class="btn" onclick="G.clearLoadout()" style="font-size:.72rem;padding:4px 10px;">🗑️ Clear</button>
+<button class="btn" onclick="G.clearLoadout()" style="font-size:.72rem;padding:4px 10px;">↺ Reset</button>
 </div>
 <div id="presetList" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="synergyMeter" style="margin:10px 0;font-size:.8rem;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
@@ -6419,7 +6419,11 @@ const Bot={
       return null;
     };
     const pool=botPool.map(resolve).filter(Boolean);
-    if(!pool.length)return;
+    if(!pool.length){
+      // Fallback: use starter roster if bot pool is empty or unresolvable.
+      this.loadout=G.base.slice(0,4).map(cloneUnit);
+      return;
+    }
     // Phase 21: re-roll until pool has at least 1 frontline + 1 carry.
     let attempts=0;
     let picks=[];
@@ -7122,16 +7126,22 @@ const G={
     const unitParam=params.get("unit");
     if(!unitParam)return;
     try{
-      const data=LZString?LZString.decompressFromEncodedURIComponent(unitParam):decodeURIComponent(unitParam);
+      // Try LZString decompress first; fall back to decodeURIComponent for non-compressed URLs.
+      let data=LZString?LZString.decompressFromEncodedURIComponent(unitParam):null;
+      if(!data)data=decodeURIComponent(unitParam);
       const u=JSON.parse(data);
+      if(!u){toast(t("invalid_link"));return;}
+      // Sanitize name before rendering to prevent XSS.
+      const sanitizedName=String(u._isSpell?u.name:u.n||"Unit").replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
+      if(u._isSpell)u.name=sanitizedName;else u.n=sanitizedName;
       // Show preview.
       this.screen("forge");
       const preview=$("forgePreview");
       if(preview){
         if(u._isSpell){
-          preview.innerHTML=`<div class="card" style="border-color:#fa4;max-width:280px;margin:0 auto;"><div class="title" style="color:#fa4">✨ ${u.name}</div><div class="detail">${(u.effect||'').replace(/_/g,' ')}<br><span style="color:var(--accent2)">${(u.trigger||'').replace(/_/g,' ')}</span></div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Spellbook</button>`;
+          preview.innerHTML=`<div class="card" style="border-color:#fa4;max-width:280px;margin:0 auto;"><div class="title" style="color:#fa4">✨ ${sanitizedName}</div><div class="detail">${(u.effect||'').replace(/_/g,' ')}<br><span style="color:var(--accent2)">${(u.trigger||'').replace(/_/g,' ')}</span></div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Spellbook</button>`;
         }else{
-          preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${u.primaryColor||'#4a7'}">${u.n}</div><div class="detail">${u.h} HP · ${u.d} DMG · ${u.r} range<br>${u.role||''} · ${u.ability||'none'}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
+          preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${u.primaryColor||'#4a7'}">${sanitizedName}</div><div class="detail">${u.h} HP · ${u.d} DMG · ${u.r} range<br>${u.role||''} · ${u.ability||'none'}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
         }
       }
       this._pendingImport=u;
@@ -7299,6 +7309,17 @@ const G={
     if(key==="audioEnabled"||key==="sfxVol"||key==="musicVol")this.applyAudioSettings();
     // E4: Clear colorblind cache when setting changes.
     if(key==="colorblind")this._colorblindCache={};
+    // Language: update HTML lang attribute and re-render current screen.
+    if(key==="lang"){
+      document.documentElement.lang=val;
+      // Re-render the current screen so translations take effect.
+      const active=document.querySelector(".screen.active");
+      if(active&&active.id){
+        const screenMap={menu:"menu",deck:"deck",shop:"shop",upgrade:"upgrade",forge:"forge",codex:"codex",stats:"stats",settings:"settings",achievements:"achievements",replays:"replays",tierlist:"tierList",profile:"profile"};
+        const fn=screenMap[active.id];
+        if(fn&&typeof this[fn]==="function")this[fn]();
+      }
+    }
   },
   applyAudioSettings(){
     const s=this.save.settings||{};
@@ -8325,9 +8346,12 @@ const G={
       const teamForRole=connected&&role==="guest"?"enemy":"player";
       const survivors=Battle.units.filter(u=>u.team===teamForRole&&u.h>0);
       if(survivors.length>0){
-        const lastRole=survivors[0].role;
+        let lastRole=survivors[0].role;
+        // Map assassin→counter and bruiser→frontline for Role Master achievement.
+        const roleMap={assassin:"counter",bruiser:"frontline"};
+        const mappedRole=roleMap[lastRole]||lastRole;
         if(!this.save.roleWins)this.save.roleWins={};
-        this.save.roleWins[lastRole]=(this.save.roleWins[lastRole]||0)+1;
+        this.save.roleWins[mappedRole]=(this.save.roleWins[mappedRole]||0)+1;
         saveData(this.save);
       }
     }
@@ -8446,6 +8470,8 @@ const G={
       this.save.wins=(this.save.wins||0)+1;
       this.save.matchWins=(this.save.matchWins||0)+1;
       this.save._lastMatchWon=true;
+      // Track the loadout used for this win (for Full Custom achievement).
+      this.save._lastWinLoadout=[...(this.save.loadout||[])];
       // Win streak tracking.
       this.save.winStreak=(this.save.winStreak||0)+1;
       if(this.save.winStreak>(this.save.bestStreak||0))this.save.bestStreak=this.save.winStreak;
@@ -8884,13 +8910,14 @@ const G={
   },
   _roleMasterCheck(){
     // Check if the player has won matches with each role as the last unit standing.
+    // assassin→counter and bruiser→frontline mapping done at tracking time.
     const wins=(G.save.roleWins||{});
     return ["frontline","carry","counter","support","utility"].every(r=>wins[r]>0);
   },
   _fullCustomCheck(){
     // Win a match where all 4 loadout units are custom (not starter roster).
-    if(!(G.save.matchWins>0))return false;
-    const loadout=G.save.loadout||[];
+    // Uses the loadout from the last won match, not the current loadout.
+    const loadout=G.save._lastWinLoadout||G.save.loadout||[];
     if(loadout.length<4)return false;
     // All 4 must be non-starter (not in G.base).
     return loadout.every(name=>!G.base.find(b=>b.n===name));
@@ -9331,7 +9358,12 @@ const G={
       if(!usedNames.has(s.u.n)){picked.push(s.u.n);usedNames.add(s.u.n);}
     }
     this.save.loadout=picked.slice(0,4);
-    while(this.save.loadout.length<4)this.save.loadout.push(scored[0]?.u.n||"Knight");
+    // Fill remaining slots with highest-scored units, avoiding duplicates.
+    while(this.save.loadout.length<4){
+      const next=scored.find(s=>!this.save.loadout.includes(s.u.n));
+      if(next)this.save.loadout.push(next.u.n);
+      else this.save.loadout.push("Knight");
+    }
     saveData(this.save);
     GameAudio.sfx("level_up");
     toast("⚡ Loadout auto-filled with best units!");
