@@ -2260,6 +2260,22 @@ const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal",
 const ROLE_OPTS=["frontline","carry","support","counter","utility"];
 const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp"]);
 const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield"]);
+// F1: Ability descriptions for tooltips.
+const ABILITY_DESCRIPTIONS={
+  none:"No special ability.",
+  splash:"Deals 50% splash damage to adjacent enemies on hit.",
+  heal:"Periodically heals the lowest-HP ally.",
+  dodge:"50% chance to completely avoid incoming attacks.",
+  poison:"Applies poison damage over time to targets.",
+  spawn:"Spawns a temporary minion to fight alongside allies.",
+  lifesteal:"Heals for 50% of damage dealt.",
+  explode:"Explodes on death, damaging nearby enemies.",
+  heal_burst:"Burst-heals all nearby allies periodically.",
+  shield:"Becomes immune to all damage for 2 seconds.",
+  rage:"Damage scales with missing HP (up to +100%).",
+  slow:"Slows enemy movement on hit.",
+  ramp:"Gains +15% damage on each kill (cap 3× base).",
+};
 
 // Phase 10: lookup tables — each enum maps to a pure function.
 const TARGETING={
@@ -5495,9 +5511,19 @@ const G={
     const area=$("scoutArea");
     if(!area)return;
     area.innerHTML="";
-    for(const u of this.opponentPicks){
-      const card=document.createElement("div");
-      card.className="card rar-"+u.rar;
+    // F5: Progressive reveal — cards start face-down, tap to reveal.
+    const revealed=new Set();
+    const revealAll=()=>{
+      for(let i=0;i<this.opponentPicks.length;i++){
+        if(!revealed.has(i))revealCard(i);
+      }
+    };
+    const revealCard=(i)=>{
+      if(revealed.has(i))return;
+      revealed.add(i);
+      const u=this.opponentPicks[i];
+      const card=area.children[i];
+      if(!card)return;
       const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
       const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
       card.innerHTML=
@@ -5505,10 +5531,24 @@ const G={
         `<canvas width="48" height="48" style="display:block;margin:2px auto;"></canvas>`+
         `<div class="title" style="color:${u.c}">${u.n}</div>`+
         `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r}${abLabel}${roleLabel}</div>`;
-      area.appendChild(card);
-      // Phase 14: render sprite preview onto the canvas.
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
+    };
+    for(let i=0;i<this.opponentPicks.length;i++){
+      const idx=i;
+      const card=document.createElement("div");
+      card.className="card";
+      card.style.cursor="pointer";
+      card.innerHTML=`<div style="height:60px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;">❓</div><div class="detail" style="text-align:center;">Tap to reveal</div>`;
+      card.onclick=()=>revealCard(idx);
+      area.appendChild(card);
     }
+    // Add "Reveal All" button.
+    const revealBtn=document.createElement("button");
+    revealBtn.className="btn";
+    revealBtn.textContent="👁 Reveal All";
+    revealBtn.style.cssText="margin-top:10px;";
+    revealBtn.onclick=()=>{revealAll();revealBtn.remove();};
+    area.appendChild(revealBtn);
   },
 
   // Phase 14: proceed from scout to actual battle.
@@ -6079,6 +6119,37 @@ const G={
     if(this.pendingForgeUnit)this.shareUnit(this.pendingForgeUnit);
   },
 
+  // F2: Unit detail view — modal with full stats + animated preview.
+  showUnitDetail(u){
+    const overlay=document.createElement("div");
+    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    const modal=document.createElement("div");
+    modal.className="card";
+    modal.style.cssText="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-width:280px;width:90%;text-align:center;";
+    const abDesc=ABILITY_DESCRIPTIONS[u.ability]||"";
+    const abType=PASSIVE_ABILITIES.has(u.ability)?"Passive":TRIGGERED_ABILITIES.has(u.ability)?"Triggered":"";
+    const lvl=this.unitLevel(u.n);
+    modal.innerHTML=
+      `<canvas width="64" height="64" style="display:block;margin:4px auto;"></canvas>`+
+      `<div class="title" style="color:${u.c};font-size:1rem;">${u.n}${lvl>0?` <span class="lvlBadge">Lv${lvl}</span>`:""}</div>`+
+      `<div class="rarityTag ${u.rar}" style="margin:4px 0;">${u.rar.toUpperCase()}</div>`+
+      `<div class="detail" style="text-align:left;margin:8px 0;font-size:.82rem;">`+
+      `<b>HP:</b> ${u.h} · <b>DMG:</b> ${u.d}<br>`+
+      `<b>Range:</b> ${u.r} · <b>Speed:</b> ${u.s}<br>`+
+      `<b>Atk Spd:</b> ${u.a} · <b>Crit:</b> ${Math.round((u.crit||0)*100)}%<br>`+
+      `<b>Role:</b> ${u.role||"—"}<br>`+
+      `<b>Ability:</b> <span style="color:var(--accent2)">${u.ability}</span>${abType?` (${abType})`:""}<br>`+
+      `<span style="color:var(--muted);font-size:.78rem;">${abDesc}</span>`+
+      `</div>`;
+    const closeBtn=document.createElement("button");
+    closeBtn.className="btn";closeBtn.textContent="Close";closeBtn.style.cssText="margin-top:8px;";
+    closeBtn.onclick=()=>overlay.remove();
+    modal.appendChild(closeBtn);
+    overlay.appendChild(modal);document.body.appendChild(overlay);
+    overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+    SpriteRenderer.renderPreview(modal.querySelector("canvas"),u);
+  },
+
   addForge(u){
     // Phase 13: forged units go to collection.
     if(!this.save.collection)this.save.collection=[];
@@ -6136,8 +6207,11 @@ const G={
       const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
       const card=document.createElement("div");
       card.className="card";
-      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div>`;
+      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
+      // F2: info button opens unit detail view.
+      const infoBtn=card.querySelector("button");
+      if(infoBtn)infoBtn.onclick=(e)=>{e.stopPropagation();this.showUnitDetail(u);};
       if(canFuse){
         card.style.borderColor="var(--legendary)";
         card.onclick=()=>this.fuseUnit(u.n);
