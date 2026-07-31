@@ -29,14 +29,14 @@
 - [x] Round 2 Block G: i18n expansion (G1: de/fr/ja translations) — committed 5a4fb93
 - [x] Round 2 Block H: PWA & mobile (H1: service worker, H2: standalone display, H3: orientation/resize handling) — committed 8f2beec
 - [x] Round 2 Block I: Audio improvements (I1: ambient menu music, I2: arena-specific patterns, I3: weapon-type SFX) — committed 21ae5a6
-- [x] Round 2 Block J: Long-term improvements (J1: batch LLM, J2: spatial partitioning, J3: snapshot compression, J4: IndexedDB fallback) — committed 320264a
+- [x] Round 2 Block J: Long-term improvements (J1: batch LLM, J2: spatial partitioning, J3: snapshot interpolation, J4: IndexedDB fallback) — committed 320264a, 80b50ee
 
 ## Skipped / Blocked
 - Phase 24d (spring-physics secondary motion): deferred.
 - Phase 26 (LLM-authored full recipes): deferred (moonshot).
 - C6 (model download progress bar): already implemented (forgeModelProgress exists).
 - G2 (full string extraction): implemented — 20+ in-game strings extracted to STRINGS table across all 6 languages.
-- E4 (Web Worker for LLM): deferred — requires significant architecture changes.
+- E4 (colorblind pre-compute): implemented — cached filtered colors to avoid per-frame object creation.
 
 ## Notes
 - All 18 planned phases from OVERNIGHT.md are complete.
@@ -56,4 +56,4 @@
 - Block J added batch LLM field generation (3 JSON calls instead of 24 sequential), spatial partitioning for collision (O(n) via grid hash), compressed P2P snapshots, and IndexedDB fallback for localStorage quota.
 
 ## Current
-Round 2 complete. All blocks A-J from OVERNIGHT2.md implemented including G2 (full string extraction). No deferred items remain. Smoke tests passing: fresh save → match → battle → result screen with no JS errors (only favicon 404). All changes committed and pushed.
+Round 2 complete. All blocks A-J from OVERNIGHT2.md fully implemented including G2 (full string extraction), E4 (colorblind cache), E1 (beforeunload save), E5 (update try/catch). No deferred items remain. Smoke tests passing: fresh save → match → battle → result screen with no JS errors (only favicon 404). All changes committed and pushed.
