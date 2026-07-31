@@ -727,19 +727,24 @@ function esc(s){
 // J4: IndexedDB fallback for when localStorage is near quota.
 let _idbDB=null;
 function idb(){
-  if(_idbDB)return _idbDB;
+  if(_idbDB&&_idbDB.readyState!=="pending")return _idbDB;
   try{
     _idbDB=indexedDB.open("promptshowdown",1);
     _idbDB.onupgradeneeded=e=>{e.target.result.createObjectStore("kv");};
+    _idbDB.onerror=()=>{_idbDB=null;};
     return _idbDB;
   }catch(e){return null;}
 }
 function idbPut(key,val){
   const db=idb();if(!db)return;
   db.onsuccess=()=>{
-    const tx=db.result.transaction("kv","readwrite");
-    tx.objectStore("kv").put(val,key);
+    try{
+      const tx=db.result.transaction("kv","readwrite");
+      tx.objectStore("kv").put(val,key);
+      tx.onerror=()=>{};
+    }catch(e){}
   };
+  db.onerror=()=>{};
 }
 function idbGet(key,cb){
   const db=idb();if(!db){cb(null);return;}
@@ -749,8 +754,10 @@ function idbGet(key,cb){
       const req=tx.objectStore("kv").get(key);
       req.onsuccess=()=>cb(req.result||null);
       req.onerror=()=>cb(null);
+      tx.onerror=()=>cb(null);
     }catch(e){cb(null);}
   };
+  db.onerror=()=>cb(null);
 }
 function localStorageQuotaOK(){
   try{
@@ -991,7 +998,7 @@ function loadDataAsync(cb){
     if(data){
       try{const parsed=JSON.parse(data);if(parsed&&parsed.version){cb(parsed);return;}}catch(e){}
     }
-    cb(sync); // fall back to whatever loadData returned (likely {})
+    cb(sync||{}); // fall back to whatever loadData returned (likely {})
   });
 }
 // Phase 7: migrate older save schemas forward.
@@ -2876,6 +2883,10 @@ function showDisconnectPrompt(opponentPicks){
   document.body.appendChild(overlay);
   overlay.querySelector("#discBot").onclick=()=>{
     overlay.remove();
+    // Clean up P2P state before switching to bot mode.
+    if(typeof disconnect==="function"){try{disconnect();}catch(e){}}
+    role="none";
+    G.stopSnapshots();
     // Swap opponent to bot using last known picks (preserves custom units).
     Match.opponentPicks=opponentPicks.length>0
       ?opponentPicks
@@ -5724,6 +5735,7 @@ const Battle={
       c.save();
       c.translate((Math.random()-0.5)*shake*2,(Math.random()-0.5)*shake*2);
     }
+    try{
     // units
     for(let u of this.units){
       if(!u||u.x===undefined)continue;
@@ -5834,7 +5846,7 @@ const Battle={
     // Draw floating damage numbers on top of everything.
     this.drawDmgNums(c);
     // Phase 17: restore shake transform.
-    if(shake>0)c.restore();
+    }finally{if(shake>0)c.restore();}
     // Phase 17: draw round-end flash (after shake restore, full canvas).
     BattleFX.drawRoundFlash(c);
   },
@@ -6826,6 +6838,21 @@ const G={
     if(!this.save.loadout||!this.save.loadout.length)this.save.loadout=["Knight","Archer","Slash","Wizard"];
     if(!this.save.collection)this.save.collection=[];
     if(this.save._lastMatchWon===undefined)this.save._lastMatchWon=false;
+    // Ensure all fields added by migration exist even for current-version saves missing them.
+    if(!this.save.settings)this.save.settings={audioEnabled:true,reducedMotion:false,quality:"auto"};
+    if(!this.save.spellbook)this.save.spellbook=[];
+    if(!this.save.quests||typeof this.save.quests!=="object")this.save.quests={date:"",list:[],streak:{count:0,lastLogin:""}};
+    if(!Array.isArray(this.save.quests.list))this.save.quests.list=[];
+    if(!this.save.quests.streak||typeof this.save.quests.streak!=="object")this.save.quests.streak={count:0,lastLogin:""};
+    if(!this.save.replays)this.save.replays=[];
+    if(!this.save.presets)this.save.presets={};
+    if(!this.save.spells)this.save.spells=[];
+    if(!this.save.unitStats)this.save.unitStats={};
+    if(this.save.analyticsOptOut===undefined)this.save.analyticsOptOut=false;
+    if(!this.save.forgeDate)this.save.forgeDate="";
+    if(this.save.forgeCount===undefined)this.save.forgeCount=0;
+    if(!this.save.roleWins)this.save.roleWins={};
+    if(this.save.onboarded===undefined)this.save.onboarded=false;
     saveData(this.save);
     this.wins();
     // Phase 31: show onboarding for first-time players.

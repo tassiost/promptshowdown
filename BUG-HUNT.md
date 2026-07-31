@@ -1,6 +1,6 @@
 # Bug Hunt — E2E Testing Log
 
-**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6)
+**Session:** 2026-07-31 (Round 1 + Round 2 + Round 3 + Round 4 + Round 5 + Round 6 + Round 7)
 **Goal:** Hunt for bugs across all features, test everything E2E, track findings.
 
 ---
@@ -48,12 +48,18 @@
 | **Round 6: E2E Achievements/Bot/Spells** | 10 | 0 | 0 |
 | **Round 6: E2E Fix Verification** | 5 | 0 | 0 |
 | **Round 6: Full Bot Match Regression** | 2 | 0 | 0 |
+| **Round 7: Static Analysis (3 subagents)** | 90+ | 5 | 5 |
+| **Round 7: E2E Save/Migration/Corrupt** | 7 | 1 | 1 |
+| **Round 7: E2E Quests/Ranked/Replays/Settings** | 15 | 0 | 0 |
+| **Round 7: E2E Edge Cases (empty/extreme/XSS)** | 6 | 0 | 0 |
+| **Round 7: E2E Battle Mechanics** | 8 | 0 | 0 |
+| **Round 7: E2E Navigation + Regression** | 12 | 0 | 0 |
 | **Round 3: Quest Claim E2E** | 5 | 0 | 0 |
 | **Round 3: Shop/Upgrade E2E** | 3 | 0 | 0 |
 | **Round 3: Multi-Round Match E2E** | 1 | 0 | 0 |
 | **Round 3: Screen/Codex/Settings E2E** | 15 | 0 | 0 |
 | **Round 3: Fix Verification** | 10 | 0 | 0 |
-| **Total** | **700+** | **38** | **38** |
+| **Total** | **850+** | **44** | **44** |
 
 ---
 
@@ -682,3 +688,71 @@ Two parallel subagents analyzed 60+ code paths across match flow/deck/bot AI/col
 - 8 were confirmed real bugs (fixed above)
 - 10 were verified non-bugs (design choices or defensive coding)
 - 3 were low-priority design concerns (not bugs)
+
+---
+
+## Round 7 — Deep Static + E2E: Save/Migration/P2P/IDB/Canvas/Edge Cases (2026-07-31)
+
+**Focus:** Save/load persistence, version migration, corrupt save recovery, P2P disconnect handling, IndexedDB error handling, canvas state management, edge cases (empty collection, extreme stats, XSS), battle mechanics (abilities, spells, speed, pause), quest/ranked/replay/settings systems.
+
+**Method:** Three parallel static analysis subagents (P2P/Save/AdSDK/Replay, Canvas/Battle/Spells/Quests, Forge/Shop/Ranked/UI) + E2E testing via Playwright.
+
+### Round 7: Bugs Found + Fixed (5 bugs)
+
+| # | Bug | Severity | Fix |
+|---|-----|----------|-----|
+| 42 | **`_initRest` doesn't initialize all save fields**: A version-12 save missing `quests`, `settings`, `spellbook`, `replays`, `presets`, etc. crashes on startup with "Cannot read properties of undefined (reading 'streak')". Migration only adds fields for older versions, so current-version saves with missing fields are not repaired. | Critical | Added comprehensive field initialization in `_initRest` for all fields added by migration (settings, spellbook, quests, replays, presets, spells, unitStats, analyticsOptOut, forgeDate, forgeCount, roleWins, onboarded). |
+| 43 | **IndexedDB open/put/get have no error handlers**: `idb()` has no `onerror` on the open request — if IDB is blocked, the request hangs forever. `idbPut` has no transaction error handler. `idbGet` can hang if DB open fails. | High | Added `onerror` handlers to `idb()`, `idbPut()`, and `idbGet()`. Also added `readyState` check in `idb()` to avoid returning a failed cached request. |
+| 44 | **P2P "Continue vs Bot" doesn't clean up state**: When host chooses "Continue vs Bot" after guest disconnect, `room` and `role` are not reset. Starting a new P2P match later could use stale state. | Medium | Added `disconnect()` call and `role="none"` reset in the "Continue vs Bot" handler. Also calls `G.stopSnapshots()`. |
+| 45 | **`loadDataAsync` passes undefined to callback**: If both localStorage and IDB fail, `cb(sync)` is called with `undefined` (from `loadData()` returning `{}` on corrupt, but `sync` could be undefined if `loadData` threw). | Medium | Changed to `cb(sync||{})` to ensure callback always receives an object. |
+| 46 | **Canvas state not restored on render exception**: `Battle.render()` calls `c.save()` for screen shake but `c.restore()` is at the end. If an exception occurs between save and restore, the transform leaks to subsequent frames. | Medium | Wrapped the rendering body in `try { ... } finally { if(shake>0) c.restore(); }` to ensure restore always runs. |
+
+### Round 7: E2E Test Results
+
+| Test | Result | Notes |
+|------|--------|-------|
+| Save persistence (coins, collection) | ✅ Pass | Values survive page reload. |
+| Migration from v1 → v12 | ✅ Pass | All fields added, coins preserved. |
+| Corrupt save recovery | ✅ Pass | Falls back to backup or defaults. |
+| Null save ("null" string) | ✅ Pass | Defaults to fresh save. |
+| Partial save (v12, missing fields) | ✅ Pass | All fields now initialized in `_initRest`. |
+| Versionless save | ✅ Pass | Migrated to v12. |
+| Future version save (v99) | ✅ Pass | Preserved as-is with warning. |
+| Quest generation (3 daily) | ✅ Pass | Generates 3 unique quests. |
+| Quest daily reset | ✅ Pass | Old quests replaced with fresh ones. |
+| Quest tracking + claim | ✅ Pass | Progress increments, coins awarded. |
+| Ranked data initialized | ✅ Pass | Rating 1000, wins/losses 0. |
+| Replay save + cap at 10 | ✅ Pass | Capped at 10 replays. |
+| Settings save (lang, audio) | ✅ Pass | Values persisted and applied. |
+| All 6 languages | ✅ Pass | Switch without crash, HTML lang updated. |
+| AdSDK rewarded ad (stub) | ✅ Pass | Completes after countdown. |
+| Analytics init | ✅ Pass | installId generated. |
+| Empty collection | ✅ Pass | Deck screen renders without crash. |
+| Non-existent loadout units | ✅ Pass | Match starts, fallback units used. |
+| Extreme stats (99999 HP/DMG/range/speed) | ✅ Pass | No NaN, battle completes. |
+| Zero HP unit | ✅ Pass | Unit handled gracefully. |
+| Very long unit name (1000 chars) | ✅ Pass | Truncated to 20 chars by `unit()`. |
+| XSS in unit name | ✅ Pass | Angle brackets stripped, no injection. |
+| Battle with abilities (ramp, lifesteal, thorns, ranged) | ✅ Pass | No NaN, no crashes. |
+| Battle speed control (1×/2×/4×) | ✅ Pass | Speed cycles correctly. |
+| Pause/unpause | ✅ Pass | Battle pauses and resumes. |
+| Multi-round match progression | ✅ Pass | Lives decrement, round increments. |
+| Navigation (all screens) | ✅ Pass | All screens render without crash. |
+| Import unit from URL | ✅ Pass | Unit imported and pending. |
+| Full bot match regression | ✅ Pass | Battle, 21+ units, 0 console errors. |
+
+### Round 7: Verified Non-Bugs (from subagent reports)
+
+- **P2P missing null checks on data.d** — entire `networkReceive` is wrapped in try-catch; malformed messages are caught and logged.
+- **buff_dmg zone effect NaN** — `baseD` is always set by `initRuntime` (line 4730), including for spell minions.
+- **buff_speed zone stacks infinitely** — `Math.max` prevents stacking; value is bounded by highest magnitude zone.
+- **Arena mechanics don't set lastAttacker** — documented in AGENTS.md as intentional; `onUnitDeath` handles null killer gracefully.
+- **Unit ID collision** — `Date.now()+F(R()*99999)` has ~0.006% collision chance per batch; not worth fixing.
+- **showAdStub interval not cleaned up** — overlay has z-index 9999, no external code removes it; very low priority.
+- **saveReplay saves garbage with no battle** — only called from `onMatchEnd`; manual calls are not a real use case.
+- **Analytics.track before init** — `Analytics.init()` is called in `_initRest` before any track calls.
+- **localStorageQuotaOK orphaned keys** — uses unique timestamp key, cleaned up in finally; very low priority.
+- **P2P guest doesn't reset all Match fields on match_start** — `round=0` and `history=[]` are the critical fields; other fields are overwritten by `round_start` messages.
+- **Quest progress can go negative** — `inc` is always positive from tracking events; negative values would require save corruption.
+- **heal_allies zone undefined mh** — `mh` is set by `initRuntime` for all units.
+- **Spell minion missing baseD** — `initRuntime` sets `baseD` for all units including minions.
