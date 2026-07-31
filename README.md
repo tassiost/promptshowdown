@@ -24,7 +24,8 @@ python3 -m http.server 8765
 - **Unit explanations** — detailed descriptions for all abilities, movement types, targeting options, ability triggers, and weapons. Unit detail modal shows full breakdown.
 - **Clean modern UI** — purple/gold Draft Showdown-style palette, radial gradient backgrounds, gradient cards with glow effects, bolder typography with text shadows, screen transitions
 - **Mobile-friendly** — adaptive FPS (60 desktop / 30 mobile), tap-to-tick, vibration feedback, fullscreen, pause-on-hidden
-- **Resilient** — visible error panel, save backup + crash recovery, version migrations, PWA manifest
+- **Resilient** — visible error panel, save backup + crash recovery, version migrations, PWA manifest, IndexedDB fallback for localStorage quota
+- **Secure** — unit names sanitized at creation to prevent XSS, forge daily cap (10/day), save import runs migration
 
 ## Quick start
 
@@ -60,7 +61,7 @@ This repo includes a `render.yaml` blueprint so Render auto-creates the service 
 ## Project structure
 
 ```
-index.html          # the entire game (HTML + CSS + JS in one file, ~7000 lines)
+index.html          # the entire game (HTML + CSS + JS in one file, ~9900 lines)
 vendor/
   core.mjs          # trystero P2P core (vendored from esm.sh)
   torrent.mjs       # trystero torrent signaling (vendored from esm.sh)
@@ -79,7 +80,7 @@ PLAN.md             # development roadmap and phase tracking
 - [@trystero-p2p/torrent](https://github.com/dmotz/trystero) v0.25.3 for serverless P2P (vendored locally)
 - [lz-string](https://github.com/pieroxy/lz-string) for P2P payload compression (vendored locally)
 - Canvas 2D for rendering
-- `localStorage` for saves (with backup + migration)
+- `localStorage` for saves (with backup + migration + IndexedDB fallback)
 - IndexedDB for LLM generation cache
 
 ## Documentation

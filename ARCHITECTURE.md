@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Showdown is a single-file auto-battler (`index.html`, ~7000 lines) with AI unit generation, P2P multiplayer, and progression. This document covers all major systems.
+Prompt Showdown is a single-file auto-battler (`index.html`, ~9900 lines) with AI unit generation, P2P multiplayer, and progression. This document covers all major systems.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Prompt Showdown is a single-file auto-battler (`index.html`, ~7000 lines) with A
 ## File Structure
 
 ```
-index.html          ~7000 lines, single file
+index.html          ~9900 lines, single file
 ├── CSS             lines 11-99    (CSS variables, components, screens, spell bar)
 ├── HTML            lines 101-243  (10 screens + splash + error panel)
 └── JavaScript      lines 245-6900 (ES module, all game logic)
@@ -107,7 +107,10 @@ Preview opponent's picks with sprite previews before battle.
 Canvas-based combat. HUD shows lives, HP counts, turn counter. Spell bar below canvas shows clickable spell buttons with cooldown overlays. Controls: Tick (manual advance), Auto (play continuously), Skip (forfeit). Battle log overlay.
 
 ### Result (`#result`, lines 180-192)
-Round outcome with title, lives display, match hint, rewards (XP + coins), Next Round / Menu buttons.
+Round outcome with title, lives display, match hint, rewards (XP + coins), Next Round / Menu buttons. Includes a **match performance ranking** panel showing battle stats (damage dealt, kills, peak DPS) for each unit, sorted by contribution.
+
+### Keyboard Help Overlay
+A toggleable overlay (triggered by `?` or a help button) listing all keyboard shortcuts: Tick (space), Auto (A), Skip (S), spell casts (1-4), and navigation keys. Available on the battle and menu screens.
 
 ### Forge (`#forge`, lines 194-215)
 AI unit generation. Text prompt input, Watch Ad / Skip Ad buttons, model download progress bar with Cancel, sprite preview, Keep / Reroll buttons.
@@ -508,6 +511,39 @@ Spells are special draftable cards (30% chance from spellbook) that can be cast 
 - **FX types**: explosion, frost, lightning, poison_cloud, heal_glow, shockwave, fire_wall
 - **Persistent zones**: Tick once per second, apply effect to units within radius
 
+### Kill Attribution & Death Detection
+
+- **`lastAttacker`**: Set by all damage sources (melee attacks, projectiles, spells, abilities, poison ticks). When a unit's HP drops to 0, `lastAttacker` identifies the killer for kill credit and the kill feed.
+- **`onUnitDeath(u)`**: Death detection callback, called exactly once per unit when `h <= 0 && deathT === undefined`. Sets `deathT` to the current battle time, spawns death FX, records the kill in battle stats, and appends an entry to the kill feed overlay.
+
+### Dramatic Slowdown
+
+When `<= 3` units remain alive, the simulation slows to **60% speed** for dramatic effect. The `dt` passed to `update()` is scaled down, prolonging the final clash without changing combat outcomes.
+
+### Arena Mechanics
+
+Arenas can apply persistent auras to all units on the field:
+
+- **`poison_aura`**: Applies continuous poison damage to all units (regardless of team)
+- **`damage_aura`**: Buffs all units' outgoing damage by a percentage
+- **`speed_boost`**: Increases all units' move speed by a percentage
+
+These modifiers are read from the arena configuration and applied each tick inside `update()`.
+
+### Battle Stats Tracking
+
+The `Battle` object tracks aggregate combat stats for the result screen and quests:
+
+- `playerDmg` — Total damage dealt by player units
+- `enemyDmg` — Total damage dealt by enemy units
+- `playerKills` — Player unit kill count
+- `enemyKills` — Enemy unit kill count
+- `peakDPS` — Highest damage-per-second observed during the battle
+
+### Kill Feed Overlay
+
+A kill feed overlay renders recent kills during battle. Each entry shows the killer and victim (with team colors) and fades out after a few seconds. Fed by `onUnitDeath` via `lastAttacker` attribution.
+
 ---
 
 ## Behaviour Composition API
@@ -692,14 +728,16 @@ FX are derived from state changes, not events. This means:
 ### Storage (lines 285-410)
 
 - **`loadData()`**: Reads from `localStorage`, parses JSON, migrates old versions
+- **`loadDataAsync()`**: IndexedDB fallback for environments where localStorage is unavailable or quota-exceeded
 - **`saveData(s)`**: Writes to localStorage as JSON
-- **Key**: `promptshowdown_v7`
+- **`saveDataDebounced(s)`**: Debounced save for high-frequency writes (e.g. mid-battle progression updates); coalesces rapid calls into a single write
+- **Key**: `promptShowdownV4`
 
 ### Save Schema
 
 ```javascript
 {
-  version: 7,
+  version: 12,
   wins: 0,
   level: 1,
   xp: 0,
@@ -710,29 +748,46 @@ FX are derived from state changes, not events. This means:
   ai: [],                 // backward-compat forge storage
   upgrades: {},           // {unitName: level}
   forgeCount: 0,
-  roleWins: {}            // {role: count} for achievements
+  roleWins: {},           // {role: count} for achievements
+  forgeDate: "",          // date string for daily forge cap tracking
+  onboarded: false,       // first-run onboarding flag
+  quests: [],             // daily/weekly quest state
+  streak: 0,              // win streak counter
+  streakDate: "",         // date string for streak tracking
+  replays: [],            // saved battle replays
+  ranked: {},             // ranked mode state (rating, history)
+  spellbook: [],          // owned spells for draft pool
+  settings: {},           // user preferences (sound, auto-tick, etc.)
+  achievements: [],       // unlocked achievement ids
+  matchWins: 0,           // total match wins
+  endlessLevel: 0,        // endless mode high score
+  difficulty: "normal"    // selected difficulty level
 }
 ```
 
 ### Migration (lines 373-405)
 
-- Current version: 7
-- On load: if `s.version < 7`, add missing fields
-- Fields added over time: `forgeCount`, `roleWins`, `collection`, etc.
+- Current version: 12
+- On load: if `s.version < 12`, add missing fields
+- Fields added over time: `forgeCount`, `roleWins`, `collection`, `forgeDate`, `onboarded`, `quests`, `streak`, `streakDate`, `replays`, `ranked`, `spellbook`, `settings`, `achievements`, `matchWins`, `endlessLevel`, `difficulty`, etc.
 
 ---
 
 ## Configuration Constants
 
+Line numbers are approximate (the file has grown beyond the original layout).
+
 | Constant | Value | Location | Purpose |
 |----------|-------|----------|---------|
-| `DEFAULT_LIVES` | 3 | line 1543 | Default lives per match |
-| `RANGED_THRESHOLD` | 80 | line 1920 | Range above which units fire projectiles |
-| `MAX_PARTICLES` | 60 | line 1773 | Particle cap for performance |
-| `MODEL` | `Qwen2.5-1.5B-Instruct-q4f16_1-MLC` | line 456 | Web-LLM model ID |
-| `CACHE_DB` | `promptshowdown_llm_cache_v8` | line 1018 | IndexedDB database name |
-| `SAVE_KEY` | `promptshowdown_v7` | line 287 | localStorage key |
-| Rarity weights | 70/25/5 | line 2976 | Common/rare/legendary probabilities |
+| `DEFAULT_LIVES` | 3 | ~line 1543 | Default lives per match |
+| `RANGED_THRESHOLD` | 80 | ~line 1920 | Range above which units fire projectiles |
+| `MAX_PARTICLES` | 60 | ~line 1773 | Particle cap for performance |
+| `MODEL` | `Qwen2.5-1.5B-Instruct-q4f16_1-MLC` | ~line 456 | Web-LLM model ID |
+| `CACHE_DB` | `promptshowdown_llm_cache_v8` | ~line 1018 | IndexedDB database name |
+| `SAVE_KEY` | `promptShowdownV4` | ~line 578 | localStorage key |
+| `CURRENT_VERSION` | 12 | ~line 577 | Save schema version (drives migration) |
+| `FORGE_DAILY_CAP` | 10 | ~line 579 | Max forge generations per day |
+| Rarity weights | 70/25/5 | ~line 2976 | Common/rare/legendary probabilities |
 
 ---
 

@@ -57,3 +57,42 @@
 
 ## Current
 Round 2 complete. All blocks A-J from OVERNIGHT2.md fully implemented including G2 (full string extraction), E4 (colorblind cache), E1 (beforeunload save), E5 (update try/catch). No deferred items remain. Smoke tests passing: fresh save → match → battle → result screen with no JS errors (only favicon 404). All changes committed and pushed.
+
+## Bug Hunt Sessions (2026-07-31)
+
+### Session 1: Battle Logic + Performance (commit 28eb290)
+- Fixed draft timer interval memory leak (BUG-089)
+- Optimized enemy_cluster targeting O(n²) → manual double loop (BUG-103)
+- Optimized spell trigger on_first_contact O(n²) → labeled break (BUG-104)
+- Moved roleColors to module-level constant (BUG-105)
+- Replaced high-frequency saveData with saveDataDebounced (BUG-106)
+- Fixed duplicate `best` variable in _renderMatchPerformance (BUG-102)
+
+### Session 2: Kill Attribution + Save + P2P (commit 69a5b32)
+- Fixed splash damage not attributing kills to attacker (BUG-090)
+- Fixed thorns damage not attributing kills to thorns unit (BUG-091)
+- Fixed attack check not verifying target.h>0 (BUG-092)
+- Fixed poison damage applied to dead units (BUG-093)
+- Fixed import save not running migration (BUG-094)
+- Fixed guest disconnect awarding free win (BUG-095)
+
+### Session 3: IndexedDB Load Fallback (commit 97b4d6f)
+- Fixed IndexedDB save not loaded on page reload (BUG-096)
+- Added loadDataAsync() with localStorage fast path + IDB fallback
+- Refactored G.init() into init() + _initRest() for async support
+- Splash stays visible during async IDB lookup
+
+### Session 4: Spell Zones + XSS + Forge Cap (commit 7c08915)
+- Fixed spell zone damage_over_time treated as instant damage (BUG-097)
+- Fixed spell zones missing summon and knockback handlers (BUG-098)
+- Fixed unit name XSS vulnerability in innerHTML (BUG-099)
+- Fixed forge daily cap not enforced (BUG-100)
+- Fixed canvas lineWidth leak in drawDmgNums (BUG-101)
+
+### Bug Hunt Summary
+- **Total bugs found and fixed:** 18 (BUG-089 through BUG-106)
+- **Critical:** 0
+- **High:** 2 (XSS, IndexedDB data loss)
+- **Medium:** 10 (kill attribution, spell zones, forge cap, import migration, etc.)
+- **Low:** 6 (poison on dead, canvas state, performance optimizations)
+- **Smoke tested:** Full matches on multiple arenas, IDB fallback path, forge cap enforcement, XSS sanitization — all pass with no JS errors.

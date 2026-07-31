@@ -103,3 +103,67 @@ Spells can be cast manually by the player via the spell bar UI (`Battle._castPla
 ### Spell Bar UI
 
 The spell bar (`#spellBar`) is a flex container below the battle canvas. It should be hidden when not on the battle screen (handled by `G.screen()`). Spell buttons (`.spellBtn`) show an icon, name, and cooldown overlay (`.spellCD`). Buttons are disabled while on cooldown. The spell bar re-renders from `Battle.playerSpells` array — each entry has `{spec, cooldown, maxCD}`.
+
+## Kill Attribution Rules
+
+### All Damage Sources Must Set lastAttacker
+
+Every code path that reduces a unit's HP must set `u.lastAttacker` to the responsible attacker. This includes:
+- Direct melee attacks (`takeDamage`)
+- Projectile hits (`updateProjectiles` — uses synth attacker with `id:p.owner`, resolved in `onUnitDeath`)
+- Splash damage (`e.lastAttacker=attacker` for each splash target)
+- Thorns reflect (`attacker.lastAttacker=target`)
+- Poison ticks (lastAttacker is set when poison is applied, not on each tick)
+- Arena mechanics (environment kills pass `null` killer — `onUnitDeath` handles this gracefully)
+
+If `lastAttacker` is not set, kills won't be attributed for:
+- Ramp bonus (+15% dmg on kill)
+- on_kill ability trigger
+- Kill count for MVP
+- Battle stats (playerKills/enemyKills)
+- Kill feed overlay
+
+### onUnitDeath Death Detection
+
+`onUnitDeath(u)` is called once per unit when `u.h<=0 && u.deathT===undefined`. The function sets `u.deathT=0` to prevent double-calling. Arena mechanics call `onUnitDeath` directly (setting `deathT=0`), so the main loop's death detection won't re-call it. The `null` killer parameter passed by arena mechanics is ignored — `onUnitDeath` uses `u.lastAttacker` as the killer, not the second parameter.
+
+## Save System Rules
+
+### Import Must Run Migration
+
+`importSave()` must call `migrateSave(data)` before assigning to `this.save`. Imported saves from older versions will be missing fields added in later migrations. Without migration, imported saves cause undefined behavior and errors.
+
+### IndexedDB Fallback
+
+When localStorage quota is exceeded, `saveData()` falls back to writing to IndexedDB via `idbPut()`. The load path must also check IndexedDB:
+- `loadData()` — synchronous, reads from localStorage only (fast path)
+- `loadDataAsync(cb)` — async, tries localStorage first, then IndexedDB fallback
+- `G.init()` uses the sync path if `save.version` exists (99% of users), async path if not
+
+The splash screen stays visible during the async IDB lookup. `hideSplash()` is called in `_initRest()` after init completes.
+
+### Debounced Saves for High-Frequency Events
+
+High-frequency save calls (quest tracking, settings changes, difficulty changes) must use `saveDataDebounced()` instead of `saveData()`. This batches writes within 500ms, reducing localStorage I/O. Critical saves (match end, forge, import) still use synchronous `saveData()`.
+
+## Security Rules
+
+### Unit Name Sanitization
+
+Unit names are user-generated (LLM forge, save import, P2P). They must be sanitized at creation in `unit()` to prevent XSS:
+- Angle brackets (`<` `>`) are stripped
+- Double quotes (`"`) are replaced with single quotes (`'`)
+- Names are truncated to 20 characters
+
+This prevents XSS in all downstream `innerHTML` templates without needing to escape at each usage site. Never bypass this sanitization — if you need to display a raw name, use `textContent` instead of `innerHTML`.
+
+## Forge System Rules
+
+### Daily Forge Cap
+
+`_doForge()` enforces a daily cap of 10 forges per day using `save.forgeDate` and `save.forgeCount`:
+- On each forge: if `forgeDate !== today`, reset `forgeCount` to 0 and update `forgeDate`
+- If `forgeCount >= 10`, show toast and return early
+- Increment `forgeCount` after the cap check passes
+
+The cap prevents unlimited forging and encourages strategic unit creation.

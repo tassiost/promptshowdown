@@ -1,7 +1,7 @@
 # Prompt Showdown — Complete Improvements & Research Document
 
-**File reviewed:** `index.html` (~7000 lines, single-file game)
-**Date:** 2026-07-31
+**File reviewed:** `index.html` (~9900 lines, single-file game)
+**Date:** 2026-07-31 (updated)
 
 ---
 

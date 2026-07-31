@@ -1,7 +1,7 @@
 # Prompt Showdown — Comprehensive Codebase Improvement Scan
 
-**File reviewed:** `index.html` (~7000 lines, single-file game)
-**Date:** 2025
+**File reviewed:** `index.html` (~9900 lines, single-file game)
+**Date:** 2026-07-31 (updated)
 
 ---
 
@@ -9,18 +9,18 @@
 
 ### 1.1 Battle Simulation
 - **No unit collision damage**: Units separate via push-apart but deal no contact damage. Adding small collision damage would make positioning matter more.
-- **`enemy_cluster` targeting is O(n²)**: `TARGETING.enemy_cluster` computes pairwise distances for every enemy each frame. With many units this is expensive. Consider caching the cluster centroid per frame.
+- ~~**`enemy_cluster` targeting is O(n²)**~~: **FIXED** — Replaced with manual double loop using squared distance (no sqrt, no array allocation). See BUG-103.
 - **Dodge chance is flat 50%**: `dodge` ability uses `R()<0.5` — no scaling, no counterplay. Could scale with speed or level.
 - **Rage damage uncapped at low HP**: `dmg*=1+(1-attacker.h/attacker.mh)` can double damage at 1 HP. This is intentional but extreme; consider a softer curve.
 - **No healing cap per round**: Multiple healers can stack indefinitely. Consider diminishing returns.
 - **Minion TTL expiry sets `h=0` but doesn't trigger `onUnitDeath`**: At line 3431, `u.ttl<=0` sets `u.h=0` but the death detection at line 3447 checks `u.h<=0&&u.deathT===undefined` — this works, but minion deaths from TTL don't appear in the death log, which could skew post-match hints.
-- **Battle timeout at 90s is generous but has no escalation**: Consider adding a damage-over-time "enrage" mechanic after 60s to prevent stalemates more naturally.
+- **Battle timeout at 90s is generous but has no escalation**: Consider adding a damage-over-time "enrage" mechanic after 60s to prevent stalemates more naturally. (Note: dramatic slowdown at <=3 units alive now provides some escalation.)
 - **`patrol` movement only moves on X axis**: `u.x+=Math.sin(u.patrolT*2)*effSpeed(u)*dt*0.5` — patrolling units never adjust Y, making them predictable.
 
 ### 1.2 Draft & Strategy
 - **Rerolls are per-match (3 total)**: No way to earn more rerolls. Could tie to quests or coins.
 - **Bot draft strategy is basic**: `BotStrategy` only checks for missing frontline/carry roles. No synergy detection, no counter-picking based on player abilities (only checks for `ramp`).
-- **No draft timer**: Players can stare at cards indefinitely. A optional timer would add tension.
+- ~~**No draft timer**~~: **FIXED** — 20-second draft pick timer with visual progress bar added. Auto-picks first card on timeout, resets on new draws/rerolls. See BUG-089.
 - **Comeback mechanic is 4th draw only**: Could add scaling comeback (e.g., stat boost for losing team's units).
 
 ### 1.3 Progression
@@ -105,8 +105,8 @@
 - **No error boundary for battle loop**: If `update()` or `render()` throws, the `requestAnimationFrame` chain breaks silently. Should wrap in try/catch and show error.
 
 ### 4.3 Data Persistence
-- **`saveData()` called very frequently**: Quest tracking, settings changes, forge, match end — each calls `saveData()` which does `JSON.stringify` + `localStorage.setItem`. Consider debouncing or batching saves.
-- **No IndexedDB fallback**: localStorage has a 5MB limit. With 50 collection units + 50 ai units + replays, this could overflow. IndexedDB would be more robust.
+- ~~**`saveData()` called very frequently**~~: **FIXED** — High-frequency save calls (Quests.track, Quests.checkStreak, Quests.generateDaily, settings, difficulty) now use `saveDataDebounced()`, batching writes within 500ms. See BUG-106.
+- ~~**No IndexedDB fallback**~~: **FIXED** — `saveData()` falls back to IndexedDB via `idbPut()` when localStorage quota exceeded. `loadDataAsync()` reads from IndexedDB on reload if localStorage is empty. See BUG-096.
 - **`migrateSave` doesn't validate**: It adds missing fields but doesn't validate types or remove corrupt data. A malformed save could cause runtime errors.
 
 ### 4.4 Networking
@@ -136,7 +136,7 @@
 - **No private rooms from UI**: The `roomId` input exists but matchmaking always uses the arena queue room. No way to play with a specific friend.
 
 ### 5.3 Disconnect Handling
-- **Host disconnect = guest loses**: Guest gets "Host disconnected" and returns to menu with a loss. Should offer "Continue vs Bot" for guests too.
+- ~~**Host disconnect = guest loses**~~: **FIXED** — Guest no longer gets a loss recorded on host disconnect. Returns to menu without rewards (no free win exploit). See BUG-095.
 - **No mid-round reconnect**: If a player disconnects during a battle, the match is immediately forfeited. The `gracefulDisconnect` method exists but isn't called by the network layer.
 
 ---
@@ -181,7 +181,7 @@
 
 ### 8.1 Data Validation
 - **Shared unit import doesn't fully validate**: `importUnitFromURL` parses JSON from URL params and passes to `unit()` which clamps values, but doesn't validate `recipe` shapes — a malicious share link could contain arbitrary shape data that could crash the renderer.
-- **No input sanitization on forge prompt**: `promptEl.value` is used directly. While the LLM processes it, the template fallback uses it as a unit name (`prompt.slice(0,20)`) — could contain HTML that breaks the UI (though `innerText` is used in most places).
+- ~~**No input sanitization on forge prompt**~~: **FIXED** — Unit names are now sanitized at creation in `unit()`: angle brackets stripped, double quotes replaced with single quotes. Prevents XSS from LLM-generated or imported names in innerHTML templates. See BUG-099.
 - **P2P messages are trusted**: `networkReceive` doesn't validate message structure beyond type checking. A malicious peer could send malformed data.
 
 ### 8.2 Privacy
@@ -216,19 +216,19 @@
 - **`_comebackCheck` checks `Match.livesEnemy<=0` but this is checked at match end**: By the time achievements are checked, `Match.livesEnemy` may already be 0 from the final round. The check should verify the match history shows a round 1 loss.
 - **`loadoutUnits()` doesn't apply upgrades**: Returns raw collection/base units. Upgrades are only applied in `buildArmy()`. This means the deck screen shows base stats, not upgraded stats.
 - **`renderSynergyMeter` uses `loadoutUnits()` which returns un-upgraded units**: Role counts are correct but displayed stats may be misleading.
-- **`Battle.auto()` interval is 120ms but `tick()` uses fixed `dt=0.05` (50ms)**: Auto-battle runs at ~8fps but simulates 50ms steps. This means auto-battle is 2.4x slower than real-time.
-- **`fxTypeFreq` returns 0 for most types**: The pitch modifier is 0 for non-elemental types, making all basic attacks sound identical.
+- ~~**`Battle.auto()` interval is 120ms but `tick()` uses fixed `dt=0.05` (50ms)`**~~: **FIXED** — Auto-battle interval and dt are now aligned.
+- ~~**`fxTypeFreq` returns 0 for most types**~~: **FIXED** — Weapon-type-specific attack sounds added (I3 block).
 - **`qualityTier` references `this._fpsTier` but it's never set**: Auto quality detection is non-functional.
 - **`reducedMotion` setting is saved but never checked**: Screen shake and particles are always active.
 
 ### 10.3 i18n
-- **Only 3 languages (en, es, pt)**: No Asian or other European languages.
-- **i18n only covers menu/tutorial strings**: In-game text (battle log, toasts, quest descriptions, achievement names) is all hardcoded English.
+- ~~**Only 3 languages (en, es, pt)**~~: **FIXED** — Now supports en, es, pt, de, fr, ja (G1 block).
+- ~~**i18n only covers menu/tutorial strings**~~: **FIXED** — 20+ in-game strings extracted to STRINGS table across all 6 languages (G2 block).
 - **No RTL support**: CSS doesn't account for right-to-left languages.
 
 ### 10.4 PWA
-- **No service worker**: The manifest is registered but without a SW, there's no offline support or push notifications.
-- **`display:"fullscreen"` may not work on all platforms**: `"standalone"` is more widely supported.
+- ~~**No service worker**~~: **FIXED** — Inline service worker via Blob URL for offline caching (H1 block).
+- ~~**`display:"fullscreen"` may not work on all platforms**~~: **FIXED** — Changed to `"standalone"` (H2 block).
 
 ---
 

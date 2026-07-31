@@ -624,3 +624,111 @@ Also add them to `shareUnit`'s data payload.
 **Found:** 2026-07-31
 **Description:** Spells only fired automatically based on triggers (battle_start, when_ally_hurt, etc.) with no player control. The auto-fire was invisible to the player — spells appeared to "do nothing" because there was no UI feedback or manual casting ability.
 **Fix:** Added spell bar UI below the battle canvas with clickable spell buttons. Each spell shows an icon, name, and cooldown countdown overlay. Player can tap to cast spells manually. Cooldowns are power-based (3-10s). Auto-fire triggers still work alongside manual casting. Spell draft chance increased from 20% to 30%.
+
+### BUG-089 🟢 Draft timer interval memory leak
+**File:** index.html:6175-6230
+**Found:** 2026-07-31
+**Description:** The draft pick timer (20-second countdown) used a `setInterval` that ran every 100ms forever, even when not on the draft screen. The interval was created in `init()` and never stopped — it kept polling `_draftTimer` indefinitely, wasting CPU cycles. Additionally, `_clearDraftTimer()` was called in `draftCard()` (card creation) instead of the onclick handler, so the timer never actually stopped when a card was clicked. The auto-pick interval ordering was also wrong — `clearInterval` was called after `pickDraft`, which cleared the new timer started by `drawOne()` for the next pick.
+**Fix:** Refactored to self-managing interval: `_startDraftTimerInterval()` only starts when a draft timer is active. The interval self-stops when timer hits 0 or a card is picked. `_clearDraftTimer()` is now called in both onclick handlers (spell cards and unit cards) before processing the pick. Auto-pick calls `clearInterval` before `pickDraft` so the new timer for the next pick isn't immediately cleared.
+
+### BUG-090 🟢 Splash damage doesn't attribute kills to attacker
+**File:** index.html:4774-4778
+**Found:** 2026-07-31
+**Description:** Splash damage reduced enemy HP directly without setting `lastAttacker`. This meant splash kills weren't attributed to the attacker for ramp bonuses, kill feed, MVP tracking, or kill count. The death detection loop would catch the dead unit next frame, but `u.lastAttacker` would be stale (pointing to whoever last attacked that unit directly, not the splash attacker).
+**Fix:** Added `e.lastAttacker=attacker` on each splash target when splash damage is applied.
+
+### BUG-091 🟢 Thorns damage doesn't attribute kills to thorns unit
+**File:** index.html:4783
+**Found:** 2026-07-31
+**Description:** Thorns reflect damage reduced attacker HP without setting `attacker.lastAttacker`. Thorns kills weren't attributed to the thorns unit for kill tracking or kill feed. Same pattern as BUG-090.
+**Fix:** Added `attacker.lastAttacker=target` when thorns damage is applied.
+
+### BUG-092 🟢 Attack check doesn't verify target.h>0
+**File:** index.html:4678
+**Found:** 2026-07-31
+**Description:** The attack check `if(ATTACK_CONDITIONS[...](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r)` didn't verify `target.h>0`. If a targeting function returned a dead unit (edge case), the unit would attempt to attack a corpse, wasting the attack cooldown and potentially causing issues with ability triggers.
+**Fix:** Added `target.h>0` to the attack condition check.
+
+### BUG-093 🟢 Poison damage applied to dead units
+**File:** index.html:4537
+**Found:** 2026-07-31
+**Description:** Poison tick damage was applied even when `u.h<=0` (unit already dead from other damage earlier in the same frame). This caused negative HP values and wasted damage number particles on corpses.
+**Fix:** Added `u.h>0` check before applying poison tick damage.
+
+### BUG-094 🟢 Import save doesn't run migration
+**File:** index.html:9601-9603
+**Found:** 2026-07-31
+**Description:** `importSave()` assigned imported data directly to `this.save` without running `migrateSave()`. Imported saves from older versions would be missing fields added in later migrations, causing errors and undefined behavior.
+**Fix:** Changed `this.save=data` to `this.save=migrateSave(data)` in the import confirm handler.
+
+### BUG-095 🟢 Guest disconnect awards free win to guest
+**File:** index.html:2522-2528
+**Found:** 2026-07-31
+**Description:** When the host disconnected, the guest was awarded a match win via `onMatchEnd("player")` regardless of actual match state. This was exploitable — a losing guest could disconnect when losing and still get a win recorded, inflating their win count and quest progress.
+**Fix:** Replaced `G.onMatchEnd("player")` with `G.menu()` — the guest simply returns to the menu without rewards.
+
+### BUG-096 🟢 IndexedDB save not loaded on page reload
+**File:** index.html:866-872, 6067
+**Found:** 2026-07-31
+**Description:** When localStorage quota was exceeded, `saveData()` fell back to writing to IndexedDB via `idbPut()`. However, `loadData()` only read from localStorage, never IndexedDB. If a user's save was written to IndexedDB due to quota issues, their save was lost on page reload — the game would start with an empty save.
+**Fix:** Added `loadDataAsync()` that tries localStorage first (fast path), then falls back to IndexedDB. Refactored `G.init()` into `init()` + `_initRest()` — sync path for 99% of users (localStorage has data), async path for IDB fallback. Splash stays visible during async IDB lookup.
+
+### BUG-097 🟢 Spell zone damage_over_time treated as instant damage
+**File:** index.html:4212-4213
+**Found:** 2026-07-31
+**Description:** The `tickZones` code treated `damage_over_time` the same as `damage` — instant HP reduction once per second. This was inconsistent with the one-shot `SPELL_EFFECT.damage_over_time` handler which applies poison status. The zone version didn't use `Math.max` for `poisonDmg` stacking, so it could overwrite higher existing poison from unit abilities.
+**Fix:** Split `damage` and `damage_over_time` into separate handlers. `damage_over_time` now applies poison status with `Math.max` for stacking, matching the one-shot handler behavior.
+
+### BUG-098 🟢 Spell zones missing summon and knockback effect handlers
+**File:** index.html:4212-4226
+**Found:** 2026-07-31
+**Description:** The `tickZones` code didn't handle `summon` or `knockback` effects from `SPELL_ENUM.effect`. If a persistent zone spell was created with these effects, it would silently do nothing. Per AGENTS.md rules: "tickZones must handle all effect types in SPELL_ENUM.effect."
+**Fix:** Added `summon` handler (spawns minions in zone once per second, capped at 3 per tick) and `knockback` handler (pushes units away from zone center once per second).
+
+### BUG-099 🟢 Unit name XSS vulnerability in innerHTML
+**File:** index.html:985, 5549, 5571, 7255, 7458, 7864, 8130, 8140, 8153, 8438, 8501
+**Found:** 2026-07-31
+**Description:** Unit names from LLM forge were inserted directly into `innerHTML` templates without HTML escaping. A forged unit named `<img src=x onerror=alert(1)>` would execute JavaScript when displayed in any UI panel that uses innerHTML (unit inspector, collection, draft, scout, result, forge preview, etc.). While LLM-generated names should be safe, this is a security vulnerability that could be exploited via save import or P2P.
+**Fix:** Sanitized unit names at creation in `unit()`: angle brackets (`<` `>`) are stripped and double quotes replaced with single quotes. This prevents XSS at the source without needing to change every innerHTML template.
+
+### BUG-100 🟢 Forge daily cap not enforced
+**File:** index.html:927-928, 8391
+**Found:** 2026-07-31
+**Description:** The save migration added `forgeDate` and `forgeCount` fields for daily forge cap tracking, but `_doForge()` never checked or incremented these fields. The daily cap was not enforced — users could forge unlimited units per day.
+**Fix:** Added daily cap of 10 forges per day in `_doForge()`. Checks `forgeDate` against current date, resets count when date changes, shows toast when limit reached, increments count on each forge.
+
+### BUG-101 🟢 Canvas lineWidth leak in drawDmgNums
+**File:** index.html:5399-5410
+**Found:** 2026-07-31
+**Description:** `drawDmgNums()` set `c.lineWidth=3` for damage number stroke text but never reset it to 1 after the loop. This caused subsequent canvas drawing operations (status rings, HP bars, etc.) to use thick lines instead of the default 1px.
+**Fix:** Added `c.lineWidth=1` reset after the loop, matching the existing `textAlign` and `globalAlpha` resets.
+
+### BUG-102 🟢 Duplicate `best` variable in _renderMatchPerformance
+**File:** index.html:8090-8101
+**Found:** 2026-07-31
+**Description:** `_renderMatchPerformance` declared `const best=scored[0]` for the best performer section, then the worst performer section also referenced `scored[0]` but the logic was confusing because it used `best` from the outer scope. This was a code clarity issue that could lead to bugs if the array ordering changed.
+**Fix:** Removed redundant variable, using `scored[0]` directly in both sections.
+
+### BUG-103 🟢 enemy_cluster targeting O(n²) with array allocation
+**File:** index.html:2882-2894
+**Found:** 2026-07-31
+**Description:** `TARGETING.enemy_cluster` used `enemies.filter()` inside a loop, creating a new array for each enemy every frame. This was O(n²) with per-enemy array allocation, causing GC pressure with many units.
+**Fix:** Replaced with manual double loop using squared distance `(dx*dx+dy*dy<6400)` — no sqrt, no array allocation.
+
+### BUG-104 🟢 Spell trigger on_first_contact O(n²) with nested some()
+**File:** index.html
+**Found:** 2026-07-31
+**Description:** The `on_first_contact` spell trigger used nested `some()` calls with `dist()` (which calls `Math.sqrt`), creating O(n²) complexity with sqrt per pair.
+**Fix:** Replaced with labeled break loop using squared distance. Early-exits on first contact found.
+
+### BUG-105 🟢 roleColors recreated every frame for every unit
+**File:** index.html
+**Found:** 2026-07-31
+**Description:** The `ROLE_COLORS` map was being recreated as a new object literal inside the render loop for every unit every frame, causing unnecessary GC pressure.
+**Fix:** Moved `ROLE_COLORS` to a module-level constant, defined once.
+
+### BUG-106 🟢 High-frequency saveData calls in Quests and settings
+**File:** index.html
+**Found:** 2026-07-31
+**Description:** `Quests.track()`, `Quests.checkStreak()`, `Quests.generateDaily()`, settings changes, and difficulty changes all called `saveData()` synchronously, writing to localStorage on every event. This caused excessive I/O on every match win, forge, fuse, spell use, and scout.
+**Fix:** Replaced high-frequency `saveData()` calls with `saveDataDebounced()`, batching writes within 500ms instead of writing synchronously on every event.
