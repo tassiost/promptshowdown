@@ -11,17 +11,20 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
 :root{
-  --bg:#0b1120;--bg2:#131c31;--card:#1a2440;--card2:#212e4f;
-  --border:#2a3a5e;--text:#e2e8f0;--muted:#8395b8;
-  --accent:#6366f1;--accent2:#818cf8;--accent-dim:#3730a3;
-  --ok:#10b981;--warn:#f59e0b;--danger:#f43f5e;
-  --rare:#3b82f6;--legendary:#f59e0b;
-  --radius:12px;--radius-sm:8px;
-  --shadow:0 4px 16px rgba(0,0,0,.4);
-  --shadow-lg:0 8px 32px rgba(0,0,0,.5);
+  --bg:#0a0e1a;--bg2:#141b2e;--card:#1c2640;--card2:#283656;
+  --border:#3a4a6e;--text:#f0f4ff;--muted:#94a3c4;
+  --accent:#7c3aed;--accent2:#a78bfa;--accent-dim:#4c1d95;
+  --gold:#fbbf24;--gold2:#fcd34d;
+  --ok:#34d399;--warn:#fbbf24;--danger:#fb7185;
+  --rare:#60a5fa;--legendary:#fbbf24;--epic:#c084fc;
+  --radius:14px;--radius-sm:10px;
+  --shadow:0 4px 20px rgba(0,0,0,.5);
+  --shadow-lg:0 8px 40px rgba(0,0,0,.6);
+  --glow-accent:0 0 20px rgba(124,58,237,.4);
+  --glow-gold:0 0 20px rgba(251,191,36,.4);
 }
 body{
-  background:linear-gradient(180deg,var(--bg) 0%,var(--bg2) 100%);
+  background:radial-gradient(ellipse at top,var(--bg2) 0%,var(--bg) 60%);
   color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;
   -webkit-font-smoothing:antialiased;
@@ -29,56 +32,58 @@ body{
 .screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;padding:16px 12px;animation:fadeIn .3s ease;}
 .screen.active{display:flex;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
-h1{font-size:1.5rem;font-weight:800;letter-spacing:-.02em;text-align:center;margin:12px 6px;background:linear-gradient(135deg,var(--accent2),#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-h2{font-size:1.05rem;font-weight:700;text-align:center;margin:10px 6px;color:var(--text);}
+h1{font-size:1.6rem;font-weight:900;letter-spacing:-.03em;text-align:center;margin:12px 6px;background:linear-gradient(135deg,var(--gold),var(--accent2),var(--epic));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 30px rgba(124,58,237,.3);}
+h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(--text);text-shadow:0 1px 2px rgba(0,0,0,.5);}
 .btn{
-  background:var(--card);border:1px solid var(--border);color:var(--text);
+  background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);color:var(--text);
   padding:12px 20px;margin:4px;border-radius:var(--radius-sm);cursor:pointer;
-  font-size:.85rem;font-weight:600;transition:all .15s ease;width:100%;max-width:280px;
+  font-size:.85rem;font-weight:700;transition:all .15s ease;width:100%;max-width:280px;
+  text-shadow:0 1px 2px rgba(0,0,0,.3);
 }
-.btn:hover{background:var(--card2);border-color:var(--accent);transform:translateY(-1px);}
+.btn:hover{background:linear-gradient(180deg,var(--card2),var(--card2));border-color:var(--accent);transform:translateY(-1px);box-shadow:var(--glow-accent);}
 .btn:active{transform:translateY(0);}
-.btn.primary{background:linear-gradient(135deg,var(--accent),#7c3aed);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(99,102,241,.4);}
-.btn.primary:hover{box-shadow:0 6px 20px rgba(99,102,241,.5);transform:translateY(-2px);}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#9333ea);border-color:transparent;color:#fff;box-shadow:0 4px 14px rgba(124,58,237,.5);}
+.btn.primary:hover{box-shadow:0 6px 24px rgba(124,58,237,.6);transform:translateY(-2px);}
 .btn.red{border-color:var(--danger);color:var(--danger);}
-.btn.red:hover{background:rgba(244,63,94,.1);}
+.btn.red:hover{background:rgba(251,113,133,.1);box-shadow:0 0 12px rgba(251,113,133,.3);}
 .btn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
 .group{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin:8px 5px;}
 .pill{background:var(--card);border:1px solid var(--border);padding:6px 12px;border-radius:20px;font-size:.72rem;font-weight:600;color:var(--muted);}
 .card{
-  background:var(--card);border:1px solid var(--border);padding:10px;margin:4px;
+  background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);padding:10px;margin:4px;
   min-width:92px;text-align:center;border-radius:var(--radius-sm);cursor:pointer;
-  transition:all .15s ease;box-shadow:var(--shadow);
+  transition:all .15s ease;box-shadow:var(--shadow);position:relative;overflow:hidden;
 }
-.card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
-.card.selected{border-color:var(--ok);box-shadow:0 0 0 2px rgba(16,185,129,.3),var(--shadow-lg);}
-.title{font-weight:700;font-size:.82rem;}
+.card::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent);pointer-events:none;}
+.card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg),var(--glow-accent);border-color:var(--accent2);}
+.card.selected{border-color:var(--ok);box-shadow:0 0 0 2px rgba(52,211,153,.4),var(--shadow-lg),0 0 16px rgba(52,211,153,.3);}
+.title{font-weight:800;font-size:.82rem;text-shadow:0 1px 2px rgba(0,0,0,.5);}
 .detail{font-size:.68rem;color:var(--muted);line-height:1.4;}
 /* Rarity borders */
 .card.rar-common{border-color:var(--border);}
-.card.rar-rare{border-color:var(--rare);box-shadow:0 0 12px rgba(59,130,246,.2),var(--shadow);}
-.card.rar-legendary{border-color:var(--legendary);box-shadow:0 0 16px rgba(245,158,11,.25),var(--shadow);}
-.rarityTag{font-size:.58rem;font-weight:800;letter-spacing:1.5px;text-transform:uppercase;}
+.card.rar-rare{border-color:var(--rare);box-shadow:0 0 12px rgba(96,165,250,.3),var(--shadow);}
+.card.rar-legendary{border-color:var(--legendary);box-shadow:0 0 16px rgba(251,191,36,.4),var(--shadow);}
+.rarityTag{font-size:.58rem;font-weight:900;letter-spacing:1.5px;text-transform:uppercase;text-shadow:0 1px 2px rgba(0,0,0,.5);}
 .rarityTag.common{color:var(--muted);}
-.rarityTag.rare{color:var(--rare);}
-.rarityTag.legendary{color:var(--legendary);}
+.rarityTag.rare{color:var(--rare);text-shadow:0 0 8px rgba(96,165,250,.5);}
+.rarityTag.legendary{color:var(--legendary);text-shadow:0 0 8px rgba(251,191,36,.5);}
 /* Progression */
 .lvlBadge{display:inline-block;background:var(--warn);color:#000;font-size:.55rem;font-weight:800;padding:2px 6px;border-radius:4px;margin-left:4px;}
 .upRow{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--border);padding:10px 12px;margin:4px 0;border-radius:var(--radius-sm);font-size:.75rem;width:280px;box-shadow:var(--shadow);}
 .upRow .upName{font-weight:700;}
 .upRow .upStats{color:var(--muted);font-size:.65rem;}
-#toast{position:fixed;left:50%;top:80px;transform:translateX(-50%);background:var(--card);border:1px solid var(--warn);color:var(--warn);padding:10px 18px;border-radius:var(--radius);font-size:.78rem;font-weight:700;z-index:10000;display:none;text-align:center;box-shadow:var(--shadow-lg);}
+#toast{position:fixed;left:50%;top:80px;transform:translateX(-50%);background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--warn);color:var(--warn);padding:10px 18px;border-radius:var(--radius);font-size:.78rem;font-weight:700;z-index:10000;display:none;text-align:center;box-shadow:var(--shadow-lg),0 0 16px rgba(251,191,36,.3);text-shadow:0 1px 2px rgba(0,0,0,.5);}
 .reward{display:flex;gap:8px;justify-content:center;margin:8px 0;}
 .reward .pill{font-size:.8rem;padding:8px 14px;}
 /* Splash */
-#splash{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:var(--accent2);font-size:.9rem;text-align:center;font-weight:600;}
-#splash .spin{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px;}
+#splash{position:fixed;inset:0;background:radial-gradient(ellipse at center,var(--bg2),var(--bg));display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:var(--accent2);font-size:.9rem;text-align:center;font-weight:600;}
+#splash .spin{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--accent);border-right-color:var(--accent2);border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px;box-shadow:var(--glow-accent);}
 @keyframes sp{to{transform:rotate(360deg);}}
 #fsBtn{position:fixed;left:8px;top:8px;background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:.72rem;z-index:9000;transition:all .15s ease;}
 #fsBtn:hover{color:var(--text);border-color:var(--accent);}
 .input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
 .input:focus{border-color:var(--accent);}
-#cv{background:#0d1526;border:1px solid var(--border);touch-action:none;max-width:100%;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg);}
+#cv{background:radial-gradient(ellipse at center,#1a2540 0%,#0d1526 70%);border:1px solid var(--border);touch-action:none;max-width:100%;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg),inset 0 0 40px rgba(0,0,0,.4);}
 #battleLog{position:fixed;right:5px;top:70px;width:120px;max-height:140px;overflow:auto;background:rgba(11,17,32,.9);border:1px solid var(--border);font-size:8px;padding:5px;border-radius:var(--radius-sm);color:var(--muted);}
 #networkBadge{position:fixed;top:8px;right:8px;display:none;color:var(--warn);border:1px solid var(--warn);padding:4px 8px;font-size:10px;border-radius:6px;background:rgba(245,158,11,.1);}
 .aiBox{background:var(--card);border:1px solid var(--border);padding:12px;margin:6px;width:240px;text-align:center;font-size:.72rem;border-radius:var(--radius-sm);box-shadow:var(--shadow);}
@@ -819,7 +824,7 @@ function unit(x={}){
     abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
     role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
-    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"].includes(x.weaponType)?x.weaponType:"none",
+    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand"].includes(x.weaponType)?x.weaponType:"none",
     // Phase 25: visual modifier fields (preserved for P2P + share + clone).
     bodyPlan:x.bodyPlan||null,
     headFeature:x.headFeature||"none",
@@ -998,8 +1003,8 @@ const COLOR_MAP={
   yellow:"#fd4",orange:"#f84",black:"#222",white:"#eee",
   brown:"#a72",gray:"#888",pink:"#f6c",cyan:"#0ff"
 };
-const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",breath:"#f80",none:"#888"};
-const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",breath:"burst",none:"none"};
+const WEAPON_COLOR={sword:"#ccc",bow:"#a72",staff:"#fb0",dagger:"#ccc",shield:"#ccc",hammer:"#888",claws:"#ccc",breath:"#f80",scythe:"#9f9",whip:"#a72",spear:"#aaa",rifle:"#666",wand:"#fd0",none:"#888"};
+const WEAPON_FX={bow:"projectile",staff:"flash",hammer:"burst",sword:"none",dagger:"none",shield:"flash",claws:"none",breath:"burst",scythe:"none",whip:"none",spear:"none",rifle:"projectile",wand:"flash",none:"none"};
 const SIZE_SCALE={small:0.7,medium:1.0,large:1.3};
 
 // Phase 12: JSON schema for grammar-constrained generation (17 fields).
@@ -1007,30 +1012,30 @@ const UNIT_SCHEMA={
   type:"object",
   properties:{
     name:{type:"string",maxLength:20},
-    role:{type:"string",enum:["frontline","carry","support","counter","utility"]},
-    targeting:{type:"string",enum:["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","random"]},
-    movement:{type:"string",enum:["chase","flee","hold","hold_midpoint","kite","patrol"]},
-    attackCondition:{type:"string",enum:["always","only_if_healthy","only_if_target_low","never"]},
-    abilityTrigger:{type:"string",enum:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"]},
+    role:{type:"string",enum:["frontline","carry","support","counter","utility","assassin","bruiser"]},
+    targeting:{type:"string",enum:["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","highest_hp_ally","random_ally","random","self"]},
+    movement:{type:"string",enum:["chase","flee","hold","hold_midpoint","kite","patrol","blink","strafe"]},
+    attackCondition:{type:"string",enum:["always","only_if_healthy","only_if_target_low","only_if_target_high_hp","never"]},
+    abilityTrigger:{type:"string",enum:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","on_spawn","on_kill","periodic_3s","never"]},
     moveSpeedMod:{type:"integer",minimum:50,maximum:150},
     hp:{type:"integer",minimum:10,maximum:200},
     dmg:{type:"integer",minimum:5,maximum:50},
     range:{type:"integer",minimum:30,maximum:250},
     speed:{type:"integer",minimum:30,maximum:120},
-    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"]},
-    bodyPlan:{type:"string",enum:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod"]},
-    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"]},
+    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"]},
+    bodyPlan:{type:"string",enum:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel"]},
+    weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand"]},
     primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
     accentColor:{type:"string",enum:Object.keys(COLOR_MAP)},
     sizeMod:{type:"string",enum:["small","medium","large"]},
     // Phase 25: visual modifier fields.
-    headFeature:{type:"string",enum:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed"]},
-    backFeature:{type:"string",enum:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent"]},
-    tailFeature:{type:"string",enum:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger"]},
-    aura:{type:"string",enum:["none","fire","frost","poison","lightning","holy","shadow","arcane"]},
-    eyeStyle:{type:"string",enum:["normal","glowing","slit","empty","visorglow","compound","closed"]},
-    pattern:{type:"string",enum:["none","stripes","spots","scales","runes","cracks","gradient_two_tone"]},
-    weaponStyle:{type:"string",enum:["standard","ornate","glowing","cracked","pristine","battered"]}
+    headFeature:{type:"string",enum:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed","mask","eyepatch","tiara","antenna","frill","beak"]},
+    backFeature:{type:"string",enum:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent","wings_insect","wings_angel","jetpack","tentacles","fins","crystal_growth"]},
+    tailFeature:{type:"string",enum:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger","tail_fluffy","tail_barbed","tail_split"]},
+    aura:{type:"string",enum:["none","fire","frost","poison","lightning","holy","shadow","arcane","void","nature","blood","tech"]},
+    eyeStyle:{type:"string",enum:["normal","glowing","slit","empty","visorglow","compound","closed","star","cross","spiral","visor","visor_red"]},
+    pattern:{type:"string",enum:["none","stripes","spots","scales","runes","cracks","gradient_two_tone","circuit","tribal","stars","hexagons","marble"]},
+    weaponStyle:{type:"string",enum:["standard","ornate","glowing","cracked","pristine","battered","rusted","crystal","bone","molten"]}
   },
   required:["name","role","targeting","movement","attackCondition","abilityTrigger","moveSpeedMod","hp","dmg","range","speed","ability","bodyPlan","weaponType","primaryColor","accentColor","sizeMod","headFeature","backFeature","tailFeature","aura","eyeStyle","pattern","weaponStyle"]
 };
@@ -1443,6 +1448,139 @@ const BODY_PLANS={
       move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:1},{t:1,leg_swing:0,bob:0}],
       death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
     }
+  }),
+  centaur:c=>({
+    shapes:[
+      // Human torso
+      {t:"circle",cx:0,cy:-14,r:6,c:c.primary,fill:"gradient",c2:c.head,outline:1,oc:c.accent},
+      {t:"circle",cx:-2,cy:-15,r:1,c:"#000"},
+      {t:"circle",cx:2,cy:-15,r:1,c:"#000"},
+      {t:"rect",x:-4,y:-8,w:8,h:8,c:c.primary,fill:"gradient",c2:c.accent},
+      // Horse body
+      {t:"ellipse",cx:0,cy:4,rx:14,ry:7,c:c.accent,fill:"gradient",c2:c.primary,outline:1,oc:c.primary},
+      // Four legs
+      {t:"rect",x:-10,y:8,w:3,h:8,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:-4,y:8,w:3,h:8,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:1,y:8,w:3,h:8,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:7,y:8,w:3,h:8,c:c.accent,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,leg_swing:0},{t:0.5,bob:0.5,leg_swing:0.5},{t:1,bob:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  hydra:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:0,r:12,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      // Three heads
+      {t:"line",x1:-6,y1:-8,x2:-10,y2:-18,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"circle",cx:-10,cy:-18,r:4,c:c.head,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"line",x1:0,y1:-10,x2:0,y2:-20,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"circle",cx:0,cy:-20,r:4,c:c.head,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"line",x1:6,y1:-8,x2:10,y2:-18,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"circle",cx:10,cy:-18,r:4,c:c.head,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"rect",x:-6,y:10,w:3,h:6,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:3,y:10,w:3,h:6,c:c.accent,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0,leg_swing:0},{t:0.5,bob:0.5,tail_wag:1,leg_swing:0.5},{t:1,bob:0,tail_wag:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0,tail_wag:0},{t:0.5,leg_swing:1,bob:0.5,tail_wag:1},{t:1,leg_swing:0,bob:0,tail_wag:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  elemental:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-4,r:14,c:c.primary,fill:"gradient",c2:c.accent,glow:6,outline:1,oc:c.accent},
+      {t:"circle",cx:-4,cy:-6,r:2,c:c.accent,glow:4},
+      {t:"circle",cx:4,cy:-6,r:2,c:c.accent,glow:4},
+      // Floating shards
+      {t:"polygon",pts:[[-12,0],[-8,-4],[-10,4]],c:c.accent,glow:4,joint:"wing_flap"},
+      {t:"polygon",pts:[[12,0],[8,-4],[10,4]],c:c.accent,glow:4,joint:"wing_flap"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,wing_flap:0},{t:0.5,bob:1,wing_flap:1},{t:1,bob:0,wing_flap:0}],
+      move:[{t:0,bob:0,wing_flap:0},{t:0.5,bob:1,wing_flap:1},{t:1,bob:0,wing_flap:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  aberration:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-2,r:12,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      // Multiple eyes
+      {t:"circle",cx:-5,cy:-4,r:2,c:"#f00"},
+      {t:"circle",cx:5,cy:-4,r:2,c:"#f00"},
+      {t:"circle",cx:0,cy:-8,r:1.5,c:"#f00"},
+      {t:"circle",cx:-3,cy:2,r:1.5,c:"#f00"},
+      {t:"circle",cx:3,cy:2,r:1.5,c:"#f00"},
+      // Tentacles
+      {t:"line",x1:-8,y1:6,x2:-12,y2:14,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"line",x1:0,y1:8,x2:0,y2:16,c:c.accent,w:3,joint:"tail_wag"},
+      {t:"line",x1:8,y1:6,x2:12,y2:14,c:c.accent,w:3,joint:"tail_wag"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:0.5,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      move:[{t:0,bob:0,tail_wag:0},{t:0.5,bob:1,tail_wag:1},{t:1,bob:0,tail_wag:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  ooze:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:0,r:14,c:c.primary,fill:"gradient",c2:c.accent,alpha:0.8,outline:1,oc:c.accent},
+      {t:"circle",cx:-4,cy:-2,r:2,c:"#000"},
+      {t:"circle",cx:4,cy:-2,r:2,c:"#000"},
+      {t:"circle",cx:0,cy:4,r:3,c:c.accent,alpha:0.5}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:0}]
+    }
+  }),
+  crystal:c=>({
+    shapes:[
+      {t:"polygon",pts:[[0,-16],[-10,-4],[-6,8],[6,8],[10,-4]],c:c.primary,fill:"gradient",c2:c.accent,glow:4,outline:1,oc:c.accent},
+      {t:"polygon",pts:[[-4,-8],[0,-12],[4,-8]],c:c.accent,glow:4},
+      {t:"circle",cx:-3,cy:-6,r:1.5,c:"#fff",glow:3},
+      {t:"circle",cx:3,cy:-6,r:1.5,c:"#fff",glow:3}
+    ],
+    animations:{
+      idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
+      move:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  construct:c=>({
+    shapes:[
+      {t:"rect",x:-8,y:-16,w:16,h:14,c:c.primary,fill:"gradient",c2:c.accent,outline:1,oc:c.accent},
+      {t:"rect",x:-5,y:-12,w:3,h:3,c:"#0ff",glow:4},
+      {t:"rect",x:2,y:-12,w:3,h:3,c:"#0ff",glow:4},
+      {t:"rect",x:-10,y:-2,w:20,h:10,c:c.accent,fill:"gradient",c2:c.primary,outline:1,oc:c.primary},
+      {t:"rect",x:-8,y:8,w:4,h:8,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:4,y:8,w:4,h:8,c:c.accent,joint:"leg_swing"}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,leg_swing:0},{t:0.5,bob:0.3,leg_swing:0},{t:1,bob:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.3},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
+  }),
+  angel:c=>({
+    shapes:[
+      {t:"circle",cx:0,cy:-14,r:6,c:c.primary,fill:"gradient",c2:"#fff",outline:1,oc:c.accent},
+      {t:"circle",cx:-2,cy:-15,r:1,c:"#000"},
+      {t:"circle",cx:2,cy:-15,r:1,c:"#000"},
+      {t:"rect",x:-4,y:-8,w:8,h:10,c:c.primary,fill:"gradient",c2:c.accent},
+      {t:"rect",x:-4,y:2,w:3,h:8,c:c.accent,joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:3,h:8,c:c.accent,joint:"leg_swing"},
+      // Halo
+      {t:"arc",cx:0,cy:-22,r:7,start:0,end:Math.PI*2,c:"#ffd",glow:6,w:1,alpha:0.6}
+    ],
+    animations:{
+      idle:[{t:0,bob:0,leg_swing:0},{t:0.5,bob:0.5,leg_swing:0.5},{t:1,bob:0,leg_swing:0}],
+      move:[{t:0,leg_swing:0,bob:0},{t:0.5,leg_swing:1,bob:0.5},{t:1,leg_swing:0,bob:0}],
+      death:[{t:0,alpha:1,rot:0},{t:1,alpha:0,rot:90}]
+    }
   })
 };
 const WEAPONS={
@@ -1460,6 +1598,18 @@ const WEAPONS={
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
   claws:{shape:{t:"line",x1:9,y1:-6,x2:12,y2:-2,c:"#ccc",w:1,joint:"arm_raise"},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  breath:{shape:{t:"circle",cx:10,cy:-10,r:4,c:"#f80",glow:6,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  scythe:{shape:{t:"arc",cx:14,cy:-12,r:8,start:-0.5,end:1.2,c:"#9f9",w:2,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  whip:{shape:{t:"line",x1:8,y1:-8,x2:18,y2:-4,c:"#a72",w:1,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:0.6,arm_raise:0.5},{t:1,arm_raise:0}]},
+  spear:{shape:{t:"line",x1:8,y1:-10,x2:20,y2:-10,c:"#aaa",w:2,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
+  rifle:{shape:{t:"rect",x:8,y:-12,w:10,h:4,c:"#666",joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:0.5},{t:1,arm_raise:0}]},
+  wand:{shape:{t:"line",x1:8,y1:-12,x2:10,y2:-22,c:"#a72",w:1,joint:"arm_raise"},
+    attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
   none:{shape:null,attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]}
 };
 function scaleShape(s,scale){
@@ -1491,6 +1641,12 @@ const HEAD_FEATURES={
   crown:c=>[{t:"polygon",pts:[[-5,-22],[-5,-26],[-3,-24],[-1,-27],[1,-27],[3,-24],[5,-26],[5,-22]],c:"#fd4"}],
   horns_curved:c=>[{t:"arc",cx:-4,cy:-22,r:5,start:Math.PI,end:0,c:c.accent,w:2},{t:"arc",cx:4,cy:-22,r:5,start:Math.PI,end:0,c:c.accent,w:2}],
   ears_pointed:c=>[{t:"polygon",pts:[[-5,-20],[-7,-24],[-3,-22]],c:c.accent},{t:"polygon",pts:[[5,-20],[7,-24],[3,-22]],c:c.accent}],
+  mask:c=>[{t:"rect",x:-6,y:-22,w:12,h:8,c:c.accent,alpha:0.8}],
+  eyepatch:c=>[{t:"rect",x:-5,y:-20,w:5,h:4,c:"#111",alpha:0.9}],
+  tiara:c=>[{t:"arc",cx:0,cy:-22,r:5,start:Math.PI,end:0,c:"#fd4",w:2},{t:"circle",cx:0,cy:-25,r:2,c:"#fff",glow:4}],
+  antenna:c=>[{t:"line",x1:-3,y1:-22,x2:-5,y2:-28,c:c.accent,w:1},{t:"circle",cx:-5,cy:-28,r:2,c:c.accent,glow:3},{t:"line",x1:3,y1:-22,x2:5,y2:-28,c:c.accent,w:1},{t:"circle",cx:5,cy:-28,r:2,c:c.accent,glow:3}],
+  frill:c=>[{t:"polygon",pts:[[-8,-20],[-4,-24],[0,-22],[4,-24],[8,-20]],c:c.accent,alpha:0.7}],
+  beak:c=>[{t:"polygon",pts:[[-3,-20],[0,-26],[3,-20]],c:"#fa0"}],
 };
 const BACK_FEATURES={
   none:()=>[],
@@ -1501,6 +1657,12 @@ const BACK_FEATURES={
   shell:c=>[{t:"arc",cx:0,cy:-8,r:10,start:Math.PI,end:0,c:c.accent,w:2,fill:"gradient",c2:c.primary}],
   spikes:c=>[{t:"polygon",pts:[[-4,-12],[-2,-16],[0,-12]],c:c.accent},{t:"polygon",pts:[[0,-12],[2,-16],[4,-12]],c:c.accent}],
   aura_vent:c=>[{t:"circle",cx:0,cy:-14,r:3,c:c.accent,glow:4,alpha:0.5}],
+  wings_insect:c=>[{t:"polygon",pts:[[-4,-8],[-12,-14],[-10,-6],[-4,-4]],c:"#aff",alpha:0.6,joint:"wing_flap"},{t:"polygon",pts:[[4,-8],[12,-14],[10,-6],[4,-4]],c:"#aff",alpha:0.6,joint:"wing_flap"}],
+  wings_angel:c=>[{t:"polygon",pts:[[-5,-10],[-18,-18],[-16,-2],[-5,-6]],c:"#ffe",glow:4,joint:"wing_flap"},{t:"polygon",pts:[[5,-10],[18,-18],[16,-2],[5,-6]],c:"#ffe",glow:4,joint:"wing_flap"}],
+  jetpack:c=>[{t:"rect",x:-8,y:-8,w:6,h:10,c:"#888"},{t:"rect",x:2,y:-8,w:6,h:10,c:"#888"},{t:"circle",cx:-5,cy:4,r:3,c:"#f84",glow:6},{t:"circle",cx:5,cy:4,r:3,c:"#f84",glow:6}],
+  tentacles:c=>[{t:"line",x1:-6,y1:-6,x2:-10,y2:6,c:c.accent,w:3,joint:"tail_wag"},{t:"line",x1:6,y1:-6,x2:10,y2:6,c:c.accent,w:3,joint:"tail_wag"},{t:"line",x1:0,y1:-8,x2:0,y2:8,c:c.accent,w:3,joint:"tail_wag"}],
+  fins:c=>[{t:"polygon",pts:[[-6,-8],[-10,-12],[-6,-4]],c:c.accent},{t:"polygon",pts:[[6,-8],[10,-12],[6,-4]],c:c.accent}],
+  crystal_growth:c=>[{t:"polygon",pts:[[-4,-10],[-2,-18],[0,-12]],c:c.accent,glow:4},{t:"polygon",pts:[[0,-12],[2,-18],[4,-10]],c:c.accent,glow:4}],
 };
 const TAIL_FEATURES={
   none:()=>[],
@@ -1510,19 +1672,25 @@ const TAIL_FEATURES={
   tail_fin:c=>[{t:"polygon",pts:[[-4,8],[0,16],[4,8]],c:c.accent,joint:"tail_wag"}],
   tail_prehensile:c=>[{t:"line",x1:0,y1:8,x2:-4,y2:14,c:c.accent,w:2,joint:"tail_wag"},{t:"line",x1:-4,y1:14,x2:2,y2:18,c:c.accent,w:2,joint:"tail_wag"}],
   tail_stinger:c=>[{t:"line",x1:0,y1:8,x2:0,y2:16,c:c.accent,w:2,joint:"tail_wag"},{t:"polygon",pts:[[-2,16],[0,22],[2,16]],c:c.accent,joint:"tail_wag"}],
+  tail_fluffy:c=>[{t:"circle",cx:0,cy:14,r:5,c:c.accent,alpha:0.8,joint:"tail_wag"}],
+  tail_barbed:c=>[{t:"line",x1:0,y1:8,x2:0,y2:16,c:c.accent,w:2,joint:"tail_wag"},{t:"line",x1:0,y1:12,x2:-3,y2:10,c:c.accent,w:1},{t:"line",x1:0,y1:12,x2:3,y2:10,c:c.accent,w:1}],
+  tail_split:c=>[{t:"line",x1:0,y1:8,x2:-4,y2:16,c:c.accent,w:2,joint:"tail_wag"},{t:"line",x1:0,y1:8,x2:4,y2:16,c:c.accent,w:2,joint:"tail_wag"}],
 };
 const AURA_MAP_VISUAL={
   none:null, fire:"#f64", frost:"#6cf", poison:"#6f4", lightning:"#ff4",
-  holy:"#fd8", shadow:"#a4f", arcane:"#a4f",
+  holy:"#fd8", shadow:"#a4f", arcane:"#a4f", void:"#a0f", nature:"#4f8", blood:"#f44", tech:"#0ff",
 };
 const EYE_STYLES={
   normal:null, glowing:"#ff4", slit:"#0f0", empty:"#000", visorglow:"#0ff", compound:"#f44", closed:null,
+  star:"#ffd", cross:"#fff", spiral:"#a4f", visor:"#0f0", visor_red:"#f44",
 };
 const PATTERN_MODIFIERS={
   none:null, stripes:"stripes", spots:"spots", scales:"scales", runes:"runes", cracks:"cracks", gradient_two_tone:"gradient",
+  circuit:"circuit", tribal:"tribal", stars:"stars", hexagons:"hexagons", marble:"marble",
 };
 const WEAPON_STYLE_MODIFIERS={
   standard:{}, ornate:{glow:2}, glowing:{glow:6}, cracked:{alpha:0.7}, pristine:{}, battered:{alpha:0.6},
+  rusted:{alpha:0.5}, crystal:{glow:8}, bone:{alpha:0.8}, molten:{glow:6},
 };
 
 const RecipeAssembler={
@@ -1827,20 +1995,20 @@ const ENUM_FIELDS={
   movement:["chase","flee","hold","hold_midpoint","kite","patrol"],
   attackCondition:["always","only_if_healthy","only_if_target_low","never"],
   abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
-  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"],
-  bodyPlan:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod"],
-  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath"],
+  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"],
+  bodyPlan:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel"],
+  weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand"],
   primaryColor:Object.keys(COLOR_MAP),
   accentColor:Object.keys(COLOR_MAP),
   sizeMod:["small","medium","large"],
   // Phase 25: visual modifier enums.
-  headFeature:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed"],
-  backFeature:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent"],
-  tailFeature:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger"],
-  aura:["none","fire","frost","poison","lightning","holy","shadow","arcane"],
-  eyeStyle:["normal","glowing","slit","empty","visorglow","compound","closed"],
-  pattern:["none","stripes","spots","scales","runes","cracks","gradient_two_tone"],
-  weaponStyle:["standard","ornate","glowing","cracked","pristine","battered"]
+  headFeature:["none","horns","antlers","crest","halo","crown","horns_curved","ears_pointed","mask","eyepatch","tiara","antenna","frill","beak"],
+  backFeature:["none","wings_bat","wings_feathered","wings_dragon","cape","shell","spikes","aura_vent","wings_insect","wings_angel","jetpack","tentacles","fins","crystal_growth"],
+  tailFeature:["none","tail_long","tail_spade","tail_flame","tail_fin","tail_prehensile","tail_stinger","tail_fluffy","tail_barbed","tail_split"],
+  aura:["none","fire","frost","poison","lightning","holy","shadow","arcane","void","nature","blood","tech"],
+  eyeStyle:["normal","glowing","slit","empty","visorglow","compound","closed","star","cross","spiral","visor","visor_red"],
+  pattern:["none","stripes","spots","scales","runes","cracks","gradient_two_tone","circuit","tribal","stars","hexagons","marble"],
+  weaponStyle:["standard","ornate","glowing","cracked","pristine","battered","rusted","crystal","bone","molten"]
 };
 const INT_FIELDS={hp:[10,200],dmg:[5,50],range:[30,250],speed:[30,120],moveSpeedMod:[50,150]};
 // Phase 12: parse a stat value from the LLM's answer. The LLM is free to
@@ -1869,18 +2037,18 @@ function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Mat
 // Phase 12: join enum values in random order for a prompt.
 function opts(vals){return shuffle(vals).join(", ");}
 const FIELD_PROMPTS={
-  name:p=>`Give a short name (max 20 chars) for a unit based on the concept: "${p}". Answer with the name only.`,
-  role:()=>`What combat role fits this unit? frontline = durable tank that soaks damage. carry = fragile damage dealer. support = heals or buffs allies. counter = punishes enemy weaknesses. utility = flexible specialist. Answer with one word.`,
+  name:p=>`Give a short, evocative name (max 20 chars) for a fantasy battle unit based on the concept: "${p}". Be creative — use compound words, mythological references, or unique names. Answer with the name only.`,
+  role:()=>`What combat role fits this unit? frontline = durable tank. carry = fragile damage dealer. support = heals/buffs allies. counter = punishes enemy weaknesses. utility = flexible specialist. assassin = burst damage, targets weak enemies. bruiser = mix of tank and damage. Answer with one word.`,
   targeting:()=>`Given this unit's identity, who should it target in battle: ${opts(ENUM_FIELDS.targeting)}? Answer with one word.`,
   movement:()=>`Given this unit's identity, how should it move: ${opts(ENUM_FIELDS.movement)}? Answer with one word.`,
   attackCondition:()=>`Given this unit's identity, when should it attack: ${opts(ENUM_FIELDS.attackCondition)}? Answer with one word.`,
   ability:()=>`Given this unit's identity, what special ability fits: ${opts(ENUM_FIELDS.ability)}? Answer with one word.`,
   abilityTrigger:()=>`Given this unit's identity and ability, when should the ability trigger: ${opts(ENUM_FIELDS.abilityTrigger)}? Answer with one word.`,
-  moveSpeedMod:(n,a)=>`How aggressive is this unit's speed? ${a.movement==="chase"?"Chase units are bold: 100-150. ":""}${a.movement==="hold"?"Hold units are cautious: 50-90. ":""}${a.movement==="kite"?"Kite units are measured: 70-120. ":""}${a.movement==="flee"?"Fleeing units are skittish: 80-130. ":""}${a.movement==="patrol"?"Patrol units are steady: 60-110. ":""}Pick any number 50-150 that fits. Answer with a number only.`,
-  hp:(n,a)=>`How tough is this unit? ${a.role==="frontline"?"Frontlines are tanks: 120-200 HP. ":""}${a.role==="carry"?"Carries are squishy: 15-60 HP. ":""}${a.role==="support"?"Supports are fragile: 30-90 HP. ":""}${a.role==="counter"?"Counters are moderate: 50-110 HP. ":""}${a.role==="utility"?"Utility units are varied: 40-100 HP. ":""}Pick any number 10-200 that fits the concept. Answer with a number only.`,
-  dmg:(n,a)=>`How much damage per hit? ${a.role==="carry"?"Carries hit hard: 25-50. ":""}${a.role==="frontline"?"Frontlines hit moderately: 10-30. ":""}${a.role==="support"?"Supports hit weakly: 5-15. ":""}${a.role==="counter"?"Counters hit sharply: 15-35. ":""}${a.role==="utility"?"Utility varies: 8-25. ":""}Pick any number 5-50 that fits the concept. Answer with a number only.`,
-  range:(n,a)=>`What attack range fits? ${a.weaponType==="bow"?"Bows are long-range: 150-250. ":""}${a.weaponType==="staff"?"Staves are ranged: 100-200. ":""}${(a.weaponType==="sword"||a.weaponType==="dagger"||a.weaponType==="claws"||a.weaponType==="hammer")?"Melee weapons are short: 30-60. ":""}${a.weaponType==="breath"?"Breath is medium: 60-120. ":""}${a.weaponType==="shield"?"Shields are close: 30-60. ":""}${a.weaponType==="none"?"Unarmed is touch: 30-50. ":""}Pick any number 30-250 that fits. Answer with a number only.`,
-  speed:(n,a)=>`How fast should it be? ${a.movement==="chase"?"Chase units are fast: 80-120. ":""}${a.movement==="hold"?"Hold units are slow: 30-60. ":""}${a.movement==="kite"?"Kite units are nimble: 70-100. ":""}${a.movement==="flee"?"Fleeing units are quick: 80-120. ":""}${a.movement==="patrol"?"Patrol units are moderate: 50-80. ":""}${a.bodyPlan==="flying"?"Flying creatures are naturally fast. ":""}${a.bodyPlan==="structure"?"Structures are immobile. ":""}Pick any number 30-120 that fits. Answer with a number only.`,
+  moveSpeedMod:(n,a)=>`How aggressive is this unit's speed? ${a.movement==="chase"?"Chase units are bold: 100-150. ":""}${a.movement==="hold"?"Hold units are cautious: 50-90. ":""}${a.movement==="kite"?"Kite units are measured: 70-120. ":""}${a.movement==="flee"?"Fleeing units are skittish: 80-130. ":""}${a.movement==="patrol"?"Patrol units are steady: 60-110. ":""}${a.movement==="blink"?"Blink units are unpredictable: 80-130. ":""}${a.movement==="strafe"?"Strafe units are nimble: 90-140. ":""}Pick any number 50-150 that fits. Answer with a number only.`,
+  hp:(n,a)=>`How tough is this unit? ${a.role==="frontline"?"Frontlines are tanks: 120-200 HP. ":""}${a.role==="carry"?"Carries are squishy: 15-60 HP. ":""}${a.role==="support"?"Supports are fragile: 30-90 HP. ":""}${a.role==="counter"?"Counters are moderate: 50-110 HP. ":""}${a.role==="utility"?"Utility units are varied: 40-100 HP. ":""}${a.role==="assassin"?"Assassins are fragile: 20-70 HP. ":""}${a.role==="bruiser"?"Bruisers are sturdy: 80-150 HP. ":""}Pick any number 10-200 that fits the concept. Answer with a number only.`,
+  dmg:(n,a)=>`How much damage per hit? ${a.role==="carry"?"Carries hit hard: 25-50. ":""}${a.role==="frontline"?"Frontlines hit moderately: 10-30. ":""}${a.role==="support"?"Supports hit weakly: 5-15. ":""}${a.role==="counter"?"Counters hit sharply: 15-35. ":""}${a.role==="utility"?"Utility varies: 8-25. ":""}${a.role==="assassin"?"Assassins burst: 20-45. ":""}${a.role==="bruiser"?"Bruisers hit solidly: 12-30. ":""}Pick any number 5-50 that fits the concept. Answer with a number only.`,
+  range:(n,a)=>`What attack range fits? ${a.weaponType==="bow"?"Bows are long-range: 150-250. ":""}${a.weaponType==="staff"||a.weaponType==="wand"?"Staves/wands are ranged: 100-200. ":""}${a.weaponType==="rifle"?"Rifles are very long: 180-250. ":""}${(a.weaponType==="sword"||a.weaponType==="dagger"||a.weaponType==="claws"||a.weaponType==="hammer"||a.weaponType==="scythe"||a.weaponType==="spear")?"Melee weapons are short: 30-60. ":""}${a.weaponType==="whip"?"Whips are medium: 60-100. ":""}${a.weaponType==="breath"?"Breath is medium: 60-120. ":""}${a.weaponType==="shield"?"Shields are close: 30-60. ":""}${a.weaponType==="none"?"Unarmed is touch: 30-50. ":""}Pick any number 30-250 that fits. Answer with a number only.`,
+  speed:(n,a)=>`How fast should it be? ${a.movement==="chase"?"Chase units are fast: 80-120. ":""}${a.movement==="hold"?"Hold units are slow: 30-60. ":""}${a.movement==="kite"?"Kite units are nimble: 70-100. ":""}${a.movement==="flee"?"Fleeing units are quick: 80-120. ":""}${a.movement==="patrol"?"Patrol units are moderate: 50-80. ":""}${a.movement==="blink"?"Blink units are moderate: 50-90. ":""}${a.movement==="strafe"?"Strafe units are fast: 70-110. ":""}${a.bodyPlan==="flying"?"Flying creatures are naturally fast. ":""}${a.bodyPlan==="structure"?"Structures are immobile. ":""}Pick any number 30-120 that fits. Answer with a number only.`,
   bodyPlan:()=>`Given this unit's identity, what body plan fits: ${opts(ENUM_FIELDS.bodyPlan)}? Answer with one word.`,
   weaponType:()=>`Given this unit's identity, what weapon fits: ${opts(ENUM_FIELDS.weaponType)}? Answer with one word.`,
   primaryColor:()=>`Given this unit's identity, what primary color fits: ${opts(ENUM_FIELDS.primaryColor)}? Answer with one word.`,
@@ -2442,14 +2610,14 @@ function highestBy(arr,fn){
 }
 
 // Phase 10: enum value lists (used by unit() defaults + validateUnit).
-const TARGETING_OPTS=["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","random"];
-const MOVEMENT_OPTS=["chase","flee","hold","hold_midpoint","kite","patrol"];
-const ATTACK_CONDITION_OPTS=["always","only_if_healthy","only_if_target_low","never"];
-const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"];
-const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp"];
-const ROLE_OPTS=["frontline","carry","support","counter","utility"];
-const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp"]);
-const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield"]);
+const TARGETING_OPTS=["closest","lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster","lowest_ally","highest_hp_ally","random_ally","random","self"];
+const MOVEMENT_OPTS=["chase","flee","hold","hold_midpoint","kite","patrol","blink","strafe"];
+const ATTACK_CONDITION_OPTS=["always","only_if_healthy","only_if_target_low","only_if_target_high_hp","never"];
+const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","on_spawn","on_kill","periodic_3s","never"];
+const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"];
+const ROLE_OPTS=["frontline","carry","support","counter","utility","assassin","bruiser"];
+const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp","thorns","regen","taunt","executioner"]);
+const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield","blink_strike","frenzy","cleanse","chain_lightning"]);
 // F1: Ability descriptions for tooltips.
 const ABILITY_DESCRIPTIONS={
   none:"No special ability.",
@@ -2465,6 +2633,69 @@ const ABILITY_DESCRIPTIONS={
   rage:"Damage scales with missing HP (up to +100%).",
   slow:"Slows enemy movement on hit.",
   ramp:"Gains +15% damage on each kill (cap 3× base).",
+  thorns:"Reflects 30% of incoming damage back to the attacker.",
+  blink_strike:"Teleports to the lowest-HP enemy and strikes for bonus damage.",
+  frenzy:"Attack speed doubles for 3 seconds after getting a kill.",
+  regen:"Regenerates 2% of max HP per second while alive.",
+  cleanse:"Removes all negative status effects from nearby allies periodically.",
+  taunt:"Forces all enemies to target this unit instead of others.",
+  executioner:"Deals 3× damage to enemies below 25% HP.",
+  chain_lightning:"Lightning arcs between 3 nearby enemies, dealing damage to each.",
+};
+
+// Explanations for movement, targeting, triggers, and weapons — shown in unit detail.
+const MOVEMENT_DESCRIPTIONS={
+  chase:"Moves directly toward its target.",
+  flee:"Moves away from the nearest enemy.",
+  hold:"Stays in place — relies on formation positioning.",
+  hold_midpoint:"Holds position at the battlefield midpoint, advancing only if out of range.",
+  kite:"Keeps distance — moves away if too close, approaches if too far.",
+  patrol:"Moves side-to-side, never closing distance. Defensive.",
+  blink:"Teleports toward the target every 2 seconds. Unpredictable.",
+  strafe:"Weaves side-to-side while approaching. Harder to hit.",
+};
+const TARGETING_DESCRIPTIONS={
+  closest:"Targets the nearest enemy.",
+  lowest_hp:"Targets the enemy with the lowest HP (finisher).",
+  highest_hp:"Targets the enemy with the highest HP (tank buster).",
+  enemy_carry:"Prioritizes enemy carries (high-damage units).",
+  enemy_support:"Prioritizes enemy supports (healers).",
+  enemy_backline:"Targets enemies in the back row.",
+  enemy_frontline:"Targets enemies in the front row.",
+  enemy_cluster:"Targets the center of the largest enemy group (AoE setup).",
+  lowest_ally:"Targets the lowest-HP ally (for healing).",
+  highest_hp_ally:"Targets the highest-HP ally (for buffing).",
+  random_ally:"Targets a random ally.",
+  random:"Targets a random enemy.",
+  self:"Targets itself (self-buff abilities).",
+};
+const TRIGGER_DESCRIPTIONS={
+  on_cooldown:"Fires as soon as the ability cooldown expires.",
+  when_ally_hurt:"Fires when an ally drops below 50% HP.",
+  when_surrounded:"Fires when 2+ enemies are within 60px.",
+  on_low_hp:"Fires when this unit drops below 30% HP.",
+  on_death:"Fires when this unit dies.",
+  on_first_hit:"Fires the first time this unit takes a hit.",
+  on_spawn:"Fires once when the unit enters battle.",
+  on_kill:"Fires when this unit kills an enemy.",
+  periodic_3s:"Fires every 3 seconds.",
+  never:"Ability is passive or never triggers.",
+};
+const WEAPON_DESCRIPTIONS={
+  none:"Unarmed — short range, no weapon FX.",
+  sword:"Balanced melee weapon. Short range, moderate damage.",
+  bow:"Long-range projectile weapon. Fires arrows.",
+  staff:"Ranged magic weapon. Fires spells with flash FX.",
+  dagger:"Fast short-range melee. Low range, high attack speed.",
+  shield:"Defensive melee. Can block with flash FX.",
+  hammer:"Heavy melee. Burst FX on hit.",
+  claws:"Fast melee. Short range, rapid attacks.",
+  breath:"Ranged elemental breath. Medium range, burst FX.",
+  scythe:"Melee weapon with a wide arc. Short range.",
+  whip:"Medium-range melee. Can hit from a distance.",
+  spear:"Melee weapon with slightly longer reach.",
+  rifle:"Very long-range projectile weapon. High damage.",
+  wand:"Ranged magic weapon. Fires spells with flash FX.",
 };
 
 // Phase 10: lookup tables — each enum maps to a pure function.
@@ -2491,7 +2722,10 @@ const TARGETING={
     return best;
   },
   lowest_ally:(u,enemies,allies)=>lowestBy(allies.filter(a=>a!==u),a=>a.h),
+  highest_hp_ally:(u,enemies,allies)=>highestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h),
+  random_ally:(u,enemies,allies)=>{const alive=allies.filter(a=>a!==u&&a.h>0);return alive.length?alive[F(R()*alive.length)]:null;},
   random:(u,enemies,allies)=>{const alive=enemies.filter(e=>e.h>0);return alive.length?alive[F(R()*alive.length)]:null;},
+  self:(u,enemies,allies)=>u,
 };
 
 const MOVEMENT={
@@ -2523,12 +2757,32 @@ const MOVEMENT={
     u.patrolT=(u.patrolT||0)+dt;
     u.x+=Math.sin(u.patrolT*2)*effSpeed(u)*dt*0.5;
   },
+  blink:(u,target,dt)=>{
+    // blink: teleport toward target every 2s, otherwise hold
+    u.blinkT=(u.blinkT||0)+dt;
+    if(target&&target.h>0&&u.blinkT>=2&&dist(u,target)>u.r){
+      u.x=target.x+Q(-20,20);u.y=target.y+Q(-20,20);
+      u.blinkT=0;
+      BattleFX.burst(u.x,u.y,u.c,4,20);
+    }
+  },
+  strafe:(u,target,dt)=>{
+    // strafe: move side-to-side while approaching
+    if(target&&target.h>0){
+      const d=dist(u,target);
+      const sp=effSpeed(u)*dt;
+      if(d>u.r)moveToward(u,target,sp*0.7);
+      u.strafeT=(u.strafeT||0)+dt;
+      u.y+=Math.sin(u.strafeT*3)*sp*0.5;
+    }
+  },
 };
 
 const ATTACK_CONDITIONS={
   always:(u,target)=>true,
   only_if_healthy:(u,target)=>u.h>u.mh*0.5,
   only_if_target_low:(u,target)=>target&&target.h<target.mh*0.3,
+  only_if_target_high_hp:(u,target)=>target&&target.h>target.mh*0.6,
   never:(u,target)=>false,
 };
 
@@ -2539,6 +2793,9 @@ const ABILITY_TRIGGERS={
   on_low_hp:(u,allies,enemies)=>u.h<u.mh*0.3&&u.abCool<=0,
   on_death:(u,allies,enemies)=>false,  // handled in onUnitDeath()
   on_first_hit:(u,allies,enemies)=>u.hasBeenHit&&!u.firstHitUsed,
+  on_spawn:(u,allies,enemies)=>!u.spawnTriggered,
+  on_kill:(u,allies,enemies)=>false, // handled in onUnitDeath for killer
+  periodic_3s:(u,allies,enemies)=>{u._periodicT=(u._periodicT||0)+0.05;return u._periodicT>=3&&(u._periodicT=0,true)&&u.abCool<=0;},
   never:(u,allies,enemies)=>false,
 };
 
@@ -2817,18 +3074,35 @@ const SpriteRenderer={
         if(shape.outline)c.stroke();else strokeBlack();
         break;
     }
-    // Phase 24b: surface patterns (stripes, spots, scales).
+    // Phase 24b: surface patterns (stripes, spots, scales, runes, cracks, circuit, tribal, stars, hexagons, marble).
     if(shape.pattern&&shape.c2){
       c.save();
       c.fillStyle=shape.c2;
+      c.strokeStyle=shape.c2;
       c.globalAlpha=(shape.alpha!==undefined?shape.alpha:1)*0.5;
       if(shape.t==="rect"||shape.t==="circle"||shape.t==="polygon"||shape.t==="ellipse"){
         // Clip to shape bounds.
         if(shape.t==="rect"){
           c.beginPath();c.rect(ox+shape.x,oy+shape.y,shape.w,shape.h);c.clip();
           const spacing=4;
-          for(let py=oy+shape.y;py<oy+shape.y+shape.h;py+=spacing){
-            c.fillRect(ox+shape.x,py,shape.w,1.5);
+          if(shape.pattern==="circuit"){
+            c.lineWidth=0.5;
+            for(let px=ox+shape.x;px<ox+shape.x+shape.w;px+=spacing){
+              c.beginPath();c.moveTo(px,oy+shape.y);c.lineTo(px,oy+shape.y+shape.h);c.stroke();
+            }
+            for(let py=oy+shape.y;py<oy+shape.y+shape.h;py+=spacing){
+              c.beginPath();c.moveTo(ox+shape.x,py);c.lineTo(ox+shape.x+shape.w,py);c.stroke();
+            }
+          }else if(shape.pattern==="stars"){
+            for(let i=0;i<5;i++){
+              const sx=ox+shape.x+Math.random()*shape.w;
+              const sy=oy+shape.y+Math.random()*shape.h;
+              c.beginPath();c.arc(sx,sy,0.8,0,Math.PI*2);c.fill();
+            }
+          }else{
+            for(let py=oy+shape.y;py<oy+shape.y+shape.h;py+=spacing){
+              c.fillRect(ox+shape.x,py,shape.w,1.5);
+            }
           }
         }else if(shape.t==="circle"){
           c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.clip();
@@ -2836,6 +3110,81 @@ const SpriteRenderer={
             for(let i=0;i<4;i++){
               const a=i*Math.PI/2;
               c.beginPath();c.arc(ox+shape.cx+Math.cos(a)*shape.r*0.4,oy+shape.cy+Math.sin(a)*shape.r*0.4,1.5,0,Math.PI*2);c.fill();
+            }
+          }else if(shape.pattern==="scales"){
+            for(let row=-2;row<=2;row++){
+              for(let col=-2;col<=2;col++){
+                const sx=ox+shape.cx+col*4+row%2*2;
+                const sy=oy+shape.cy+row*3;
+                if(Math.hypot(sx-ox-shape.cx,sy-oy-shape.cy)<shape.r){
+                  c.beginPath();c.arc(sx,sy,2,0,Math.PI);c.stroke();
+                }
+              }
+            }
+          }else if(shape.pattern==="runes"){
+            c.lineWidth=0.8;
+            for(let i=0;i<3;i++){
+              const a=i*Math.PI*2/3;
+              const rx=ox+shape.cx+Math.cos(a)*shape.r*0.5;
+              const ry=oy+shape.cy+Math.sin(a)*shape.r*0.5;
+              c.beginPath();c.arc(rx,ry,2,0,Math.PI*2);c.stroke();
+            }
+          }else if(shape.pattern==="cracks"){
+            c.lineWidth=0.8;
+            for(let i=0;i<3;i++){
+              const a=i*Math.PI*2/3+0.5;
+              c.beginPath();c.moveTo(ox+shape.cx,oy+shape.cy);
+              c.lineTo(ox+shape.cx+Math.cos(a)*shape.r,oy+shape.cy+Math.sin(a)*shape.r);
+              c.stroke();
+            }
+          }else if(shape.pattern==="circuit"){
+            c.lineWidth=0.5;
+            for(let i=0;i<6;i++){
+              const a=i*Math.PI/3;
+              c.beginPath();c.moveTo(ox+shape.cx,oy+shape.cy);
+              c.lineTo(ox+shape.cx+Math.cos(a)*shape.r,oy+shape.cy+Math.sin(a)*shape.r);
+              c.stroke();
+            }
+          }else if(shape.pattern==="tribal"){
+            c.lineWidth=1;
+            c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r*0.6,0,Math.PI*2);c.stroke();
+            c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r*0.3,0,Math.PI*2);c.stroke();
+          }else if(shape.pattern==="stars"){
+            for(let i=0;i<6;i++){
+              const a=i*Math.PI/3;
+              const sx=ox+shape.cx+Math.cos(a)*shape.r*0.5;
+              const sy=oy+shape.cy+Math.sin(a)*shape.r*0.5;
+              c.beginPath();c.arc(sx,sy,0.8,0,Math.PI*2);c.fill();
+            }
+          }else if(shape.pattern==="hexagons"){
+            c.lineWidth=0.6;
+            for(let row=-2;row<=2;row++){
+              for(let col=-2;col<=2;col++){
+                const hx=ox+shape.cx+col*5+row%2*2.5;
+                const hy=oy+shape.cy+row*4;
+                if(Math.hypot(hx-ox-shape.cx,hy-oy-shape.cy)<shape.r){
+                  c.beginPath();
+                  for(let i=0;i<6;i++){
+                    const a=i*Math.PI/3;
+                    const px=hx+Math.cos(a)*2;
+                    const py=hy+Math.sin(a)*2;
+                    if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
+                  }
+                  c.closePath();c.stroke();
+                }
+              }
+            }
+          }else if(shape.pattern==="marble"){
+            c.lineWidth=0.4;
+            for(let i=0;i<4;i++){
+              c.beginPath();
+              c.moveTo(ox+shape.cx-shape.r,oy+shape.cy+Math.random()*shape.r*2-shape.r);
+              c.bezierCurveTo(
+                ox+shape.cx-shape.r/3,oy+shape.cy+Math.random()*shape.r*2-shape.r,
+                ox+shape.cx+shape.r/3,oy+shape.cy+Math.random()*shape.r*2-shape.r,
+                ox+shape.cx+shape.r,oy+shape.cy+Math.random()*shape.r*2-shape.r
+              );
+              c.stroke();
             }
           }else{
             for(let py=oy+shape.cy-shape.r;py<oy+shape.cy+shape.r;py+=3){
@@ -3850,9 +4199,13 @@ const Battle={
       if(u.cool>0)u.cool-=dt;
       if(u.abCool>0)u.abCool-=dt;
       if(u.shieldActive>0)u.shieldActive-=dt;
+      if(u.frenzyT>0)u.frenzyT-=dt;
       if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0)u.h=0;} // minion expires
-      // Phase 11: advance attack animation timer — speed scales with attack speed.
-      if(u.attackT>=0){u.attackT+=dt*u.a;if(u.attackT>=1)u.attackT=-1;}
+      // regen: heal 2% of max HP per second
+      if(u.ability==="regen"&&u.h>0&&u.h<u.mh)u.h=Math.min(u.mh,u.h+u.mh*0.02*dt);
+      // Phase 11: advance attack animation timer — speed scales with attack speed (frenzy doubles).
+      const effA=u.frenzyT>0?u.a*2:u.a;
+      if(u.attackT>=0){u.attackT+=dt*effA;if(u.attackT>=1)u.attackT=-1;}
       // Phase 11: update animation state for rendering.
       if(u.h<=0)u.animState="death";
       else if(u.attackT>=0)u.animState="attack";
@@ -3963,18 +4316,23 @@ const Battle={
   // Phase 10: 4-line composition via lookup tables.
   act(u,enemies,allies,dt){
     if(u.h<=0||u.stun>0)return;
-    const target=TARGETING[u.targeting](u,enemies,allies);
+    // taunt: if enemy team has a taunt unit, force target it
+    let targetEnemies=enemies;
+    const taunter=enemies.find(e=>e.h>0&&e.ability==="taunt");
+    if(taunter)targetEnemies=enemies.filter(e=>e===taunter);
+    const target=TARGETING[u.targeting](u,targetEnemies,allies);
     u.target=target; // Phase 24f: store target for eye tracking
     MOVEMENT[u.movement](u,target,dt);
     if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&dist(u,target)<=u.r){
       if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+dist(u,target).toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
       this.attack(u,target,enemies);
-      u.cool=1/u.a; // cooldown = 1 / attacks_per_second
+      u.cool=(1/u.a)*(u.frenzyT>0?0.5:1); // cooldown = 1 / attacks_per_second (frenzy halves)
       u.attackedThisFrame=true; // Phase 11: trigger attack animation
       u.attackT=0;              // Phase 11: start attack anim timer
     }
     if(ABILITY_TRIGGERS[u.abilityTrigger](u,allies,enemies)){
       this.triggerAbility(u,allies,enemies);
+      if(u.abilityTrigger==="on_spawn")u.spawnTriggered=true;
     }
   },
 
@@ -4010,6 +4368,8 @@ const Battle={
     let dmg=attacker.d;
     // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
     if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+Math.max(0,1-attacker.h/attacker.mh);
+    // executioner: 3× damage to enemies below 25% HP
+    if(attacker.ability==="executioner"&&target.mh>0&&target.h<target.mh*0.25)dmg*=3;
     // crit
     const crit=R()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
@@ -4049,6 +4409,8 @@ const Battle={
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
     if(attacker.ability==="poison"){target.poison=3.0;target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
+    // thorns: reflect 30% of damage back to attacker
+    if(target.ability==="thorns"&&attacker.h>0){attacker.h-=dmg*0.3;this.log(target.n+" thorns "+attacker.n);}
     // Phase 20: track last attacker for ramp-on-kill.
     if(attacker.ability==="ramp")target.lastAttacker=attacker;
   },
@@ -4097,6 +4459,46 @@ const Battle={
         GameAudio.sfx("shield"); // Phase 30
         break;
       }
+      case "blink_strike":{
+        const target=lowestBy(enemies.filter(e=>e.h>0),e=>e.h);
+        if(target){
+          u.x=target.x+Q(-15,15);u.y=target.y+Q(-15,15);
+          this.takeDamage(u,target,enemies,u.d*2);
+          u.abCool=5.0;
+          this.log(u.n+" blinks to "+target.n+"!");
+          BattleFX.onAttack(u,target);
+          GameAudio.sfx("attack_melee",{pitch:400});
+        }
+        break;
+      }
+      case "frenzy":{
+        u.frenzyT=3.0;
+        u.abCool=6.0;
+        this.log(u.n+" enters a frenzy!");
+        break;
+      }
+      case "cleanse":{
+        for(let a of allies.filter(a=>a.h>0&&dist(u,a)<80)){
+          a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;
+        }
+        u.abCool=5.0;
+        this.log(u.n+" cleanses allies!");
+        GameAudio.sfx("heal");
+        break;
+      }
+      case "chain_lightning":{
+        const targets=enemies.filter(e=>e.h>0).sort((a,b)=>dist(u,a)-dist(u,b)).slice(0,3);
+        let last=u;
+        for(const t of targets){
+          this.takeDamage(u,t,enemies,u.d*0.8);
+          BattleFX.burst(t.x,t.y,"#4af",4,30);
+          last=t;
+        }
+        u.abCool=4.0;
+        this.log(u.n+" chains lightning!");
+        GameAudio.sfx("attack_ranged",{pitch:400});
+        break;
+      }
       // "none" and passive abilities: no-op here
     }
     // Phase 10: mark on_first_hit as used for any triggered ability (not just shield).
@@ -4124,6 +4526,12 @@ const Battle={
         BattleFX.onKill(killer);
         this.log(killer.n+" ramps up! DMG → "+killer.d);
       }
+    }
+    // on_kill trigger: fire killer's ability if they have on_kill trigger
+    if(killer&&killer.h>0&&killer.abilityTrigger==="on_kill"){
+      const kAllies=this.units.filter(x=>x.team===killer.team&&x.h>0);
+      const kEnemies=this.units.filter(x=>x.team!==killer.team&&x.h>0);
+      this.triggerAbility(killer,kAllies,kEnemies);
     }
     u.deathT=0;
     // D5: body-plan-specific death FX.
@@ -6441,11 +6849,16 @@ const G={
     if(!preview||!u)return;
     const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2);font-weight:600;">${u.ability}</span>`:"";
     const roleLabel=u.role?`<br><span style="color:var(--muted)">${u.role}</span>`:"";
-    preview.innerHTML=`<div class="card" style="border-color:var(--legendary);box-shadow:0 0 20px rgba(245,158,11,.2),var(--shadow-lg);max-width:200px;margin:0 auto;">
+    const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS[u.ability]?`<div style="margin-top:6px;padding:6px 8px;background:rgba(124,58,237,.1);border:1px solid var(--border);border-radius:6px;font-size:.62rem;color:var(--accent2);line-height:1.3;">${ABILITY_DESCRIPTIONS[u.ability]}</div>`:"";
+    const moveDesc=u.movement?`<span style="color:var(--muted)">${u.movement}</span>`:"";
+    const targetDesc=u.targeting?` · <span style="color:var(--muted)">${u.targeting.replace(/_/g," ")}</span>`:"";
+    preview.innerHTML=`<div class="card" style="border-color:var(--legendary);box-shadow:0 0 20px rgba(251,191,36,.2),var(--shadow-lg);max-width:240px;margin:0 auto;">
       <div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>
       <canvas width="56" height="56" style="display:block;margin:4px auto;"></canvas>
       <div class="title" style="color:${u.c};font-size:.9rem;">${u.n}</div>
       <div class="detail" style="margin-top:4px;">${u.h} HP · ${u.d} DMG<br>R${u.r} · ⚡${u.s}${abLabel}${roleLabel}</div>
+      <div class="detail" style="margin-top:4px;font-size:.6rem;">${moveDesc}${targetDesc}</div>
+      ${abDesc}
     </div>`;
     SpriteRenderer.renderPreview(preview.querySelector("canvas"),u);
     const actions=$("forgeActions");
@@ -6476,10 +6889,14 @@ const G={
     overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
     const modal=document.createElement("div");
     modal.className="card";
-    modal.style.cssText="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-width:280px;width:90%;text-align:center;";
+    modal.style.cssText="background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-width:300px;width:90%;text-align:center;box-shadow:var(--shadow-lg),var(--glow-accent);";
     const abDesc=ABILITY_DESCRIPTIONS[u.ability]||"";
     const abType=PASSIVE_ABILITIES.has(u.ability)?"Passive":TRIGGERED_ABILITIES.has(u.ability)?"Triggered":"";
     const lvl=this.unitLevel(u.n);
+    const moveDesc=MOVEMENT_DESCRIPTIONS[u.movement]||"";
+    const targetDesc=TARGETING_DESCRIPTIONS[u.targeting]||"";
+    const triggerDesc=TRIGGER_DESCRIPTIONS[u.abilityTrigger]||"";
+    const weaponDesc=WEAPON_DESCRIPTIONS[u.weaponType]||"";
     modal.innerHTML=
       `<canvas width="64" height="64" style="display:block;margin:4px auto;"></canvas>`+
       `<div class="title" style="color:${u.c};font-size:1rem;">${u.n}${lvl>0?` <span class="lvlBadge">Lv${lvl}</span>`:""}</div>`+
@@ -6489,8 +6906,15 @@ const G={
       `<b>Range:</b> ${u.r} · <b>Speed:</b> ${u.s}<br>`+
       `<b>Atk Spd:</b> ${u.a} · <b>Crit:</b> ${Math.round((u.crit||0)*100)}%<br>`+
       `<b>Role:</b> ${u.role||"—"}<br>`+
+      `<b>Weapon:</b> ${u.weaponType||"none"}<br>`+
+      `<span style="color:var(--muted);font-size:.74rem;">${weaponDesc}</span><br>`+
       `<b>Ability:</b> <span style="color:var(--accent2)">${u.ability}</span>${abType?` (${abType})`:""}<br>`+
       `<span style="color:var(--muted);font-size:.78rem;">${abDesc}</span>`+
+      `</div>`+
+      `<div class="detail" style="text-align:left;margin:8px 0;padding:8px;background:rgba(124,58,237,.08);border-radius:8px;font-size:.74rem;">`+
+      `<b>Movement:</b> ${u.movement}<br><span style="color:var(--muted);font-size:.7rem;">${moveDesc}</span><br>`+
+      `<b>Targeting:</b> ${u.targeting.replace(/_/g," ")}<br><span style="color:var(--muted);font-size:.7rem;">${targetDesc}</span><br>`+
+      `<b>Trigger:</b> ${u.abilityTrigger.replace(/_/g," ")}<br><span style="color:var(--muted);font-size:.7rem;">${triggerDesc}</span>`+
       `</div>`;
     const closeBtn=document.createElement("button");
     closeBtn.className="btn";closeBtn.textContent="Close";closeBtn.style.cssText="margin-top:8px;";
