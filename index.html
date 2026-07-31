@@ -79,6 +79,15 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 #splash{position:fixed;inset:0;background:radial-gradient(ellipse at center,var(--bg2),var(--bg));display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:99999;color:var(--accent2);font-size:.9rem;text-align:center;font-weight:600;}
 #splash .spin{width:48px;height:48px;border:3px solid var(--border);border-top-color:var(--accent);border-right-color:var(--accent2);border-radius:50%;animation:sp .8s linear infinite;margin-bottom:14px;box-shadow:var(--glow-accent);}
 @keyframes sp{to{transform:rotate(360deg);}}
+/* Result screen animations */
+@keyframes victoryPulse{0%,100%{transform:scale(1);text-shadow:0 0 10px rgba(52,211,153,.5);}50%{transform:scale(1.08);text-shadow:0 0 25px rgba(52,211,153,.8);}}
+@keyframes defeatShake{0%,100%{transform:translateX(0);}10%{transform:translateX(-4px);}20%{transform:translateX(4px);}30%{transform:translateX(-3px);}40%{transform:translateX(3px);}50%{transform:translateX(-2px);}60%{transform:translateX(2px);}70%{transform:translateX(-1px);}80%{transform:translateX(1px);}}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+.result-victory{animation:victoryPulse 1.5s ease-in-out infinite;color:var(--ok)!important;}
+.result-defeat{animation:defeatShake .5s ease-out;color:var(--warn)!important;}
+.result-slide-up{animation:slideUp .4s ease-out;}
+.result-fade-in{animation:fadeIn .6s ease-out;}
 #fsBtn{position:fixed;left:8px;top:8px;background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:.72rem;z-index:9000;transition:all .15s ease;}
 #fsBtn:hover{color:var(--text);border-color:var(--accent);}
 .input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
@@ -5231,6 +5240,18 @@ const Battle={
         c.fillStyle=roleColors[u.role]||"#fff";
         c.beginPath();c.arc(u.x-20,u.y-14,2,0,Math.PI*2);c.fill();
       }
+      // Low-HP warning: pulsing red glow when HP < 25%.
+      if(u.h>0&&u.h<u.mh*0.25){
+        const pulse=Math.sin(this.time*8)*0.5+0.5;
+        c.globalAlpha=0.3+pulse*0.3;
+        c.strokeStyle="#fb7185";
+        c.lineWidth=2;
+        c.beginPath();
+        c.arc(u.x,u.y,u.z+5+pulse*3,0,Math.PI*2);
+        c.stroke();
+        c.lineWidth=1;
+        c.globalAlpha=1;
+      }
       c.fillStyle="#222";
       c.fillRect(u.x-18,u.y-12,36,5);
       // Smooth HP bar: lerp displayed HP toward actual HP.
@@ -6500,6 +6521,42 @@ const G={
   },
 
   // Phase 32: Settings & accessibility.
+  showKeyboardHelp(){
+    // Remove existing overlay.
+    const existing=document.getElementById("kbHelpOverlay");
+    if(existing){existing.remove();return;}
+    const overlay=document.createElement("div");
+    overlay.id="kbHelpOverlay";
+    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
+    overlay.onclick=()=>overlay.remove();
+    const modal=document.createElement("div");
+    modal.style.cssText="background:var(--card);border:1px solid var(--accent);border-radius:var(--radius);padding:20px;max-width:320px;width:90%;box-shadow:var(--shadow-lg);";
+    modal.onclick=e=>e.stopPropagation();
+    const shortcuts=[
+      {key:"1 / 2 / 3",desc:"Pick draft card 1, 2, or 3"},
+      {key:"R",desc:"Reroll draft cards"},
+      {key:"Space",desc:"Advance battle one tick"},
+      {key:"P",desc:"Pause / resume battle"},
+      {key:"1 / 2 / 3",desc:"Set battle speed to 1× / 2× / 4×"},
+      {key:"S",desc:"Skip battle to end"},
+      {key:"A",desc:"Toggle auto-battle"},
+      {key:"D",desc:"Toggle debug logging"},
+      {key:"Esc",desc:"Close modal / go to menu"},
+      {key:"?",desc:"Show this help overlay"},
+    ];
+    let html="<div style='font-weight:700;font-size:1rem;margin-bottom:12px;text-align:center;'>⌨️ Keyboard Shortcuts</div>";
+    html+="<div style='display:flex;flex-direction:column;gap:6px;'>";
+    for(const s of shortcuts){
+      html+=`<div style="display:flex;align-items:center;gap:10px;font-size:.78rem;">`+
+        `<span style="min-width:70px;text-align:center;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 8px;font-weight:700;font-family:monospace;">${s.key}</span>`+
+        `<span style="color:var(--muted);">${s.desc}</span></div>`;
+    }
+    html+="</div>";
+    html+="<div style='text-align:center;margin-top:12px;font-size:.65rem;color:var(--muted);'>Tap anywhere to close</div>";
+    modal.innerHTML=html;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  },
   showSettings(){
     this.screen("settings");
     const s=this.save.settings||{};
@@ -7668,12 +7725,22 @@ const G={
     }
     // Show match result screen.
     this.screen("result");
-    setText("resultTitle",win?t("match_won"):t("match_lost"));
+    const titleEl=$("resultTitle");
+    if(titleEl){
+      titleEl.innerText=win?t("match_won"):t("match_lost");
+      titleEl.classList.remove("result-victory","result-defeat");
+      // Force reflow to restart animation.
+      void titleEl.offsetWidth;
+      titleEl.classList.add(win?"result-victory":"result-defeat");
+    }
     const lr=$("livesResult");
     if(lr)lr.innerText=`You ${this.livesHearts(Match.livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(Match.livesEnemy,DEFAULT_LIVES)}`;
     const rw=$("matchRewards");
     if(rw){
       rw.style.display="flex";
+      rw.classList.remove("result-slide-up");
+      void rw.offsetWidth;
+      rw.classList.add("result-slide-up");
       setText("xpGain","+"+(xpGain||0));
       setText("coinGain","+"+(coinGain||0));
       if((coinGain||0)>0)setTimeout(()=>GameAudio.sfx("coin"),300);
@@ -9603,6 +9670,11 @@ document.addEventListener("keydown",e=>{
     if(sid==="forge"||sid==="settings"||sid==="upgrade"||sid==="deck"){
       G.menu();
     }
+  }
+  // '?' key: show keyboard shortcuts help overlay (any screen).
+  if(e.key==="?"||(e.key==="/"&&e.shiftKey)){
+    e.preventDefault();
+    G.showKeyboardHelp();
   }
 });
 
