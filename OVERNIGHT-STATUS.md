@@ -19,10 +19,15 @@
 - [x] Phase 38: Real ad SDK (AdSDK abstraction, stub fallback) — committed 2baeac8
 - [x] Phase 39: i18n (en/es/pt, t() helper, language picker) — committed 2baeac8
 - [x] Bug fix: hold_midpoint movement + battle timeout — committed 27d2155
+- [x] Round 2 Pre-flight: OVERNIGHT2.md committed, server started, no max_tokens — committed a45c4ee
+- [x] Round 2 Block A: Critical bugs (A1-A9) — already fixed in prior commits
+- [x] Round 2 Block B: Suspected bugs (B1-B26) — already fixed in prior commits
+- [x] Round 2 Block C: Quick win improvements (C1-C10, F4) + malformed color crash fix — committed 5461154
 
 ## Skipped / Blocked
 - Phase 24d (spring-physics secondary motion): deferred.
 - Phase 26 (LLM-authored full recipes): deferred (moonshot).
+- C6 (model download progress bar): already implemented (forgeModelProgress exists).
 
 ## Notes
 - All 18 planned phases from OVERNIGHT.md are complete.
@@ -32,6 +37,7 @@
 - Server endpoints (analytics, leaderboard) are configurable, default null = no-op.
 - Ad SDK is abstracted, falls back to stub when no real SDK loaded.
 - i18n has en/es/pt translations for key UI strings. Full string extraction is future work.
+- Block C also fixed a pre-existing crash: 3-char hex arena colors (#4a4) were being concatenated with alpha ("10") producing invalid 5-char hex (#4a410) that crashed CanvasGradient.addColorStop. Fixed with sanitizeHex() helper.
 
 ## Current
-All phases complete. Final smoke test passed: fresh save → onboarding → menu → draft → battle → round end → next round working correctly.
+Round 2 Block C complete. Smoke test passed: fresh save → match → battle (25.7s) → result screen. No JS errors (only favicon 404). Next: Block D (Visual Enhancements).
