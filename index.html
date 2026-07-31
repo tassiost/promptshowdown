@@ -277,6 +277,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <h1 id="resultTitle">RESULT</h1>
 <div id="livesResult" style="font-size:.9rem;margin:10px;font-weight:600;text-align:center;"></div>
 <div id="matchHint" style="font-size:.8rem;margin:10px;color:var(--warn);padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
+<div id="matchAnalysis" style="display:none;margin:10px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div class="reward" id="matchRewards" style="display:none;">
 <div class="pill">⭐ <span id="xpGain">+0</span> XP</div>
 <div class="pill">💰 <span id="coinGain">+0</span></div>
@@ -6822,6 +6823,7 @@ const G={
       if(revealed.has(i))return;
       revealed.add(i);
       const u=this.opponentPicks[i];
+      if(!u)return;
       const card=area.children[i];
       if(!card)return;
       const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
@@ -6847,8 +6849,50 @@ const G={
     revealBtn.className="btn";
     revealBtn.textContent=t("reveal_all");
     revealBtn.style.cssText="margin-top:10px;";
-    revealBtn.onclick=()=>{revealAll();revealBtn.remove();};
+    revealBtn.onclick=()=>{revealAll();revealBtn.remove();this._renderWinPrediction(area);};
     area.appendChild(revealBtn);
+  },
+  // Win prediction: compares player army power vs enemy army power.
+  _renderWinPrediction(area){
+    // Remove existing prediction.
+    const existing=area.querySelector("#winPrediction");
+    if(existing)existing.remove();
+    const playerUnits=(this.selected||[]).filter(u=>u&&!u._isSpell);
+    const enemyUnits=(this.opponentPicks||[]).filter(u=>u&&!u._isSpell);
+    if(playerUnits.length===0||enemyUnits.length===0)return;
+    // Calculate army power scores.
+    const scoreArmy=units=>{
+      let score=0;
+      for(const u of units){
+        const lvl=this.unitLevel(u.n);
+        const hp=u.h*(1+0.1*lvl),dmg=u.d*(1+0.1*lvl);
+        let s=hp*0.5+dmg*2+u.r*0.3+u.s*0.2+u.a*5+(u.crit||0)*20;
+        const abBonus={none:0,splash:15,heal:20,dodge:25,poison:15,spawn:20,lifesteal:20,explode:15,heal_burst:20,shield:25,rage:20,slow:10,ramp:25,thorns:15,blink_strike:25,frenzy:20,regen:15,cleanse:15,taunt:20,executioner:25,chain_lightning:25};
+        s+=abBonus[u.ability]||0;
+        s+=u.rar==="legendary"?30:u.rar==="rare"?15:0;
+        score+=s;
+      }
+      return score;
+    };
+    const playerScore=scoreArmy(playerUnits);
+    const enemyScore=scoreArmy(enemyUnits);
+    const total=playerScore+enemyScore;
+    const winChance=total>0?Math.round(playerScore/total*100):50;
+    // Color based on win chance.
+    const color=winChance>=60?"var(--ok)":winChance>=40?"var(--warn)":"var(--warn)";
+    const label=winChance>=65?"Favored":winChance>=55?"Slight Edge":winChance>=45?"Even Match":winChance>=35?"Tough Fight":"Outmatched";
+    const pred=document.createElement("div");
+    pred.id="winPrediction";
+    pred.style.cssText="margin-top:12px;padding:12px;border-radius:var(--radius);background:var(--card);border:1px solid "+color+";text-align:center;";
+    pred.innerHTML=
+      `<div style="font-weight:700;font-size:.85rem;color:${color};margin-bottom:6px;">⚔️ Battle Prediction: ${label}</div>`+
+      `<div style="font-size:1.2rem;font-weight:700;color:${color};">${winChance}% win chance</div>`+
+      `<div style="height:12px;background:var(--bg);border-radius:6px;overflow:hidden;margin:8px 0;">`+
+      `<div style="width:${winChance}%;height:100%;background:${color};border-radius:6px;transition:width .3s;"></div></div>`+
+      `<div style="display:flex;justify-content:space-between;font-size:.65rem;color:var(--muted);">`+
+      `<span>Your Army: ${Math.round(playerScore)} power</span>`+
+      `<span>Enemy: ${Math.round(enemyScore)} power</span></div>`;
+    area.appendChild(pred);
   },
 
   // Phase 14: proceed from scout to actual battle.
@@ -7177,6 +7221,8 @@ const G={
     const hint=this.generateMatchHint(win);
     const mh=$("matchHint");
     if(mh)mh.innerHTML=hint;
+    // Detailed tactical analysis.
+    this._renderMatchAnalysis(win);
     // Battle MVP: unit that dealt the most damage on the winning team.
     const mvpEl=$("matchMVP");
     if(mvpEl){
@@ -7239,31 +7285,104 @@ const G={
     return"💡 Close match — try adjusting your loadout strategy";
   },
 
+  // Detailed post-match tactical analysis with stats and recommendations.
+  _renderMatchAnalysis(win){
+    const el=$("matchAnalysis");
+    if(!el)return;
+    const playerTeam=connected&&role==="guest"?"enemy":"player";
+    const playerUnits=Battle.units.filter(u=>u.team===playerTeam);
+    const enemyUnits=Battle.units.filter(u=>u.team!==playerTeam);
+    if(playerUnits.length===0){el.style.display="none";return;}
+    el.style.display="block";
+    // Calculate stats.
+    const playerDmg=playerUnits.reduce((s,u)=>s+(u.dmgDealt||0),0);
+    const enemyDmg=enemyUnits.reduce((s,u)=>s+(u.dmgDealt||0),0);
+    const playerKills=playerUnits.reduce((s,u)=>s+(u.kills||0),0);
+    const enemyKills=enemyUnits.reduce((s,u)=>s+(u.kills||0),0);
+    const playerSurvivors=playerUnits.filter(u=>u.h>0).length;
+    const enemySurvivors=enemyUnits.filter(u=>u.h>0).length;
+    // Death order analysis.
+    const deathLog=Battle.deathLog||[];
+    const playerDeaths=deathLog.filter(d=>d.team===playerTeam);
+    const enemyDeaths=deathLog.filter(d=>d.team!==playerTeam);
+    // Build analysis sections.
+    let html="<div style='font-weight:700;font-size:.85rem;margin-bottom:8px;text-align:center;'>📊 Tactical Analysis</div>";
+    // Stat comparison table.
+    html+="<div style='display:grid;grid-template-columns:1fr auto 1fr;gap:4px;font-size:.72rem;margin:8px 0;'>";
+    html+=`<div style='text-align:right;color:var(--accent2);'>${Math.round(playerDmg)} dmg</div><div style='text-align:center;color:var(--muted);font-weight:700;'>Damage</div><div style='color:var(--warn);'>${Math.round(enemyDmg)} dmg</div>`;
+    html+=`<div style='text-align:right;color:var(--accent2);'>${playerKills} kills</div><div style='text-align:center;color:var(--muted);font-weight:700;'>Kills</div><div style='color:var(--warn);'>${enemyKills} kills</div>`;
+    html+=`<div style='text-align:right;color:var(--accent2);'>${playerSurvivors}/${playerUnits.length}</div><div style='text-align:center;color:var(--muted);font-weight:700;'>Survivors</div><div style='color:var(--warn);'>${enemySurvivors}/${enemyUnits.length}</div>`;
+    html+="</div>";
+    // Performance insights.
+    const insights=[];
+    if(win){
+      if(playerSurvivors>=playerUnits.length*0.5)insights.push("💪 Dominant victory — most of your army survived");
+      else if(playerSurvivors>0)insights.push("⚔️ Hard-fought win — close battle");
+      else insights.push("🎲 Pyrrhic victory — won but lost all units");
+      if(playerDmg>enemyDmg*1.5)insights.push("🔥 Overwhelming damage output");
+      if(playerKills>enemyKills)insights.push("🎯 Efficient killing — more kills than deaths");
+    }else{
+      if(playerSurvivors===0&&enemySurvivors>0)insights.push("💀 Total wipe — enemy overwhelmed your army");
+      if(playerDmg<enemyDmg*0.5)insights.push("📉 Low damage output — consider upgrading units");
+      if(playerDeaths.length>0&&playerDeaths[0].t<5){
+        const first=playerDeaths[0];
+        insights.push(`⚡ ${first.n} died early (t=${first.t.toFixed(1)}s) — needs protection`);
+      }
+    }
+    // Unit performance breakdown.
+    const topPerformer=playerUnits.filter(u=>(u.dmgDealt||0)>0).sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0))[0];
+    if(topPerformer)insights.push(`🌟 Top performer: ${topPerformer.n} (${Math.round(topPerformer.dmgDealt)} dmg)`);
+    const underperformer=playerUnits.filter(u=>(u.dmgDealt||0)===0&&u.h<=0).sort((a,b)=>(a.h||0)-(b.h||0))[0];
+    if(underperformer&&!win)insights.push(`⚠️ ${underperformer.n} dealt no damage before dying`);
+    // Recommendations.
+    const recs=[];
+    const roles={};
+    for(const u of this.loadoutUnits())if(u.role)roles[u.role]=(roles[u.role]||0)+1;
+    if(!roles["frontline"])recs.push("Add a frontline unit to absorb damage");
+    if(!roles["support"])recs.push("Add a support unit for healing");
+    if(!roles["carry"]&&!roles["ranged"])recs.push("Add a ranged carry for DPS");
+    if(!roles["counter"])recs.push("Add a counter unit to dive enemy carries");
+    // Render insights.
+    if(insights.length){
+      html+="<div style='margin:8px 0;'>";
+      for(const i of insights)html+=`<div style='font-size:.72rem;margin:3px 0;color:var(--text);'>${i}</div>`;
+      html+="</div>";
+    }
+    // Render recommendations.
+    if(recs.length){
+      html+="<div style='margin-top:8px;padding-top:8px;border-top:1px solid var(--border);'>";
+      html+="<div style='font-size:.72rem;font-weight:700;color:var(--accent2);margin-bottom:4px;'>📋 Recommendations:</div>";
+      for(const r of recs)html+=`<div style='font-size:.7rem;margin:2px 0;color:var(--muted);'>• ${r}</div>`;
+      html+="</div>";
+    }
+    el.innerHTML=html;
+  },
+
   // Phase 6/8: achievement definitions + unlock checks.
   achievements:{
-    firstWin:{name:"First Victory",desc:"Win your first match",check:G=>G.save.matchWins>=1},
-    win10:{name:"Veteran",desc:"Win 10 matches",check:G=>G.save.matchWins>=10},
-    win25:{name:"Champion",desc:"Win 25 matches",check:G=>G.save.matchWins>=25},
-    level5:{name:"Rising Hero",desc:"Reach player level 5",check:G=>G.playerLevel()>=5},
-    level10:{name:"Legendary",desc:"Reach player level 10",check:G=>G.playerLevel()>=10},
-    rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100},
-    rich500:{name:"Tycoon",desc:"Hold 500 coins",check:G=>(G.save.coins||0)>=500},
-    comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck()},
-    arenaMaster:{name:"Arena Master",desc:"Unlock all arenas",check:G=>(G.save.arena||0)>=G.arenas.length-1},
-    roleMaster:{name:"Role Master",desc:"Win with each role as last standing",check:G=>G._roleMasterCheck()},
-    firstForge:{name:"First Forge",desc:"Create your first custom unit",check:G=>(G.save.collection||[]).some(u=>u.recipe&&!G.base.find(b=>b.n===u.n))},
-    fullCustom:{name:"Full Custom",desc:"Win with a 4-card custom-only loadout",check:G=>G._fullCustomCheck()},
-    streak3:{name:"On Fire",desc:"Win 3 matches in a row",check:G=>(G.save.bestStreak||0)>=3},
-    streak5:{name:"Unstoppable",desc:"Win 5 matches in a row",check:G=>(G.save.bestStreak||0)>=5},
-    streak10:{name:"Juggernaut",desc:"Win 10 matches in a row",check:G=>(G.save.bestStreak||0)>=10},
-    endless5:{name:"Endless Warrior",desc:"Reach endless level 5",check:G=>(G.save.endlessLevel||0)>=5},
-    endless10:{name:"Endless Legend",desc:"Reach endless level 10",check:G=>(G.save.endlessLevel||0)>=10},
-    hardWin:{name:"Hard Mode Hero",desc:"Win a match on Hard difficulty",check:G=>G._hardWinCheck()},
-    collector:{name:"Collector",desc:"Collect 20 unique units",check:G=>G.collectionUnits().length>=20},
-    collector50:{name:"Master Collector",desc:"Collect 50 unique units",check:G=>G.collectionUnits().length>=50},
-    damageDealer:{name:"Damage Dealer",desc:"Deal 10,000 total damage",check:G=>(G.save.stats?.totalDmg||0)>=10000},
-    exterminator:{name:"Exterminator",desc:"Get 100 total kills",check:G=>(G.save.stats?.totalKills||0)>=100},
-    spellmaster:{name:"Spellmaster",desc:"Cast 50 spells",check:G=>(G.save.stats?.totalSpells||0)>=50}
+    firstWin:{name:"First Victory",desc:"Win your first match",check:G=>G.save.matchWins>=1,progress:G=>`${Math.min(G.save.matchWins||0,1)}/1`},
+    win10:{name:"Veteran",desc:"Win 10 matches",check:G=>G.save.matchWins>=10,progress:G=>`${Math.min(G.save.matchWins||0,10)}/10`},
+    win25:{name:"Champion",desc:"Win 25 matches",check:G=>G.save.matchWins>=25,progress:G=>`${Math.min(G.save.matchWins||0,25)}/25`},
+    level5:{name:"Rising Hero",desc:"Reach player level 5",check:G=>G.playerLevel()>=5,progress:G=>`${Math.min(G.playerLevel(),5)}/5`},
+    level10:{name:"Legendary",desc:"Reach player level 10",check:G=>G.playerLevel()>=10,progress:G=>`${Math.min(G.playerLevel(),10)}/10`},
+    rich:{name:"Coin Hoarder",desc:"Hold 100 coins",check:G=>(G.save.coins||0)>=100,progress:G=>`${Math.min(G.save.coins||0,100)}/100`},
+    rich500:{name:"Tycoon",desc:"Hold 500 coins",check:G=>(G.save.coins||0)>=500,progress:G=>`${Math.min(G.save.coins||0,500)}/500`},
+    comeback:{name:"Comeback King",desc:"Win after losing round 1",check:G=>G._comebackCheck(),progress:G=>G._comebackCheck()?"1/1":"0/1"},
+    arenaMaster:{name:"Arena Master",desc:"Unlock all arenas",check:G=>(G.save.arena||0)>=G.arenas.length-1,progress:G=>`${Math.min(G.save.arena||0,G.arenas.length-1)}/${G.arenas.length-1}`},
+    roleMaster:{name:"Role Master",desc:"Win with each role as last standing",check:G=>G._roleMasterCheck(),progress:G=>{const w=G.save.roleWins||{};const n=["frontline","carry","counter","support","utility"].filter(r=>w[r]>0).length;return `${n}/5`}},
+    firstForge:{name:"First Forge",desc:"Create your first custom unit",check:G=>(G.save.collection||[]).some(u=>u.recipe&&!G.base.find(b=>b.n===u.n)),progress:G=>{const n=(G.save.collection||[]).filter(u=>u.recipe&&!G.base.find(b=>b.n===u.n)).length;return `${Math.min(n,1)}/1`}},
+    fullCustom:{name:"Full Custom",desc:"Win with a 4-card custom-only loadout",check:G=>G._fullCustomCheck(),progress:G=>G._fullCustomCheck()?"1/1":"0/1"},
+    streak3:{name:"On Fire",desc:"Win 3 matches in a row",check:G=>(G.save.bestStreak||0)>=3,progress:G=>`${Math.min(G.save.bestStreak||0,3)}/3`},
+    streak5:{name:"Unstoppable",desc:"Win 5 matches in a row",check:G=>(G.save.bestStreak||0)>=5,progress:G=>`${Math.min(G.save.bestStreak||0,5)}/5`},
+    streak10:{name:"Juggernaut",desc:"Win 10 matches in a row",check:G=>(G.save.bestStreak||0)>=10,progress:G=>`${Math.min(G.save.bestStreak||0,10)}/10`},
+    endless5:{name:"Endless Warrior",desc:"Reach endless level 5",check:G=>(G.save.endlessLevel||0)>=5,progress:G=>`${Math.min(G.save.endlessLevel||0,5)}/5`},
+    endless10:{name:"Endless Legend",desc:"Reach endless level 10",check:G=>(G.save.endlessLevel||0)>=10,progress:G=>`${Math.min(G.save.endlessLevel||0,10)}/10`},
+    hardWin:{name:"Hard Mode Hero",desc:"Win a match on Hard difficulty",check:G=>G._hardWinCheck(),progress:G=>G._hardWinCheck()?"1/1":"0/1"},
+    collector:{name:"Collector",desc:"Collect 20 unique units",check:G=>G.collectionUnits().length>=20,progress:G=>`${Math.min(G.collectionUnits().length,20)}/20`},
+    collector50:{name:"Master Collector",desc:"Collect 50 unique units",check:G=>G.collectionUnits().length>=50,progress:G=>`${Math.min(G.collectionUnits().length,50)}/50`},
+    damageDealer:{name:"Damage Dealer",desc:"Deal 10,000 total damage",check:G=>(G.save.stats?.totalDmg||0)>=10000,progress:G=>`${Math.min(Math.round(G.save.stats?.totalDmg||0),10000).toLocaleString()}/10,000`},
+    exterminator:{name:"Exterminator",desc:"Get 100 total kills",check:G=>(G.save.stats?.totalKills||0)>=100,progress:G=>`${Math.min(G.save.stats?.totalKills||0,100)}/100`},
+    spellmaster:{name:"Spellmaster",desc:"Cast 50 spells",check:G=>(G.save.stats?.totalSpells||0)>=50,progress:G=>`${Math.min(G.save.stats?.totalSpells||0,50)}/50`}
   },
   _hardWinCheck(){
     // Check if the player won the most recent match on hard difficulty.
@@ -8250,10 +8369,24 @@ const G={
       const opacity=isUnlocked?"1":"0.5";
       const borderColor=isUnlocked?"var(--ok)":"var(--border)";
       const nameColor=isUnlocked?"var(--ok)":"var(--muted)";
+      // Progress bar for locked achievements.
+      let progressHtml="";
+      if(!isUnlocked&&ach.progress){
+        try{
+          const progText=ach.progress(this);
+          const parts=progText.split("/");
+          const current=parseFloat(parts[0].replace(/,/g,""))||0;
+          const target=parseFloat(parts[1].replace(/,/g,""))||1;
+          const pct=Math.min(100,Math.round(current/target*100));
+          progressHtml=`<div style="margin-top:4px;"><div style="font-size:.6rem;color:var(--muted);text-align:right;">${progText}</div>`+
+            `<div style="height:6px;background:var(--bg);border-radius:3px;overflow:hidden;margin-top:2px;">`+
+            `<div style="width:${pct}%;height:100%;background:var(--accent);border-radius:3px;transition:width .3s;"></div></div></div>`;
+        }catch(e){}
+      }
       html+=`<div style="background:var(--card);border:1px solid ${borderColor};border-radius:var(--radius);padding:10px;margin:6px 0;opacity:${opacity};display:flex;align-items:center;gap:10px;">`+
         `<div style="font-size:1.5rem;flex-shrink:0;">${icon}</div>`+
-        `<div><div style="font-weight:700;color:${nameColor};font-size:.85rem;">${ach.name}</div>`+
-        `<div style="color:var(--muted);font-size:.75rem;">${ach.desc}</div></div></div>`;
+        `<div style="flex:1;"><div style="font-weight:700;color:${nameColor};font-size:.85rem;">${ach.name}</div>`+
+        `<div style="color:var(--muted);font-size:.75rem;">${ach.desc}</div>${progressHtml}</div></div>`;
     }
     el.innerHTML=html;
   },
