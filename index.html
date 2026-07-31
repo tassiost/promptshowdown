@@ -4388,7 +4388,7 @@ const BattleFX={
     const alpha=Math.max(0,1-rf.t/rf.dur)*0.3;
     c.globalAlpha=alpha;
     c.fillStyle=rf.c;
-    c.fillRect(0,0,c.canvas.width,c.canvas.height);
+    c.fillRect(0,0,Battle.canvasW||400,Battle.canvasH||550);
     c.globalAlpha=1;
   },
   // Get lunge offset for a unit (for rendering).
@@ -4698,7 +4698,8 @@ const Battle={
   ctx:null,
   frame:0,
   last:0,
-  canvasH:550,       // Phase 10: for hold_midpoint movement
+  canvasH:550,       // Phase 10: for hold_midpoint movement (CSS pixels)
+  canvasW:400,       // CSS pixel width for clamping (not raw canvas.width which includes DPR)
   onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
   autoTimer:null,
   speed:1,           // battle speed multiplier (1, 2, 4)
@@ -4855,6 +4856,7 @@ const Battle={
     cv.width=dispW*dpr;
     cv.height=dispH*dpr;
     this.canvasH=dispH;
+    this.canvasW=dispW;
     this.ctx=cv.getContext("2d");
     this.ctx.scale(dpr,dpr);
     // Unit inspection: click on a unit to see its stats.
@@ -5058,7 +5060,8 @@ const Battle={
     // Phase 17: update FX (particles, shake, round flash).
     BattleFX.update(dt);
     // 6. clamp positions to canvas bounds (prevent flee/kite from flying off)
-    const cw=this.ctx?.canvas?.width||400, ch=this.canvasH;
+    // Use CSS pixel dimensions (canvasW/canvasH), NOT canvas.width/height which include DPR scaling.
+    const cw=this.canvasW||400, ch=this.canvasH;
     for(let u of this.units){
       if(u.h<=0)continue;
       u.x=clamp(u.x,u.z,cw-u.z);
@@ -5547,7 +5550,8 @@ const Battle={
   },
 
   drawBackground(c){
-    const w=c.canvas.width,h=c.canvas.height;
+    // Use CSS pixel dimensions (not c.canvas.width/height which include DPR scaling).
+    const w=this.canvasW||400,h=this.canvasH||550;
     const theme=this._bgThemes[this.bgTheme]||this._bgThemes.forest;
     // If a sprite background image is loaded, draw it with parallax.
     if(this.bgImage&&this.bgImage.complete){
@@ -5648,7 +5652,7 @@ const Battle={
   },
 
   _updateBgParticles(c,theme){
-    const w=c.canvas.width,h=c.canvas.height;
+    const w=this.canvasW||400,h=this.canvasH||550;
     // Spawn ambient particles (budget: 15 max).
     if(this._bgParticles.length<15&&Math.random()<0.3){
       const type=theme.ambientType;
@@ -5702,8 +5706,9 @@ const Battle={
   render(){
     let c=this.ctx;
     if(!c)return;
-    // Phase 10: update canvasH if canvas resized mid-battle.
-    if(c.canvas.height!==this.canvasH)this.canvasH=c.canvas.height;
+    // canvasH/canvasW are set in CSS pixels at init/resize time. Do NOT sync from
+    // c.canvas.height (which is raw pixels including DPR) — that would overwrite
+    // the CSS value and break clamping.
     // Themed background (gradient + ground line + ambient particles).
     this.drawBackground(c);
     // Phase 17: apply screen shake transform.
@@ -6282,6 +6287,7 @@ const Battle={
       cv.width=dispW*dpr;
       cv.height=dispH*dpr;
       this.canvasH=dispH;
+      this.canvasW=dispW;
       this.ctx=cv.getContext("2d");
       this.ctx.scale(dpr,dpr);
     }
@@ -10531,6 +10537,7 @@ function resizeCanvas(){
   cv.width=dispW*dpr;
   cv.height=dispH*dpr;
   Battle.canvasH=dispH;
+  Battle.canvasW=dispW;
   Battle.ctx.scale(dpr,dpr);
 }
 window.addEventListener("resize",resizeCanvas);
