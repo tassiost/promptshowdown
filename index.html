@@ -263,6 +263,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <span id="turn">T0</span>
 <span id="battleTimer" style="color:var(--muted);font-size:.7rem;"></span>
 </div>
+<div id="roundHistoryBar" style="display:flex;gap:4px;justify-content:center;margin:2px 0 4px;"></div>
 <canvas id="cv"></canvas>
 <div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;"></div>
 <div id="battleLog"></div>
@@ -296,6 +297,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="matchSurvivors" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <div id="matchRounds" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="matchHighlights" style="display:none;margin:10px;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--accent2);"></div>
+<div id="matchPerformance" style="display:none;margin:10px;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="matchShare" style="display:none;margin:10px;text-align:center;">
 <button class="btn" onclick="G.shareMatchResult()" style="font-size:.75rem;padding:4px 12px;">📤 Share Result</button>
 </div>
@@ -6860,6 +6862,18 @@ const G={
     if(draftHUD)draftHUD.innerText=txt;
     const battleHUD=$("livesBattle");
     if(battleHUD)battleHUD.innerText=txt;
+    // Round history bar: visual indicator of round wins/losses.
+    const rhb=$("roundHistoryBar");
+    if(rhb&&Match.history.length>0){
+      let html="";
+      for(const h of Match.history){
+        const win=h.winner==="player";
+        const color=win?"var(--ok)":"var(--warn)";
+        const icon=win?"W":"L";
+        html+=`<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:${color};color:#fff;border-radius:4px;font-size:.7rem;font-weight:700;">${icon}</div>`;
+      }
+      rhb.innerHTML=html;
+    }
   },
 
   // Phase 9: show a single draw of 3 cards. Player picks 1 → next draw.
@@ -7292,13 +7306,16 @@ const G={
       if(!u)return;
       const card=area.children[i];
       if(!card)return;
-      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${u.ability}</span>`:"";
+      const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+      const abIcon=abIcons[u.ability]||"";
+      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${abIcon} ${u.ability}</span>`:"";
+      const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?`<br><span style="color:#888;font-size:.6rem">${ABILITY_DESCRIPTIONS[u.ability]}</span>`:"";
       const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
       card.innerHTML=
         `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
         `<canvas width="48" height="48" style="display:block;margin:2px auto;"></canvas>`+
         `<div class="title" style="color:${u.c}">${u.n}</div>`+
-        `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r}${abLabel}${roleLabel}</div>`;
+        `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r}${abLabel}${abDesc}${roleLabel}</div>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
     };
     for(let i=0;i<this.opponentPicks.length;i++){
@@ -7740,6 +7757,8 @@ const G={
     this._renderMatchAnalysis(win);
     // Battle highlights.
     this._renderMatchHighlights(win);
+    // Unit performance ranking.
+    this._renderMatchPerformance(win);
     // Battle MVP: unit that dealt the most damage on the winning team.
     const mvpEl=$("matchMVP");
     if(mvpEl){
@@ -7932,6 +7951,61 @@ const G={
     }else{
       html+="<div style='text-align:center;color:var(--muted);font-size:.72rem;'>No highlights this match.</div>";
     }
+    el.innerHTML=html;
+  },
+
+  // Render unit performance ranking on the result screen.
+  _renderMatchPerformance(win){
+    const el=$("matchPerformance");
+    if(!el)return;
+    const playerTeam=connected&&role==="guest"?"enemy":"player";
+    const playerUnits=Battle.units.filter(u=>u.team===playerTeam);
+    if(playerUnits.length===0){el.style.display="none";return;}
+    el.style.display="block";
+    // Score each unit: damage + kills*50 + survival bonus.
+    const scored=playerUnits.map(u=>{
+      const dmg=u.dmgDealt||0;
+      const kills=u.kills||0;
+      const survived=u.h>0;
+      const score=Math.round(dmg+kills*50+(survived?30:0));
+      return {u,score,dmg,kills,survived};
+    }).sort((a,b)=>b.score-a.score);
+    let html="<div style='font-weight:700;font-size:.85rem;margin-bottom:8px;text-align:center;'>📊 Unit Performance</div>";
+    // Best performer.
+    if(scored.length>0&&scored[0].score>0){
+      const best=scored[0];
+      html+=`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:var(--radius-sm);margin:4px 0;">`+
+        `<div style="font-size:1.2rem;">🏆</div>`+
+        `<div style="flex:1;"><div style="font-weight:700;color:${best.u.c};font-size:.8rem;">${best.u.n}</div>`+
+        `<div style="font-size:.65rem;color:var(--muted);">${Math.round(best.dmg)} dmg · ${best.kills} kills${best.survived?" · survived":""}</div></div>`+
+        `<div style="font-weight:700;color:var(--ok);font-size:.85rem;">${best.score}</div></div>`;
+    }
+    // Worst performer (if more than 1 unit).
+    if(scored.length>1){
+      const worst=scored[scored.length-1];
+      const best=scored[0];
+      if(worst.score<best.score){
+        html+=`<div style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg);border-radius:var(--radius-sm);margin:4px 0;opacity:0.7;">`+
+          `<div style="font-size:1.2rem;">💤</div>`+
+          `<div style="flex:1;"><div style="font-weight:700;color:${worst.u.c};font-size:.8rem;">${worst.u.n}</div>`+
+          `<div style="font-size:.65rem;color:var(--muted);">${Math.round(worst.dmg)} dmg · ${worst.kills} kills${worst.survived?"":" · fell"}</div></div>`+
+          `<div style="font-weight:700;color:var(--warn);font-size:.85rem;">${worst.score}</div></div>`;
+      }
+    }
+    // All units bar chart.
+    html+="<div style='margin:8px 0 4px;font-size:.7rem;color:var(--muted);text-align:center;'>All units:</div>";
+    const maxScore=Math.max(1,...scored.map(s=>s.score));
+    html+="<div style='display:flex;flex-direction:column;gap:3px;'>";
+    for(const s of scored){
+      const pct=Math.round(s.score/maxScore*100);
+      const barColor=s.score>maxScore*0.6?"var(--ok)":s.score>maxScore*0.3?"var(--warn)":"#fb7185";
+      html+=`<div style="display:flex;align-items:center;gap:6px;font-size:.65rem;">`+
+        `<span style="min-width:60px;color:${s.u.c};font-weight:700;">${s.u.n}</span>`+
+        `<div style="flex:1;height:10px;background:var(--bg);border-radius:5px;overflow:hidden;">`+
+        `<div style="width:${pct}%;height:100%;background:${barColor};border-radius:5px;transition:width .3s;"></div></div>`+
+        `<span style="min-width:30px;text-align:right;color:var(--muted);">${s.score}</span></div>`;
+    }
+    html+="</div>";
     el.innerHTML=html;
   },
 
