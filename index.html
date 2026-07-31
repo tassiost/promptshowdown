@@ -871,6 +871,19 @@ function loadData(){
     catch(e2){return {};}
   }
 }
+// J4: Async load — tries localStorage first, then IndexedDB fallback.
+// Used by G.init() to recover saves written to IDB when localStorage was full.
+function loadDataAsync(cb){
+  const sync=loadData();
+  if(sync&&sync.version){cb(sync);return;} // fast path: localStorage has data
+  // No localStorage data — try IndexedDB.
+  idbGet(SAVE_KEY,data=>{
+    if(data){
+      try{const parsed=JSON.parse(data);if(parsed&&parsed.version){cb(parsed);return;}}catch(e){}
+    }
+    cb(sync); // fall back to whatever loadData returned (likely {})
+  });
+}
 // Phase 7: migrate older save schemas forward.
 function migrateSave(s){
   if(!s)return s;
@@ -6131,7 +6144,23 @@ const G={
 
   init(){
     // Phase 7: migrate older saves forward, then fill any missing defaults.
+    // J4: If localStorage was empty (quota exceeded), try IndexedDB fallback.
+    if(!this.save.version){
+      loadDataAsync(data=>{
+        if(data&&data.version){
+          this.save=migrateSave(data);
+          this._initRest();
+        }else{
+          this.save=migrateSave(this.save);
+          this._initRest();
+        }
+      });
+      return;
+    }
     this.save=migrateSave(this.save);
+    this._initRest();
+  },
+  _initRest(){
     // Phase 30: init audio on first user gesture (mobile autoplay policy).
     const audioInit=()=>{GameAudio.init();GameAudio.resume();this.applyAudioSettings();document.removeEventListener("pointerdown",audioInit);document.removeEventListener("keydown",audioInit);};
     document.addEventListener("pointerdown",audioInit);
@@ -6195,6 +6224,8 @@ const G={
         }
       },100);
     };
+    // J4: hide splash now that init (including async IDB fallback) is complete.
+    if(typeof hideSplash==="function")hideSplash();
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
@@ -9816,12 +9847,18 @@ window.addEventListener("orientationchange",()=>setTimeout(resizeCanvas,100));
 // Phase 7: crash recovery — wrap init so a corrupt save can't brick the game.
 loadModules()
   .then(()=>{
-    try{G.init();preloadAI();setupPWA();}
+    try{
+      G.init();
+      preloadAI();setupPWA();
+      // J4: hide splash after init (or after async IDB fallback completes).
+      // If init was async (IDB fallback), _initRest will call hideSplash.
+      if(G.save&&G.save.version)hideSplash();
+    }
     catch(e){
       showError("Startup crashed (save may be corrupt): "+(e&&e.message||e)+
         " — use ↺ RESET on the menu to clear progress.");
+      hideSplash();
     }
-    finally{hideSplash();}
   })
   .catch(e=>{showError("Startup failed: "+(e&&e.message||e));hideSplash();});
 </script>
