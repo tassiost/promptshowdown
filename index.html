@@ -291,6 +291,7 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <div id="matchDmgChart" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
 <div id="matchSurvivors" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;"></div>
 <div id="matchRounds" style="display:none;margin:10px;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);"></div>
+<div id="matchHighlights" style="display:none;margin:10px;padding:10px;border-radius:var(--radius);background:var(--card);border:1px solid var(--accent2);"></div>
 <div id="matchShare" style="display:none;margin:10px;text-align:center;">
 <button class="btn" onclick="G.shareMatchResult()" style="font-size:.75rem;padding:4px 12px;">📤 Share Result</button>
 </div>
@@ -4372,6 +4373,43 @@ const Battle={
   targetFrameTime(){return isMobile?1/30:1/60;},
   _fpsFrames:0,_fpsAccum:0,
 
+  // Arena mechanics: unique environmental effects per arena.
+  _applyArenaMechanics(dt){
+    if(!this.running)return;
+    const arena=G.arenas?.[G.save?.arena||0];
+    if(!arena||!arena.mechanic||arena.mechanic==="none")return;
+    this._mechanicT=(this._mechanicT||0)+dt;
+    // Apply effects every 1 second to avoid per-frame overhead.
+    if(this._mechanicT<1)return;
+    this._mechanicT=0;
+    if(arena.mechanic==="poison_aura"){
+      // District Z: all units take 2 damage per second (poison environment).
+      for(const u of this.units){
+        if(u.h>0){
+          u.h-=2;
+          if(u.h<=0){u.h=0;this.onUnitDeath(u,null);}
+        }
+      }
+    }else if(arena.mechanic==="speed_boost"){
+      // Golden Goal: all units get +20% speed (faster-paced battles).
+      // Applied once at battle start via _appliedSpeedBoost flag.
+      if(!this._appliedSpeedBoost){
+        for(const u of this.units){
+          u.s=Math.round(u.s*1.2);
+        }
+        this._appliedSpeedBoost=true;
+      }
+    }else if(arena.mechanic==="damage_aura"){
+      // Void Rift: all units take 3 damage per second (brutal environment).
+      for(const u of this.units){
+        if(u.h>0){
+          u.h-=3;
+          if(u.h<=0){u.h=0;this.onUnitDeath(u,null);}
+        }
+      }
+    }
+  },
+
   loop(time){
     if(!this.running)return;
     this.frame=requestAnimationFrame(this.loop.bind(this));
@@ -4412,6 +4450,8 @@ const Battle={
       this._renderSpellBar();
       this._renderBattleStats();
     }
+    // Arena mechanics: apply arena-specific effects to all units.
+    this._applyArenaMechanics(dt);
     this.checkEnd();
   },
 
@@ -4638,6 +4678,14 @@ const Battle={
     if(this._battleStats){
       if(attacker.team==="player"){this._battleStats.playerDmg+=dmg;this._battleStats.dmgWindow.push({t:this.time,dmg});}
       else{this._battleStats.enemyDmg+=dmg;}
+      // Track biggest hit for battle highlights.
+      if(!this._highlights)this._highlights={biggestHit:0,biggestHitBy:null,biggestHitTarget:null};
+      if(dmg>this._highlights.biggestHit){
+        this._highlights.biggestHit=dmg;
+        this._highlights.biggestHitBy=attacker.n;
+        this._highlights.biggestHitTarget=target.n;
+        this._highlights.biggestHitCrit=crit;
+      }
     }
     // Spawn floating damage number.
     this.spawnDmgNum(target.x,target.y-target.z-8,Math.round(dmg),target.team,crit);
@@ -5900,16 +5948,16 @@ const G={
   // botPool = unit names the bot drafts from (themed per arena).
   arenas:[
     {n:"Training Yard",c:"#4a4",lives:3,unlock:0,maxHp:100,maxDmg:30,
-     bgTheme:"forest",
+     bgTheme:"forest",mechanic:"none",
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Wizard"]},
     {n:"District Z",c:"#8a4",lives:3,unlock:3,maxHp:130,maxDmg:35,
-     bgTheme:"plague",
+     bgTheme:"plague",mechanic:"poison_aura",
      botPool:["Plague","Cultist","Berserker","Knight","Archer","Assassin"]},
     {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,maxHp:160,maxDmg:45,
-     bgTheme:"desert",
+     bgTheme:"desert",mechanic:"speed_boost",
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber"]},
     {n:"Void Rift",c:"#a4f",lives:4,unlock:15,maxHp:200,maxDmg:50,
-     bgTheme:"void",
+     bgTheme:"void",mechanic:"damage_aura",
      botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserk","Shielder","Healer","Tank"]},
   ],
   // Phase 10/11: starter roster with Behaviour Composition API fields + recipes.
@@ -6453,6 +6501,11 @@ const G={
         }else{
           html+=`<br><span style="color:#fa0;font-size:.8rem">★ Final arena — win to start Endless Mode</span>`;
         }
+      }
+      // Show arena mechanic description.
+      const mechDescs={poison_aura:"☠️ Poison Aura: all units take 2 dmg/s",speed_boost:"🏃 Speed Boost: all units +20% speed",damage_aura:"💥 Damage Aura: all units take 3 dmg/s"};
+      if(arena.mechanic&&arena.mechanic!=="none"&&mechDescs[arena.mechanic]){
+        html+=`<br><span style="color:${arena.c};font-size:.7rem;font-style:italic;">${mechDescs[arena.mechanic]}</span>`;
       }
       badge.innerHTML=html;
       // Phase 19a: theme color shift on the h1.
@@ -7378,10 +7431,18 @@ const G={
     if(win)this.save.stats.totalWins=(this.save.stats.totalWins||0)+1;
     // Accumulate damage + kills from all player units this match.
     const playerTeam=connected&&role==="guest"?"enemy":"player";
+    if(!this.save.unitMastery)this.save.unitMastery={};
     for(const u of Battle.units){
       if(u.team===playerTeam){
         this.save.stats.totalDmg=(this.save.stats.totalDmg||0)+Math.round(u.dmgDealt||0);
         this.save.stats.totalKills=(this.save.stats.totalKills||0)+(u.kills||0);
+        // Track per-unit mastery: total kills and damage.
+        if(u.n){
+          if(!this.save.unitMastery[u.n])this.save.unitMastery[u.n]={kills:0,dmg:0,matches:0};
+          this.save.unitMastery[u.n].kills+=(u.kills||0);
+          this.save.unitMastery[u.n].dmg+=Math.round(u.dmgDealt||0);
+          this.save.unitMastery[u.n].matches++;
+        }
       }
     }
     // Track spells cast.
@@ -7542,6 +7603,8 @@ const G={
     if(mh)mh.innerHTML=hint;
     // Detailed tactical analysis.
     this._renderMatchAnalysis(win);
+    // Battle highlights.
+    this._renderMatchHighlights(win);
     // Battle MVP: unit that dealt the most damage on the winning team.
     const mvpEl=$("matchMVP");
     if(mvpEl){
@@ -7676,6 +7739,63 @@ const G={
       html+="<div style='font-size:.72rem;font-weight:700;color:var(--accent2);margin-bottom:4px;'>📋 Recommendations:</div>";
       for(const r of recs)html+=`<div style='font-size:.7rem;margin:2px 0;color:var(--muted);'>• ${r}</div>`;
       html+="</div>";
+    }
+    el.innerHTML=html;
+  },
+
+  // Render battle highlights on the result screen.
+  _renderMatchHighlights(win){
+    const el=$("matchHighlights");
+    if(!el)return;
+    const playerTeam=connected&&role==="guest"?"enemy":"player";
+    const playerUnits=Battle.units.filter(u=>u.team===playerTeam);
+    if(playerUnits.length===0){el.style.display="none";return;}
+    el.style.display="block";
+    let html="<div style='font-weight:700;font-size:.85rem;margin-bottom:8px;text-align:center;'>🌟 Battle Highlights</div>";
+    const highlights=[];
+    // Biggest hit.
+    const h=Battle._highlights;
+    if(h&&h.biggestHit>0&&h.biggestHitBy){
+      highlights.push(`💥 <b>${h.biggestHitBy}</b> dealt <b style="color:var(--warn)">${Math.round(h.biggestHit)}</b> damage${h.biggestHitCrit?" (CRIT!)":""} to ${h.biggestHitTarget}`);
+    }
+    // Top performer (most damage).
+    const topDmg=playerUnits.filter(u=>(u.dmgDealt||0)>0).sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0))[0];
+    if(topDmg){
+      highlights.push(`🏆 <b>${topDmg.n}</b> was MVP with <b style="color:var(--accent2)">${Math.round(topDmg.dmgDealt)}</b> damage and <b>${topDmg.kills||0}</b> kills`);
+    }
+    // Longest survivor (last to die or still alive).
+    const sortedByDeath=playerUnits.filter(u=>u.deathT!==undefined||u.h>0).sort((a,b)=>{
+      const aTime=a.h>0?Battle.time:(a._deathTime||0);
+      const bTime=b.h>0?Battle.time:(b._deathTime||0);
+      return bTime-aTime;
+    });
+    const longestSurvivor=sortedByDeath[0];
+    if(longestSurvivor){
+      const survived=longestSurvivor.h>0;
+      highlights.push(`${survived?"🛡️":"⏱️"} <b>${longestSurvivor.n}</b> ${survived?"survived the entire battle":"lasted the longest"}`);
+    }
+    // Most kills.
+    const topKiller=playerUnits.filter(u=>(u.kills||0)>0).sort((a,b)=>(b.kills||0)-(a.kills||0))[0];
+    if(topKiller&&topKiller.kills>0){
+      highlights.push(`⚔️ <b>${topKiller.n}</b> got <b style="color:var(--warn)">${topKiller.kills}</b> kills`);
+    }
+    // Comeback highlight (won after losing early).
+    if(win&&Match.history.length>=2&&Match.history[0].winner==="enemy"){
+      highlights.push("🔥 <b>Comeback victory</b> — won after losing the first round!");
+    }
+    // Domination (won without losing a round).
+    if(win&&Match.history.length>0&&Match.history.every(r=>r.winner==="player")){
+      highlights.push("💪 <b>Flawless victory</b> — won every round!");
+    }
+    // Render highlights.
+    if(highlights.length>0){
+      html+="<div style='display:flex;flex-direction:column;gap:4px;'>";
+      for(const hl of highlights){
+        html+=`<div style='font-size:.72rem;color:var(--text);padding:4px 8px;background:var(--bg);border-radius:var(--radius-sm);'>${hl}</div>`;
+      }
+      html+="</div>";
+    }else{
+      html+="<div style='text-align:center;color:var(--muted);font-size:.72rem;'>No highlights this match.</div>";
     }
     el.innerHTML=html;
   },
@@ -8302,9 +8422,21 @@ const G={
       const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
       const abIcon=abIcons[u.ability]||"";
       const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"";
+      // Mastery badge: based on total kills across all matches.
+      const mastery=this.save.unitMastery?.[u.n];
+      let masteryBadge="";
+      if(mastery&&mastery.kills>0){
+        const totalKills=mastery.kills;
+        let tier="",icon="";
+        if(totalKills>=100){tier="Master";icon="👑";}
+        else if(totalKills>=50){tier="Expert";icon="⭐";}
+        else if(totalKills>=20){tier="Adept";icon="🏅";}
+        else if(totalKills>=5){tier="Novice";icon="🎯";}
+        if(tier)masteryBadge=`<br><span style="color:#fbbf24;font-size:.6rem;">${icon} ${tier} (${totalKills} kills)</span>`;
+      }
       const card=document.createElement("div");
       card.className="card";
-      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
+      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${masteryBadge}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       // F2: info button opens unit detail view.
       const infoBtn=card.querySelector("button");
