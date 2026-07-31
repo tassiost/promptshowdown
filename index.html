@@ -144,6 +144,8 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <button class="btn" onclick="G.codex()">📖 CODEX</button>
 <button class="btn" onclick="G.stats()">📊 STATS</button>
 <button class="btn" onclick="G.achievementsScreen()">🏆 ACHIEVEMENTS</button>
+<button class="btn" onclick="G.replaysScreen()">🎬 HISTORY</button>
+<button class="btn" onclick="G.tierList()">📊 TIER LIST</button>
 <button class="btn" onclick="G.upgrade()">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()">↺ RESET</button>
 <button class="btn" onclick="G.showOnboarding()" style="font-size:.78rem;opacity:0.7;">❓ How to Play</button>
@@ -370,6 +372,22 @@ h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(
 <h2>🏆 Achievements</h2>
 <div id="achProgress" style="text-align:center;font-size:.8rem;color:var(--muted);margin-bottom:10px;"></div>
 <div id="achContent" style="max-width:360px;margin:0 auto;"></div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="replays">
+<h2>🎬 Match History</h2>
+<div id="replayContent" style="max-width:360px;margin:0 auto;"></div>
+<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
+</div>
+
+<div class="screen" id="tierlist">
+<h2>📊 Unit Tier List</h2>
+<div style="display:flex;gap:4px;justify-content:center;margin:8px 0;flex-wrap:wrap;">
+<button class="btn primary" onclick="G.tierListTab('all')" id="tierTabAll" style="font-size:.75rem;padding:4px 10px;">All</button>
+<button class="btn" onclick="G.tierListTab('collection')" id="tierTabCollection" style="font-size:.75rem;padding:4px 10px;">Owned</button>
+</div>
+<div id="tierContent" style="max-width:380px;margin:0 auto;"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
@@ -5995,10 +6013,24 @@ const G={
   // Phase 37: save replay on match end.
   saveReplay(winner){
     try{
-      const replay={date:new Date().toISOString().slice(0,10),winner,rounds:Match.history.length,units:(this.selected||[]).map(u=>u.n)};
+      const playerTeam=connected&&role==="guest"?"enemy":"player";
+      const mvp=Battle.units.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
+        .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0))[0];
+      const replay={
+        date:new Date().toISOString().slice(0,16).replace("T"," "),
+        winner,
+        rounds:Match.history.length,
+        roundHistory:[...Match.history],
+        units:(this.selected||[]).map(u=>u.n),
+        enemyUnits:(this.opponentPicks||[]).map(u=>u.n),
+        mvp:mvp?{name:mvp.n,dmg:Math.round(mvp.dmgDealt),kills:mvp.kills||0}:null,
+        arena:this.save.arena||0,
+        endlessLevel:this.save.endlessLevel||0,
+        difficulty:this.save.difficulty||"normal",
+      };
       if(!this.save.replays)this.save.replays=[];
       this.save.replays.unshift(replay);
-      if(this.save.replays.length>5)this.save.replays=this.save.replays.slice(0,5);
+      if(this.save.replays.length>10)this.save.replays=this.save.replays.slice(0,10);
       saveData(this.save);
     }catch(e){}
   },
@@ -7991,6 +8023,123 @@ const G={
         `<div style="color:var(--muted);font-size:.75rem;">${ach.desc}</div></div></div>`;
     }
     el.innerHTML=html;
+  },
+
+  // Match history screen: view recent match replays.
+  replaysScreen(){
+    this.screen("replays");
+    const el=$("replayContent");
+    if(!el)return;
+    const replays=this.save.replays||[];
+    if(replays.length===0){
+      el.innerHTML="<div style='text-align:center;color:var(--muted);margin:20px 0;'>No matches yet. Play a match to see your history!</div>";
+      return;
+    }
+    let html="";
+    for(let i=0;i<replays.length;i++){
+      const r=replays[i];
+      const win=r.winner==="player";
+      const resultColor=win?"var(--ok)":"var(--warn)";
+      const resultIcon=win?"🏆":"💀";
+      const arenaName=this.arenas[r.arena]?.n||"Unknown";
+      // Round history icons.
+      let roundIcons="";
+      if(r.roundHistory&&r.roundHistory.length){
+        roundIcons=r.roundHistory.map(h=>h.winner==="player"?"✅":h.winner==="enemy"?"❌":"➖").join(" ");
+      }
+      // MVP info.
+      let mvpText="";
+      if(r.mvp){mvpText=`<div style="font-size:.7rem;color:var(--accent2);margin-top:2px;">🏆 ${r.mvp.name} — ${r.mvp.dmg} dmg${r.mvp.kills>0?`, ${r.mvp.kills} kills`:""}</div>`;}
+      // Difficulty/endless badges.
+      let badges="";
+      if(r.difficulty&&r.difficulty!=="normal")badges+=`<span style="font-size:.6rem;background:var(--accent);color:#fff;padding:1px 4px;border-radius:4px;margin-right:4px;">${r.difficulty.toUpperCase()}</span>`;
+      if(r.endlessLevel>0)badges+=`<span style="font-size:.6rem;background:#f0f;color:#fff;padding:1px 4px;border-radius:4px;">♾️${r.endlessLevel}</span>`;
+      html+=`<div style="background:var(--card);border:1px solid ${resultColor};border-radius:var(--radius);padding:10px;margin:6px 0;">`+
+        `<div style="display:flex;justify-content:space-between;align-items:center;">`+
+        `<span style="font-size:1.2rem;">${resultIcon}</span>`+
+        `<span style="color:${resultColor};font-weight:700;font-size:.85rem;">${win?"VICTORY":"DEFEAT"}</span>`+
+        `<span style="font-size:.7rem;color:var(--muted);">${r.date}</span></div>`+
+        `<div style="font-size:.75rem;margin:4px 0;">${badges}${arenaName} · ${r.rounds} rounds</div>`+
+        `${roundIcons?`<div style="font-size:.8rem;margin:2px 0;">${roundIcons}</div>`:""}`+
+        `<div style="font-size:.7rem;color:var(--muted);margin-top:2px;">Army: ${r.units.join(", ")}</div>`+
+        `${mvpText}</div>`;
+    }
+    el.innerHTML=html;
+  },
+
+  // Tier list screen: rank units by computed power score.
+  _tierTab:"all",
+  tierList(){
+    this.screen("tierlist");
+    this.tierListTab(this._tierTab);
+  },
+  tierListTab(tab){
+    this._tierTab=tab;
+    for(const t of ["all","collection"]){
+      const btn=$("tierTab"+t.charAt(0).toUpperCase()+t.slice(1));
+      if(btn)btn.className="btn"+(t===tab?" primary":"");
+    }
+    const el=$("tierContent");
+    if(!el)return;
+    // Get units to rank.
+    let units;
+    if(tab==="collection"){
+      units=this.collectionUnits();
+    }else{
+      units=this.collectionUnits();
+    }
+    // Compute power score for each unit.
+    const scored=units.map(u=>{
+      const lvl=this.unitLevel(u.n);
+      const hp=u.h*(1+0.1*lvl);
+      const dmg=u.d*(1+0.1*lvl);
+      // Power score: weighted combination of stats + ability bonus.
+      let score=hp*0.5+dmg*2+u.r*0.3+u.s*0.2+u.a*5+(u.crit||0)*20;
+      // Ability bonuses.
+      const abBonus={none:0,splash:15,heal:20,dodge:25,poison:15,spawn:20,lifesteal:20,explode:15,heal_burst:20,shield:25,rage:20,slow:10,ramp:25,thorns:15,blink_strike:25,frenzy:20,regen:15,cleanse:15,taunt:20,executioner:25,chain_lightning:25};
+      score+=abBonus[u.ability]||0;
+      // Rarity bonus.
+      score+=u.rar==="legendary"?30:u.rar==="rare"?15:0;
+      return {u,score:Math.round(score),lvl};
+    }).sort((a,b)=>b.score-a.score);
+    // Assign tiers: S (top 15%), A (next 25%), B (next 30%), C (bottom 30%).
+    const n=scored.length;
+    const sTier=n>0?Math.max(1,Math.ceil(n*0.15)):0;
+    const aTier=n>0?Math.max(1,Math.ceil(n*0.40)):0;
+    const bTier=n>0?Math.max(1,Math.ceil(n*0.70)):0;
+    const tiers=[
+      {label:"S",color:"#fbbf24",desc:"Top tier — exceptional stats and abilities"},
+      {label:"A",color:"#34d399",desc:"Strong picks — great value"},
+      {label:"B",color:"#60a5fa",desc:"Solid picks — viable in most comps"},
+      {label:"C",color:"#94a3b8",desc:"Situational — needs the right comp"},
+    ];
+    let html="";
+    for(let t=0;t<tiers.length;t++){
+      const start=t===0?0:t===1?sTier:t===2?aTier:bTier;
+      const end=t===0?sTier:t===1?aTier:t===2?bTier:n;
+      const tierUnits=scored.slice(start,end);
+      if(tierUnits.length===0)continue;
+      html+=`<div style="margin:10px 0;">`+
+        `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">`+
+        `<span style="background:${tiers[t].color};color:#000;font-weight:900;font-size:1rem;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;">${tiers[t].label}</span>`+
+        `<span style="font-size:.7rem;color:var(--muted);">${tiers[t].desc}</span></div>`;
+      for(const {u,score,lvl} of tierUnits){
+        const abLabel=u.ability&&u.ability!=="none"?`<span style="color:var(--accent2);font-size:.65rem;">${u.ability}</span>`:"";
+        const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
+        html+=`<div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;margin:3px 0;cursor:pointer;" onclick="G.showUnitDetail(this._unitData)" id="tierUnit_${u.n}">`+
+          `<span style="color:${u.c};font-weight:700;font-size:.8rem;flex:1;">${u.n}${lvlBadge}</span>`+
+          `${abLabel}`+
+          `<span style="font-size:.65rem;color:var(--muted);">${u.h}HP ${u.d}DMG</span>`+
+          `<span style="font-size:.7rem;font-weight:700;color:${tiers[t].color};">${score}</span></div>`;
+      }
+      html+="</div>";
+    }
+    el.innerHTML=html;
+    // Attach unit data for onclick.
+    for(const {u} of scored){
+      const el2=document.getElementById("tierUnit_"+u.n);
+      if(el2)el2._unitData=u;
+    }
   },
   codexTab(tab){
     this._codexTab=tab;
