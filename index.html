@@ -26,12 +26,12 @@
 body{
   background:radial-gradient(ellipse at top,var(--bg2) 0%,var(--bg) 60%);
   color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;padding-top:calc(8px+env(safe-area-inset-top,0px));padding-bottom:calc(8px+env(safe-area-inset-bottom,0px));padding-left:calc(8px+env(safe-area-inset-left,0px));padding-right:calc(8px+env(safe-area-inset-right,0px));
+  height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;padding-top:calc(8px + env(safe-area-inset-top,0px));padding-bottom:calc(8px + env(safe-area-inset-bottom,0px));padding-left:calc(8px + env(safe-area-inset-left,0px));padding-right:calc(8px + env(safe-area-inset-right,0px));
   -webkit-font-smoothing:antialiased;
 }
-.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;padding:16px 12px;animation:fadeIn .3s ease;padding-top:calc(16px+env(safe-area-inset-top,0px));padding-bottom:calc(16px+env(safe-area-inset-bottom,0px));}
+.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;padding:16px 12px;animation:fadeIn .3s ease;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));}
 .screen.active{display:flex;}
-.screen.fullscreen{padding:0;overflow:hidden;}
+.screen.fullscreen{padding:0;overflow:hidden;max-width:none;width:100vw;height:100vh;position:fixed;inset:0;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 h1{font-size:1.6rem;font-weight:900;letter-spacing:-.03em;text-align:center;margin:12px 6px;background:linear-gradient(135deg,var(--gold),var(--accent2),var(--epic));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 30px rgba(124,58,237,.3);}
 h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(--text);text-shadow:0 1px 2px rgba(0,0,0,.5);}
@@ -109,7 +109,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 #fsBtn:hover{color:var(--text);border-color:var(--accent);}
 .input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
 .input:focus{border-color:var(--accent);}
-#cv{background:radial-gradient(ellipse at center,#1a2540 0%,#0d1526 70%);border:1px solid var(--border);touch-action:none;max-width:100%;border-radius:var(--radius-sm);box-shadow:var(--shadow-lg),inset 0 0 40px rgba(0,0,0,.4);}
+#cv{background:#0d1526;touch-action:none;max-width:100%;}
 #battleLog{position:fixed;right:5px;top:70px;width:160px;max-height:180px;overflow:hidden;background:rgba(11,17,32,.85);border:1px solid var(--border);font-size:.65rem;padding:6px;border-radius:var(--radius-sm);color:var(--muted);pointer-events:none;}
 #battleLog div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05);animation:logFade .5s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 @keyframes logFade{from{opacity:0;transform:translateX(10px);}to{opacity:1;transform:translateX(0);}}
@@ -310,7 +310,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
 <div class="screen fullscreen" id="draft">
 <div id="draftCanvasSlot" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"></div>
-<div id="draftHUD" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:calc(4px+env(safe-area-inset-top,0px)) 8px 4px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));gap:4px;">
+<div id="draftHUD" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:calc(4px + env(safe-area-inset-top,0px)) 8px 4px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));gap:4px;">
   <div style="display:flex;align-items:center;gap:6px;">
     <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#4af,#26d);border:2px solid #4af;display:flex;align-items:center;justify-content:center;font-size:.7rem;">👑</div>
     <div>
@@ -330,15 +330,15 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#f44,#c22);border:2px solid #f44;display:flex;align-items:center;justify-content:center;font-size:.7rem;">💀</div>
   </div>
 </div>
-<div id="comebackBanner" style="display:none;position:fixed;top:calc(40px+env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:50;font-size:1rem;color:var(--warn);padding:8px 16px;border-radius:var(--radius);background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--warn);text-align:center;font-weight:800;letter-spacing:1px;animation:victoryPulse 1.5s ease-in-out infinite;">⭐ COMEBACK BONUS — 4th draw!</div>
-<div id="draftOverlay" style="position:fixed;bottom:0;left:0;right:0;z-index:50;padding:8px 12px calc(12px+env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,rgba(11,17,32,.95),rgba(11,17,32,.7) 70%,transparent);display:flex;flex-direction:column;align-items:center;gap:6px;">
-<div class="detail" id="draftHint" style="font-size:.78rem;font-weight:700;color:var(--accent2);">Pick 1 unit</div>
-<div id="draftTimerBar" style="display:none;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;width:100%;max-width:280px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);"><div id="draftTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
-<div id="draftRoles" style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;"></div>
-<div id="draftCounterPicks" style="display:none;padding:6px 8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;"></div>
-<div id="draftArmyPreview" style="display:none;padding:6px 8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
-<div id="draftArea" style="display:flex;justify-content:center;align-items:flex-start;gap:8px;flex-wrap:wrap;"></div>
-<button class="btn" id="rerollButton" onclick="G.reroll()" style="max-width:200px;">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
+<div id="comebackBanner" style="display:none;position:fixed;top:calc(40px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:50;font-size:1rem;color:var(--warn);padding:8px 16px;border-radius:var(--radius);background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--warn);text-align:center;font-weight:800;letter-spacing:1px;animation:victoryPulse 1.5s ease-in-out infinite;">⭐ COMEBACK BONUS — 4th draw!</div>
+<div id="draftOverlay" style="position:fixed;top:50%;left:0;right:0;transform:translateY(-50%);z-index:50;padding:8px 12px;display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;">
+<div class="detail" id="draftHint" style="font-size:.78rem;font-weight:700;color:var(--accent2);text-shadow:0 1px 4px rgba(0,0,0,.9);pointer-events:auto;">Pick 1 unit</div>
+<div id="draftTimerBar" style="display:none;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;width:100%;max-width:280px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);pointer-events:auto;"><div id="draftTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
+<div id="draftRoles" style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;pointer-events:auto;"></div>
+<div id="draftCounterPicks" style="display:none;padding:6px 8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;pointer-events:auto;"></div>
+<div id="draftArmyPreview" style="display:none;padding:6px 8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;pointer-events:auto;"></div>
+<div id="draftArea" style="display:flex;justify-content:center;align-items:flex-start;gap:8px;flex-wrap:wrap;pointer-events:auto;"></div>
+<button class="btn" id="rerollButton" onclick="G.reroll()" style="max-width:200px;pointer-events:auto;">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
 </div>
 </div>
 
@@ -356,7 +356,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
 <div class="screen fullscreen" id="battle">
 <canvas id="cv" role="img" aria-label="Battle arena — tap to advance one tick" style="position:absolute;inset:0;"></canvas>
-<div id="battleHUD" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:calc(4px+env(safe-area-inset-top,0px)) 8px 4px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));gap:4px;">
+<div id="battleHUD" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:calc(4px + env(safe-area-inset-top,0px)) 8px 4px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));gap:4px;">
   <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
     <div id="hudPlayerAvatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#4af,#26d);border:2px solid #4af;box-shadow:0 0 8px rgba(68,170,255,.4);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;">👑</div>
     <div style="min-width:0;">
@@ -378,28 +378,28 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="hudEnemyAvatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#f44,#c22);border:2px solid #f44;box-shadow:0 0 8px rgba(255,68,68,.4);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;">💀</div>
   </div>
 </div>
-<div style="position:fixed;top:calc(42px+env(safe-area-inset-top,0px));left:0;right:0;z-index:50;display:flex;justify-content:space-between;padding:2px 8px;font-size:.65rem;font-weight:600;color:var(--muted);">
+<div style="position:fixed;top:calc(42px + env(safe-area-inset-top,0px));left:0;right:0;z-index:50;display:flex;justify-content:space-between;padding:2px 8px;font-size:.65rem;font-weight:600;color:var(--muted);">
   <span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
   <span id="turn">T0</span>
   <span id="battleTimer" style="color:var(--muted);font-size:.65rem;"></span>
 </div>
-<div id="roundHistoryBar" style="position:fixed;top:calc(62px+env(safe-area-inset-top,0px));left:0;right:0;z-index:50;display:flex;gap:4px;justify-content:center;"></div>
-<div id="spellBar" style="display:none;position:fixed;bottom:calc(50px+env(safe-area-inset-bottom,0px));left:0;right:0;z-index:50;flex-direction:row;gap:6px;justify-content:center;flex-wrap:wrap;" role="toolbar" aria-label="Spell bar"></div>
+<div id="roundHistoryBar" style="position:fixed;top:calc(62px + env(safe-area-inset-top,0px));left:0;right:0;z-index:50;display:flex;gap:4px;justify-content:center;"></div>
+<div id="spellBar" style="display:none;position:fixed;bottom:calc(50px + env(safe-area-inset-bottom,0px));left:0;right:0;z-index:50;flex-direction:row;gap:6px;justify-content:center;flex-wrap:wrap;" role="toolbar" aria-label="Spell bar"></div>
 <div id="battleLog" role="log" aria-label="Battle log" style="display:none;"></div>
-<div id="compBonus" style="display:none;position:fixed;left:5px;top:calc(80px+env(safe-area-inset-top,0px));max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
-<div id="battleStats" style="display:none;position:fixed;right:5px;top:calc(80px+env(safe-area-inset-top,0px));max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
-<div id="killFeed" style="display:none;position:fixed;right:5px;top:calc(140px+env(safe-area-inset-top,0px));max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
-<div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:calc(80px+env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
+<div id="compBonus" style="display:none;position:fixed;left:5px;top:calc(80px + env(safe-area-inset-top,0px));max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
+<div id="battleStats" style="display:none;position:fixed;right:5px;top:calc(80px + env(safe-area-inset-top,0px));max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
+<div id="killFeed" style="display:none;position:fixed;right:5px;top:calc(140px + env(safe-area-inset-top,0px));max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
+<div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:calc(80px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
-<button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:calc(70px+env(safe-area-inset-top,0px));right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
-<div class="group" style="position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;justify-content:center;gap:4px;padding:6px 6px calc(6px+env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,rgba(11,17,32,.9),transparent);">
+<button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:calc(70px + env(safe-area-inset-top,0px));right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
+<div class="group" style="position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;justify-content:center;gap:4px;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,rgba(11,17,32,.9),transparent);">
 <button class="btn primary" onclick="G.tick()" style="width:auto;padding:10px 16px;">⏵</button>
 <button class="btn" onclick="G.auto()" style="width:auto;padding:10px 16px;" id="autoBtn">⏩</button>
 <button class="btn" onclick="G.cycleSpeed()" style="width:auto;padding:10px 10px;font-size:.7rem;" id="speedBtn">1×</button>
 <button class="btn" onclick="G.togglePause()" style="width:auto;padding:10px 12px;" id="pauseBtn">⏸</button>
 <button class="btn red" onclick="G.skip()" style="width:auto;padding:10px 16px;">⏭</button>
 </div>
-<div id="battleControlsHint" style="position:fixed;bottom:calc(46px+env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;font-size:.6rem;color:var(--muted);opacity:0.7;z-index:50;">Space: tick · P: pause · 1/2/3: speed · S: skip · A: auto</div>
+<div id="battleControlsHint" style="position:fixed;bottom:calc(46px + env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;font-size:.6rem;color:var(--muted);opacity:0.7;z-index:50;">Space: tick · P: pause · 1/2/3: speed · S: skip · A: auto</div>
 </div>
 
 <div class="screen" id="result">
@@ -615,6 +615,7 @@ async function loadModules(){
   try{
     const lz = await import("./vendor/lz-string.mjs");
     LZString = lz.LZString || lz.default?.LZString || lz.default;
+    if(typeof window!=="undefined")window.LZString=LZString;
   }catch(e){
     console.warn("lz-string import failed: "+(e&&e.message||e)+" — recipes sent uncompressed.");
   }
@@ -752,10 +753,10 @@ function idbPut(key,val){
     try{
       const tx=db.result.transaction("kv","readwrite");
       tx.objectStore("kv").put(val,key);
-      tx.onerror=()=>{};
-    }catch(e){}
+      tx.onerror=(e)=>console.warn("IDB put failed:",e.target.error);
+    }catch(e){console.warn("IDB put exception:",e.message);}
   };
-  db.onerror=()=>{};
+  db.onerror=(e)=>console.warn("IDB open failed:",e.target.error);
 }
 function idbGet(key,cb){
   const db=idb();if(!db){cb(null);return;}
@@ -771,12 +772,12 @@ function idbGet(key,cb){
   db.onerror=()=>cb(null);
 }
 function localStorageQuotaOK(){
+  const test="_quota_test";
   try{
-    const test="_quota_test_"+Date.now();
     localStorage.setItem(test,"x".repeat(102400)); // 100KB test
-    localStorage.removeItem(test);
     return true;
   }catch(e){return false;}
+  finally{try{localStorage.removeItem(test);}catch(e){}}
 }
 // Phase 39: i18n — string table + t() helper.
 const STRINGS={
@@ -1114,6 +1115,7 @@ function migrateSave(s){
   return s;
   }catch(e){
     console.error("Migration failed:",e);
+    showError("Save migration failed: "+(e.message||e)+". Your progress may be reset.");
     // Return a safe default save to prevent corruption
     return {version:CURRENT_VERSION};
   }
@@ -1164,7 +1166,7 @@ function unit(x={}){
     r:clamp(Number(x.r)||50,10,300),
     s:clamp(Number(x.s)||60,10,300),
     a:clamp(Number(x.a)||1,0.1,10),
-    c:x.c||"#0ff",
+    c:sanitizeHex(x.c||"#0ff"),
     z:clamp(Number(x.z)||10,4,40),
     crit:clamp(Number(x.crit)||0.1,0,1),
     ability:ABILITY_OPTS.includes(x.ability||x.ab)?(x.ability||x.ab):"none",
@@ -1187,6 +1189,7 @@ function unit(x={}){
     eyeStyle:x.eyeStyle||"normal",
     pattern:x.pattern||"none",
     weaponStyle:x.weaponStyle||"standard",
+    sizeMod:x.sizeMod||"medium",
     recipe // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
@@ -1218,6 +1221,20 @@ let llmLastSample={p:0,t:0};
 // (The legacy aiText/aiFill elements don't exist in the DOM, so we drive
 // the forgeModelProgress bar directly plus a global for pollers.)
 let aiProgress={text:"",pct:0};
+// Generation progress callback — set by _doForge to update UI as each
+// LLM field question is answered. Signature: (current, total, fieldName).
+let forgeGenProgress=null;
+// Human-readable labels for forge fields (shown in progress text).
+const FIELD_LABELS={
+  name:"name",role:"role",bodyPlan:"body type",weaponType:"weapon",primaryColor:"primary color",
+  accentColor:"accent color",sizeMod:"size",targeting:"targeting",movement:"movement style",
+  ability:"ability",abilityTrigger:"ability trigger",attackCondition:"attack condition",
+  hp:"health",dmg:"damage",range:"range",speed:"speed",moveSpeedMod:"speed modifier",
+  headFeature:"head feature",backFeature:"back feature",tailFeature:"tail feature",
+  aura:"aura",eyeStyle:"eye style",pattern:"pattern",weaponStyle:"weapon style",
+  trigger:"trigger",target:"target",effect:"effect",shape:"shape",fxType:"visual effect",
+  magnitude:"power",radius:"radius",duration:"duration"
+};
 async function updateAI(text,percent){
   aiProgress={text:text||"",pct:percent||0};
   setText("forgeModelText",text);
@@ -1428,6 +1445,22 @@ function sanitizeHex(hex){
   if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
   if(h.length!==6||!/^[0-9a-fA-F]{6}$/.test(h))return"#888";
   return"#"+h;
+}
+// Security: escape HTML entities in user-generated strings for safe innerHTML embedding.
+function escapeHtml(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+// Security: sanitize a spell spec from untrusted source (P2P, URL import, save import).
+function sanitizeSpell(d){
+  if(!d||typeof d!=="object")return null;
+  d.name=String(d.name||"Spell").slice(0,40).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
+  if(!SPELL_ENUM.trigger.includes(d.trigger))d.trigger="battle_start";
+  if(!SPELL_ENUM.effect.includes(d.effect))d.effect="damage";
+  if(!SPELL_ENUM.shape.includes(d.shape))d.shape="circle_aoe";
+  if(!SPELL_ENUM.fxType.includes(d.fxType))d.fxType="explosion";
+  if(!SPELL_ENUM.target.includes(d.target))d.target="enemy_cluster";
+  d.magnitude=clamp(Number(d.magnitude)||30,1,200);
+  d.radius=clamp(Number(d.radius)||60,10,200);
+  d.duration=clamp(Number(d.duration)||0,0,10);
+  return d;
 }
 function lighten(hex,amt){
   let h=hex.slice(1);
@@ -2502,27 +2535,24 @@ function deserializeUnitsFromPeer(data){
     try{arr=JSON.parse(LZString.decompressFromUTF16(data));}catch(e){arr=[];}
   }
   if(!Array.isArray(arr))return[];
+  // P2P security: cap array length to prevent memory exhaustion.
+  if(arr.length>100)return[];
   return arr.map(d=>{
-    if(typeof d==="string"){
-      // Starter unit name → resolve from G.base.
-      const starter=G.base.find(b=>b.n===d);
-      return starter?unit(starter):null;
-    }
-    // Custom unit: expand recipe.
-    if(d.recipe)d.recipe=expandRecipe(d.recipe);
-    if(d._isSpell){
-      // Sanitize spell from P2P to ensure valid enum values.
-      if(!SPELL_ENUM.trigger.includes(d.trigger))d.trigger="battle_start";
-      if(!SPELL_ENUM.effect.includes(d.effect))d.effect="damage";
-      if(!SPELL_ENUM.shape.includes(d.shape))d.shape="circle_aoe";
-      if(!SPELL_ENUM.fxType.includes(d.fxType))d.fxType="explosion";
-      if(!SPELL_ENUM.target.includes(d.target))d.target="enemy_cluster";
-      d.magnitude=clamp(Number(d.magnitude)||30,1,200);
-      d.radius=clamp(Number(d.radius)||60,10,200);
-      d.duration=clamp(Number(d.duration)||0,0,10);
-      return d;
-    }
-    return unit(d);
+    try{
+      if(typeof d==="string"){
+        // Starter unit name → resolve from G.base.
+        const starter=G.base.find(b=>b.n===d);
+        return starter?unit(starter):null;
+      }
+      if(!d||typeof d!=="object")return null;
+      // Custom unit: expand recipe.
+      if(d.recipe)d.recipe=expandRecipe(d.recipe);
+      if(d._isSpell){
+        // Security: sanitize spell from P2P (name + enum validation).
+        return sanitizeSpell(d);
+      }
+      return unit(d);
+    }catch(e){return null;}
   }).filter(Boolean);
 }
 
@@ -2830,7 +2860,10 @@ async function generateUnit(rawPrompt,arenaIndex){
   //    answers. Retry up to 2 times on invalid answers. Enum options are
   //    shuffled per call to counter first-option bias.
   let attrs={};
-  for(const field of FIELD_ORDER){
+  const total=FIELD_ORDER.length;
+  for(let fi=0;fi<FIELD_ORDER.length;fi++){
+    const field=FIELD_ORDER[fi];
+    if(forgeGenProgress)forgeGenProgress(fi,total,field);
     let val=null;
     let attempt=0;
     for(;attempt<2&&val===null;attempt++){
@@ -2843,6 +2876,7 @@ async function generateUnit(rawPrompt,arenaIndex){
   const flagged=semanticValidate(attrs);
   if(flagged.length>0){
     debugForge("generateUnit flagged",{attrs,flagged});
+    if(forgeGenProgress)forgeGenProgress(total,total,"validating");
     attrs=autoFixFields(attrs,flagged);
     attrs=await reaskFields(attrs.name,attrs,flagged);
   }
@@ -2875,7 +2909,7 @@ const SPELL_FIELD_PROMPTS={
   duration:()=>`How long in seconds (0-6)? Answer with a number.`,
 };
 const SPELL_FIELD_PARSERS={
-  name:(a)=>(a||"").slice(0,20),
+  name:(a)=>(a||"").slice(0,20).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'"),
   trigger:(a)=>parseEnum(a,SPELL_ENUM.trigger,"battle_start"),
   target:(a)=>parseEnum(a,SPELL_ENUM.target,"enemy_cluster"),
   effect:(a)=>parseEnum(a,SPELL_ENUM.effect,"damage"),
@@ -2938,7 +2972,10 @@ async function generateSpell(rawPrompt,arenaIndex){
     return s;
   }
   let attrs={};
-  for(const field of SPELL_FIELD_ORDER){
+  const total=SPELL_FIELD_ORDER.length;
+  for(let fi=0;fi<SPELL_FIELD_ORDER.length;fi++){
+    const field=SPELL_FIELD_ORDER[fi];
+    if(forgeGenProgress)forgeGenProgress(fi,total,field);
     let val=null;
     let attempt=0;
     for(;attempt<2&&val===null;attempt++){
@@ -2992,15 +3029,35 @@ let sendNet=null;
 let connected=false;
 let role="none";
 let _peerId=null;
-function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;role="none";}}
+// P2P security: rate limiting + message size limits.
+const P2P_MAX_MSG_SIZE=256*1024; // 256KB max per message
+const P2P_RATE_WINDOW=1000; // 1s window
+const P2P_RATE_MAX=60; // 60 msgs/sec per peer (snapshots run at 20Hz)
+const _p2pRateBucket={count:0,resetAt:0};
+let _cmdRate=null; // P2P command rate limiter (10/sec)
+function _p2pRateCheck(){
+  const now=Date.now();
+  if(now>_p2pRateBucket.resetAt){_p2pRateBucket.count=0;_p2pRateBucket.resetAt=now+P2P_RATE_WINDOW;}
+  _p2pRateBucket.count++;
+  return _p2pRateBucket.count<=P2P_RATE_MAX;
+}
+// P2P security: room password (optional). Set by host, verified by guest.
+let _roomPassword=null;
+function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;role="none";_p2pRateBucket.count=0;}}
 
-function setupNetwork(id){
+function setupNetwork(id,password){
   if(!joinRoom){
     showError("P2P unavailable (trystero not loaded).");
     return false;
   }
   try{
-    room=joinRoom({appId:"prompt-showdown-v4"},id);
+    // P2P security: incorporate password into room ID so only peers with
+    // the same password can find each other. trystero uses the room ID as
+    // a tracker key — different IDs = different rooms.
+    let roomId=id;
+    if(password){roomId=id+":pw:"+password;}
+    _roomPassword=password||null;
+    room=joinRoom({appId:"prompt-showdown-v4"},roomId);
     let action=room.makeAction("game");
     // trystero v0.25+ returns {send, onMessage, onReceiveProgress}
     sendNet=action.send||action[0];
@@ -3035,17 +3092,16 @@ function setupNetwork(id){
         G._p2pTestUpdateUI();
       }
       // Phase 18/34: mid-match disconnect — offer reconnect grace period (host)
-      // or return to menu (guest). Host gets 30s to wait for peer reconnect,
-      // then "Continue vs Bot" prompt. Guest returns to menu immediately.
+      // or "Continue vs Bot" prompt (guest). Both sides get the option.
       if(Match.active&&role==="host"){
         Match.gracefulDisconnect();
       }else if(Match.active&&role==="guest"){
         Match.active=false;
         Battle.stop();
         G.stopSnapshots();
-        toast(t("host_disconnected"));
-        // Don't award a win on disconnect — return to menu without rewards.
-        G.menu();
+        // P2P: offer "Continue vs Bot" to guest too (not just host).
+        const opponentPicks=Battle.units.filter(u=>u.team==="player").map(u=>unit(u));
+        showDisconnectPrompt(opponentPicks);
       }
     };
     return true;
@@ -3058,7 +3114,13 @@ function setupNetwork(id){
 
 function transmit(type,data){
   if(connected&&sendNet){
-    try{const r=sendNet({t:type,d:data});if(r&&r.catch)r.catch(e=>console.error("[P2P] send error:",e.message));}catch(e){showError("Network send failed: "+(e&&e.message||e));}
+    try{
+      const msg={t:type,d:data};
+      // P2P security: enforce message size limit on send.
+      const size=JSON.stringify(msg).length;
+      if(size>P2P_MAX_MSG_SIZE){console.warn("[P2P] Dropping oversized message:",type,size);return;}
+      const r=sendNet(msg);if(r&&r.catch)r.catch(e=>console.error("[P2P] send error:",e.message));
+    }catch(e){showError("Network send failed: "+(e&&e.message||e));}
   }
 }
 
@@ -3106,6 +3168,10 @@ let suppressP2PErrors=false;
 //   round_deck    : guest→host {picks (serialized units with recipes)}
 function networkReceive(data){
   try{
+    // P2P security: rate limiting — drop floods.
+    if(!_p2pRateCheck()){console.warn("[P2P] Rate limit exceeded, dropping message:",data?.t);return;}
+    // P2P security: reject non-objects or missing type.
+    if(!data||typeof data!=="object"||typeof data.t!=="string")return;
     // Guard: most message types require data.d; skip if missing.
     if(data.t!=="role"&&data.t!=="ping"&&data.t!=="pong"&&!data.d)return;
     // P2P Test: handle ping/pong for latency testing.
@@ -3119,12 +3185,22 @@ function networkReceive(data){
       return;
     }
     if(data.t==="role"){
-      if(role==="host"&&data.d==="host"){
-        // Both players joined the queue room — use tiebreaker to decide roles.
-        // Lower peerId becomes host, higher becomes guest.
-        if(!_peerId)_peerId=Math.random().toString(36).slice(2);
-        transmit("role_tiebreak",{id:_peerId});
-      }else if(role==="none")role=data.d;
+      // P2P security: version compatibility check.
+      if(typeof data.d==="object"&&data.d.v!==undefined){
+        if(data.d.v!==CURRENT_VERSION){
+          showError("Version mismatch: opponent has v"+data.d.v+", you have v"+CURRENT_VERSION+". Update to play.");
+          disconnect();
+          return;
+        }
+        if(role==="none")role=data.d.role||"guest";
+      }else if(typeof data.d==="string"){
+        if(role==="host"&&data.d==="host"){
+          // Both players joined the queue room — use tiebreaker to decide roles.
+          // Lower peerId becomes host, higher becomes guest.
+          if(!_peerId)_peerId=Math.random().toString(36).slice(2);
+          transmit("role_tiebreak",{id:_peerId});
+        }else if(role==="none")role=data.d;
+      }
       // If we're hosting and a peer connects during matchmaking,
       // cancel the wait timer and start a P2P match.
       if(role==="host"&&G.matchmakingWaitInterval){
@@ -3181,7 +3257,10 @@ function networkReceive(data){
     if(data.t==="deck"){
       // Host receives the guest's deck and starts the authoritative battle.
       if(role==="host"){
-        G._pendingGuestDeck={selected:data.d.selected,upgrades:data.d.upgrades};
+        // P2P security: validate deck payload.
+        const d=data.d;
+        if(!d||!Array.isArray(d.selected)||d.selected.length>20)return;
+        G._pendingGuestDeck={selected:d.selected,upgrades:d.upgrades||{}};
         // If host army is ready, start the battle now.
         if(G.pendingHostArmy)G.startHostBattle(G._pendingGuestDeck.selected,G._pendingGuestDeck.upgrades);
       }
@@ -3193,7 +3272,15 @@ function networkReceive(data){
     if(data.t==="cmd"){
       // Host applies a guest command to its local simulation.
       if(role==="host"){
-        const c=data.d&&data.d.cmd;
+        // P2P security: validate cmd message.
+        const c=data.d&&typeof data.d==="object"&&data.d.cmd;
+        if(typeof c!=="string")return;
+        // Rate limit commands to 10/sec (prevents spam).
+        if(!_cmdRate)_cmdRate={count:0,resetAt:0};
+        const now=Date.now();
+        if(now>_cmdRate.resetAt){_cmdRate.count=0;_cmdRate.resetAt=now+1000;}
+        _cmdRate.count++;
+        if(_cmdRate.count>10)return;
         if(c==="tick")Battle.tick();
         else if(c==="auto")Battle.auto();
         else if(c==="auto_stop"){if(Battle.autoTimer){clearInterval(Battle.autoTimer);Battle.autoTimer=null;}}
@@ -3203,11 +3290,19 @@ function networkReceive(data){
       }
     }
     if(data.t==="forge"){
-      if(data.d._isSpell){
+      // P2P security: validate forge payload before adding to save.
+      const d=data.d;
+      if(!d||typeof d!=="object")return;
+      if(d._isSpell){
+        // Security: sanitize spell name + enum values.
+        const spell=sanitizeSpell(d);
+        if(!spell)return;
         if(!G.save.spellbook)G.save.spellbook=[];
-        if(!G.save.spellbook.some(s=>s.name===data.d.name)){G.save.spellbook.push(data.d);if(G.save.spellbook.length>20)G.save.spellbook=G.save.spellbook.slice(-20);saveData(G.save);G.wins();}
+        if(!G.save.spellbook.some(s=>s.name===spell.name)){G.save.spellbook.push(spell);if(G.save.spellbook.length>20)G.save.spellbook=G.save.spellbook.slice(-20);saveData(G.save);G.wins();}
       }else{
-        let u=unit(data.d);
+        // Validate unit: pass through unit() factory which sanitizes all fields.
+        if(typeof d.n!=="string")return;
+        let u=unit(d); // unit() clamps/sanitizes all fields including color
         if(!G.save.collection)G.save.collection=[];
         if(!G.save.collection.some(x=>x.n===u.n)){
           G.save.collection.push(u);
@@ -3228,25 +3323,27 @@ function networkReceive(data){
     if(data.t==="match_start"){
       if(role==="guest"){
         const d=data.d;
+        if(!d||typeof d!=="object")return;
         // Initialize match state without calling startRound — the host's
         // round_start message will handle round increment + draft UI.
-        Match.livesPlayer=d.lives||3;
-        Match.livesEnemy=d.lives||3;
+        Match.livesPlayer=clamp(Number(d.lives)||3,1,10);
+        Match.livesEnemy=clamp(Number(d.lives)||3,1,10);
         Match.round=0;
         Match.history=[];
         Match.onMatchEnd=winner=>G.onMatchEnd(winner);
         Match.active=true;
         Match.deathLog=[];
-        G.save.arena=d.arena||0;
+        G.save.arena=clamp(Number(d.arena)||0,0,10);
       }
     }
     if(data.t==="round_start"){
       if(role==="guest"){
         const d=data.d;
+        if(!d||typeof d!=="object")return;
         // Increment round to match host (host increments in Match.startRound).
         Match.round++;
         // Store host-sent draw count before startRoundDraft overwrites roundDraftState.
-        G._hostDrawCount=d.drawIndex||3;
+        G._hostDrawCount=clamp(Number(d.drawIndex)||3,1,10);
         // Store opponent picks (serialized) for scout screen.
         if(d.opponentPicks)G.opponentPicks=deserializeUnitsFromPeer(d.opponentPicks);
         G.startRoundDraft();
@@ -3261,20 +3358,25 @@ function networkReceive(data){
     if(data.t==="round_end"){
       if(role==="guest"){
         const d=data.d;
+        if(!d||typeof d!=="object")return;
+        if(d.winner!=="player"&&d.winner!=="enemy"&&d.winner!=="draw")return;
         // Translate winner to guest perspective and record in history.
         const w=d.winner==="player"?"enemy":d.winner==="enemy"?"player":"draw";
         Match.history.push({round:Match.round,winner:w});
         // Swap lives: host's player lives = guest's enemy lives.
-        Match.livesPlayer=d.livesEnemy;
-        Match.livesEnemy=d.livesPlayer;
+        Match.livesPlayer=clamp(Number(d.livesEnemy)||0,0,10);
+        Match.livesEnemy=clamp(Number(d.livesPlayer)||0,0,10);
         G.roundResult(w,d.livesEnemy,d.livesPlayer);
       }
     }
     if(data.t==="match_end"){
       if(role==="guest"){
+        const d=data.d;
+        if(!d||typeof d!=="object")return;
+        if(d.winner!=="player"&&d.winner!=="enemy"&&d.winner!=="draw")return;
         Match.active=false;
         // Translate host perspective to guest perspective.
-        const w=data.d.winner==="player"?"enemy":data.d.winner==="enemy"?"player":"draw";
+        const w=d.winner==="player"?"enemy":d.winner==="enemy"?"player":"draw";
         // Push final round to history (host sends match_end instead of round_end
         // for the final round, so guest would otherwise be missing this entry).
         if(Match.round>0&&!Match.history.some(h=>h.round===Match.round)){
@@ -3289,10 +3391,17 @@ function networkReceive(data){
         G.guestPicks=deserializeUnitsFromPeer(data.d.picks);
       }
     }
+    // Bug #7: Host notifies guest when a guest-team spell fired, so guest
+    // can track spell_use quests (guest doesn't run the simulation).
+    if(data.t==="spell_used"){
+      if(role==="guest"){
+        Quests.track("spell_use");
+      }
+    }
     // Unknown message type — log for debugging (future version compat).
     if(!["role","role_tiebreak","request_deck","deck","snap","cmd","forge",
          "match_start","round_start","opponent_picks","round_end",
-         "match_end","round_deck"].includes(data.t)){
+         "match_end","round_deck","spell_used"].includes(data.t)){
       console.warn("Unknown network message type:",data.t);
     }
   }catch(e){
@@ -3303,7 +3412,8 @@ function networkReceive(data){
 
 // Phase 10: Behaviour Composition API — helper functions + lookup tables.
 // These replace the inline distance/movement code in v4's Battle.act().
-function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+// PERF-R11: Math.sqrt is faster than Math.hypot for 2 args.
+function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
 function moveToward(u,t,d){
   const dx=t.x-u.x, dy=t.y-u.y, dd=Math.hypot(dx,dy);
   if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
@@ -3322,12 +3432,14 @@ function effSpeed(u){
 // within `radius` (default 28px). Falloff is linear: full push at distance 0, none at radius.
 function avoidanceOffset(u,allies,radius){
   radius=radius||28;
+  const r2=radius*radius;
   let ax=0,ay=0;
   for(const a of allies){
     if(a===u||a.h<=0)continue;
     const dx=u.x-a.x, dy=u.y-a.y;
-    const d=Math.hypot(dx,dy);
-    if(d<radius){
+    const d2=dx*dx+dy*dy;
+    if(d2<r2){
+      const d=Math.sqrt(d2);
       // Strength falls off with distance; normalize direction.
       const strength=(radius-d)/radius;
       if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
@@ -3371,6 +3483,9 @@ const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal",
 const ROLE_OPTS=["frontline","carry","support","counter","utility","assassin","bruiser"];
 // Reusable role color map for canvas rendering (avoids per-frame allocation).
 const ROLE_COLORS={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",utility:"#4ff",assassin:"#f4f",bruiser:"#888"};
+// Team colors — used consistently for HP bar borders, name text, damage numbers,
+// ground decals, and selection indicators so friend/foe is instantly readable.
+const TEAM_COLORS={player:"#4af",enemy:"#f44"};
 const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp","thorns","regen","taunt","executioner"]);
 const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield","blink_strike","frenzy","cleanse","chain_lightning"]);
 // F1: Ability descriptions for tooltips.
@@ -3475,15 +3590,22 @@ const TARGETING={
   enemy_cluster:(u,enemies,allies)=>{
     const alive=enemies.filter(e=>e.h>0);
     if(!alive.length)return null;
+    // PERF-R11: O(n) grid-based cluster counting instead of O(n²).
+    const cellSize=80,grid=new Map();
+    for(const e of alive){
+      const k=Math.floor(e.x/cellSize)+","+Math.floor(e.y/cellSize);
+      if(!grid.has(k))grid.set(k,0);
+      grid.set(k,grid.get(k)+1);
+    }
     let best=alive[0],bestCount=0;
-    for(let i=0;i<alive.length;i++){
+    for(const e of alive){
+      const cx=Math.floor(e.x/cellSize),cy=Math.floor(e.y/cellSize);
       let count=0;
-      const ei=alive[i];
-      for(let j=0;j<alive.length;j++){
-        const ej=alive[j];
-        if((ei.x-ej.x)*(ei.x-ej.x)+(ei.y-ej.y)*(ei.y-ej.y)<6400)count++;
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+        const c=grid.get((cx+dx)+","+(cy+dy));
+        if(c)count+=c;
       }
-      if(count>bestCount){bestCount=count;best=ei;}
+      if(count>bestCount){bestCount=count;best=e;}
     }
     return best;
   },
@@ -3561,7 +3683,7 @@ const ABILITY_TRIGGERS={
   on_first_hit:(u,allies,enemies)=>u.hasBeenHit&&!u.firstHitUsed,
   on_spawn:(u,allies,enemies)=>!u.spawnTriggered,
   on_kill:(u,allies,enemies)=>false, // handled in onUnitDeath for killer
-  periodic_3s:(u,allies,enemies)=>{u._periodicT=(u._periodicT||0)+0.05;return u._periodicT>=3&&(u._periodicT=0,true)&&u.abCool<=0;},
+  periodic_3s:(u,allies,enemies)=>{if(u._periodicLastT===undefined)u._periodicLastT=Battle.time;const dt=Battle.time-u._periodicLastT;if(dt>=3){u._periodicLastT=Battle.time;return u.abCool<=0;}return false;},
   never:(u,allies,enemies)=>false,
 };
 
@@ -3727,7 +3849,6 @@ const SpriteRenderer={
     // When parented, the weapon is drawn at the unit's position + gripOffset (the hand)
     // in the parent-rotated frame. The parent pivot is the shoulder.
     const uLocal=parent?{...u,x:u.x+(shape.gripOffset?.x||0),y:u.y+(shape.gripOffset?.y||0)}:u;
-    if(parent&&!isStroke)console.log("WPN",u.n,shape.t,"u=",u.x.toFixed(0),u.y.toFixed(0),"grip=",shape.gripOffset,"local=",uLocal.x.toFixed(0),uLocal.y.toFixed(0),"pivot=",shape.parentPivot);
     c.save();
     if(parent) this._applyJoint(c,shape,channels,u,parent,shape.parentPivot);
     if(joint){
@@ -3753,7 +3874,7 @@ const SpriteRenderer={
       const maxAngle=(JOINT_ANGLES[jointName]||30)*Math.PI/180;
       c.translate(u.x+px,u.y+py);
       c.rotate(chVal*maxAngle);
-      c.translate(-px,-py);
+      c.translate(-(u.x+px),-(u.y+py));
     }else if(mode==="translate"){
       const range=shape.jointRange||cfg.range||5;
       const axis=shape.jointAxis||cfg.axis||"y";
@@ -3770,7 +3891,7 @@ const SpriteRenderer={
       const cy=shape.t==="rect"?shape.y+shape.h/2:(shape.cy||shape.y||0);
       c.translate(u.x+cx,u.y+cy);
       c.scale(sx,sy);
-      c.translate(-cx,-cy);
+      c.translate(-(u.x+cx),-(u.y+cy));
     }
   },
 
@@ -4043,7 +4164,7 @@ const SpriteRenderer={
     c.save();
     c.globalAlpha=alpha;
     // D5: scale sprite by z so limbs are visible (shapes are designed for z=10).
-    const spriteScale=(u.z||10)/10*1.8;
+    const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
     c.translate(u.x,u.y);
     c.scale(spriteScale,spriteScale);
     c.translate(-u.x,-u.y);
@@ -4068,7 +4189,7 @@ const SpriteRenderer={
     if(state!=="death"){
       c.save();
       c.globalAlpha=0.15*alpha;
-      c.fillStyle=u.team==="player"?"#4af":"#f44";
+      c.fillStyle=TEAM_COLORS[u.team]||"#888";
       c.beginPath();
       c.ellipse(drawX,saveY+(u.z||10)*0.85,(u.z||10)*1.1,(u.z||10)*0.35,0,0,Math.PI*2);
       c.fill();
@@ -4282,7 +4403,8 @@ const SpriteRenderer={
 const GameAudio={
   ctx:null,master:null,sfxGain:null,musicGain:null,
   enabled:true,sfxVol:0.7,musicVol:0.4,
-  musicOsc:[],musicInterval:null,
+  musicOsc:[],musicGainNodes:[],musicInterval:null,
+  _sfxRate:0,
   init(){
     if(this.ctx)return;
     try{
@@ -4299,11 +4421,15 @@ const GameAudio={
     this.musicGain.gain.value=this.enabled?this.musicVol:0;
   },
   resume(){
-    if(this.ctx&&this.ctx.state==="suspended")this.ctx.resume();
+    if(this.ctx&&this.ctx.state==="suspended"){this.ctx.resume().catch(e=>console.warn("Audio resume failed:",e));}
   },
   // SFX synthesizer — plays a named sound via oscillators/noise.
   sfx(name,opts={}){
     if(!this.ctx||!this.enabled)return;
+    // Rate limit: max 30 SFX per second to prevent audio clipping.
+    this._sfxRate=(this._sfxRate||0)+1;
+    if(this._sfxRate>30)return;
+    if(!this._sfxRateTimer){this._sfxRateTimer=setTimeout(()=>{this._sfxRate=0;this._sfxRateTimer=null;},1000);}
     if(this.ctx.state==="suspended")this.ctx.resume();
     const c=this.ctx;
     const pitch=opts.pitch||0;
@@ -4314,14 +4440,16 @@ const GameAudio={
       osc.frequency.exponentialRampToValueAtTime(Math.max(1,f1*Math.pow(1.06,pitch)),t2+dur);
       const g=c.createGain();g.gain.setValueAtTime(gain,t2);
       g.gain.exponentialRampToValueAtTime(0.001,t2+dur);
-      let node=osc;
+      let nodes=[osc,g];
       if(filter){
         const f=c.createBiquadFilter();f.type=filter.type||"lowpass";
         f.frequency.value=filter.freq||800;
-        osc.connect(f);f.connect(g);
+        osc.connect(f);f.connect(g);nodes.push(f);
       }else{osc.connect(g);}
       g.connect(this.sfxGain);
       osc.start(t2);osc.stop(t2+dur);
+      // Disconnect nodes after playback to prevent audio graph memory leaks.
+      osc.onended=()=>{nodes.forEach(n=>{try{n.disconnect();}catch(e){}});};
     };
     const noise=(dur,gain,filterFreq,filterType)=>{
       const tN=c.currentTime;
@@ -4334,6 +4462,7 @@ const GameAudio={
       g.gain.exponentialRampToValueAtTime(0.001,tN+dur);
       src.connect(f);f.connect(g);g.connect(this.sfxGain);
       src.start(tN);src.stop(tN+dur);
+      src.onended=()=>{try{src.disconnect();f.disconnect();g.disconnect();}catch(e){}};
     };
     switch(name){
       case "attack_melee":{
@@ -4415,6 +4544,8 @@ const GameAudio={
       g.gain.exponentialRampToValueAtTime(0.001,t+0.8);
       osc.connect(g);g.connect(this.musicGain);
       osc.start(t);osc.stop(t+0.8);
+      // Disconnect after playback to prevent audio graph accumulation.
+      osc.onended=()=>{try{osc.disconnect();g.disconnect();}catch(e){}};
       step++;
     },800);
   },
@@ -4439,6 +4570,7 @@ const GameAudio={
       g.gain.exponentialRampToValueAtTime(0.001,t+1.2); // longer notes
       osc.connect(g);g.connect(this.musicGain);
       osc.start(t);osc.stop(t+1.2);
+      osc.onended=()=>{try{osc.disconnect();g.disconnect();}catch(e){}};
       step++;
     },1200); // slower tempo
   },
@@ -4508,31 +4640,35 @@ const BattleFX={
   // Crit burst: gold flash + 6-particle spark + screen shake.
   onCrit(u){
     u.hitFlash=0.08;
+    if(G.save?.reducedMotion)return; // skip particles/shake in reduced motion
     this.burst(u.x,u.y,"#fd4",6,80);
     this.shake(3);
   },
   // Death burst: expand + fade + 8 particles.
   onDeath(u){
+    if(G.save?.reducedMotion)return;
     this.burst(u.x,u.y,u.c,8,60);
     if(u.role==="carry")this.shake(4); // carry death = bigger shake
   },
   // Phase 20: ramp kill — golden particle burst + brief size pulse.
   onKill(u){
-    this.burst(u.x,u.y,"#fd4",5,70);
     u.hitFlash=0.08;
+    if(G.save?.reducedMotion)return;
+    this.burst(u.x,u.y,"#fd4",5,70);
     GameAudio.sfx("ramp_up"); // Phase 30
   },
   // Phase 23: spell cast FX — big burst at anchor + screen shake.
   onSpell(spec,anchor,affected,team){
     if(!anchor)return;
     const ax=anchor.x??0,ay=anchor.y??0;
+    // Mark affected units with hit flash (always, even in reduced motion).
+    affected.forEach(u=>{u.hitFlash=0.1;});
+    if(G.save?.reducedMotion)return; // skip particles/shake in reduced motion
     const colorMap={explosion:"#f84",frost:"#6cf",lightning:"#ff4",poison_cloud:"#6f4",heal_glow:"#fd8",shockwave:"#fff",fire_wall:"#f84"};
     const color=colorMap[spec.fxType]||"#fff";
     const count=spec.shape==="persistent_zone"?8:spec.shape==="circle_aoe"?12:6;
     this.burst(ax,ay,color,count,100);
     this.shake(spec.fxType==="explosion"?6:3);
-    // Mark affected units with hit flash.
-    affected.forEach(u=>{u.hitFlash=0.1;});
   },
   // Phase 23: persistent zone FX — particles at zone perimeter.
   spellZone(z){
@@ -4691,15 +4827,25 @@ const BattleFX={
   },
   // Draw particles on canvas.
   drawParticles(c){
-    if(!Battle.particles)return;
+    if(!Battle.particles||!Battle.particles.length)return;
+    // Additive blending for energy/glow feel — overlapping particles brighten.
+    const prev=c.globalCompositeOperation;
+    c.globalCompositeOperation="lighter";
     for(const p of Battle.particles){
-      c.globalAlpha=Math.max(0,p.life/p.maxLife);
+      const a=Math.max(0,p.life/p.maxLife);
+      c.globalAlpha=a;
       c.fillStyle=p.c;
       c.beginPath();
       c.arc(p.x,p.y,p.r,0,Math.PI*2);
       c.fill();
+      // Soft glow halo — larger, fainter circle for bloom effect.
+      c.globalAlpha=a*0.3;
+      c.beginPath();
+      c.arc(p.x,p.y,p.r*2.2,0,Math.PI*2);
+      c.fill();
     }
     c.globalAlpha=1;
+    c.globalCompositeOperation=prev;
   },
   // Draw round-end flash overlay.
   drawRoundFlash(c){
@@ -4861,6 +5007,7 @@ const SPELL_EFFECT={
     const count=Math.min(spec.magnitude>40?3:spec.magnitude>20?2:1,3);
     const anchor=units[0]||{x:team==="player"?100:300,y:300};
     for(let i=0;i<count;i++){
+      if(b.units.length>=100)break; // Cap total units to prevent memory issues
       const minion=unit({n:"Spell Minion",h:30,d:8,r:25,s:60,a:1,c:"#fa4",
         targeting:"closest",movement:"chase",attackCondition:"always",
         abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
@@ -4884,13 +5031,17 @@ const SPELL_EFFECT={
       u.x+=dx/d*force;u.y+=dy/d*force;
     });
   },
-  buff_dmg(units,spec){units.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(spec.magnitude||20)/100);u.d=Math.round((u.baseD||u.d)*u._buffDmgApplied);});},
+  buff_dmg(units,spec){units.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(spec.magnitude||20)/100);const buffed=Math.round((u.baseD||u.d)*u._buffDmgApplied);u.d=Math.max(u.d,buffed);});},
   buff_speed(units,spec){units.forEach(u=>{u._buffSpeedApplied=Math.max(u._buffSpeedApplied||0,spec.magnitude||20);u.moveSpeedMod=Math.max(u.moveSpeedMod||100,100+u._buffSpeedApplied);});},
 };
 // Phase 23: Spell object — resolves a spell spec into an effect at battle time.
 const Spell={
   fire(spec,team,battle){
     if(!spec||!spec.effect||!spec.target)return;
+    // Validate spell shape/effect/target exist in their enums.
+    if(!SPELL_EFFECT[spec.effect]){console.warn("Unknown spell effect:",spec.effect);return;}
+    if(!SPELL_TARGET[spec.target]){console.warn("Unknown spell target:",spec.target);return;}
+    if(spec.shape&&!SPELL_SHAPE[spec.shape]){console.warn("Unknown spell shape:",spec.shape);return;}
     const anchor=SPELL_TARGET[spec.target]?.(team,battle);
     if(!anchor&&spec.shape!=="persistent_zone")return;
     let affected=[];
@@ -4914,6 +5065,12 @@ const Spell={
     BattleFX.onSpell(spec,anchor,affected,team);
     GameAudio.sfx("spell_"+(spec.fxType==="explosion"?"fire":spec.fxType==="frost"?"frost":spec.fxType==="lightning"?"lightning":"fire"));
     Quests.track("spell_use");
+    // Bug #7: In P2P, the host runs the simulation. When a spell fires for
+    // the guest's team ("enemy" from host's perspective), notify the guest
+    // so they can track spell_use quests too.
+    if(connected&&role==="host"&&team==="enemy"){
+      transmit("spell_used",{name:spec.name});
+    }
   },
   // Phase 23: check trigger conditions each frame.
   checkTriggers(battle,dt){
@@ -4978,7 +5135,7 @@ const Spell={
           affected.forEach(u=>{u.stun=Math.max(u.stun,z.spec.duration||1);});
         }else if(z.spec.effect==="buff_dmg"){
           // Use Math.max to prevent stacking: only apply if unit hasn't been buffed yet.
-          affected.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(z.spec.magnitude||20)/100);u.d=Math.round((u.baseD||u.d)*u._buffDmgApplied);});
+          affected.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(z.spec.magnitude||20)/100);const buffed=Math.round((u.baseD||u.d)*u._buffDmgApplied);u.d=Math.max(u.d,buffed);});
         }else if(z.spec.effect==="buff_speed"){
           // Use Math.max to prevent stacking: only apply the highest buff.
           affected.forEach(u=>{u.moveSpeedMod=Math.max(u.moveSpeedMod||100,100+(z.spec.magnitude||20));});
@@ -4986,6 +5143,7 @@ const Spell={
           // Summon minions in the zone (once per tick, capped at 3 per tick).
           const count=Math.min(z.spec.magnitude>40?3:z.spec.magnitude>20?2:1,3);
           for(let i=0;i<count;i++){
+            if(battle.units.length>=100)break; // Cap total units to prevent memory issues
             const minion=unit({n:"Spell Minion",h:30,d:8,r:25,s:60,a:1,c:"#fa4",
               targeting:"closest",movement:"chase",attackCondition:"always",
               abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
@@ -5205,7 +5363,8 @@ const Battle={
     // Apply speed_boost arena mechanic immediately at battle start (not delayed by 1s throttle).
     if(arena&&arena.mechanic==="speed_boost"){
       for(const u of this.units){
-        u.s=Math.round(u.s*1.2);
+        if(!u._baseS)u._baseS=u.s; // store original speed to prevent compounding across rounds
+        u.s=Math.round(u._baseS*1.2);
       }
       this._appliedSpeedBoost=true;
     }
@@ -5225,17 +5384,12 @@ const Battle={
     this.canvasW=dispW;
     this.ctx=cv.getContext("2d");
     this.ctx.scale(dpr,dpr);
-    // Handle canvas context loss (GPU reset, tab backgrounding, etc.)
-    cv.addEventListener("webglcontextlost",(e)=>{
-      e.preventDefault();
-      this.ctx=null;
-    },false);
-    cv.addEventListener("webglcontextrestored",()=>{
-      this.ctx=cv.getContext("2d");
-      this.ctx.scale(dpr,dpr);
-    },false);
+    // Note: 2D canvas contexts don't have context loss events (unlike WebGL).
+    // The render loop already guards against null ctx (returns early), and
+    // Battle.start re-initializes ctx on every new battle.
     // Unit inspection: click on a unit to see its stats.
     cv.onclick=(e)=>{
+      if(!e||!this.running)return; // guard against null event and post-battle clicks
       const rect=cv.getBoundingClientRect();
       const sx=(e.clientX-rect.left);
       const sy=(e.clientY-rect.top);
@@ -5288,7 +5442,8 @@ const Battle={
       // Applied once at battle start via _appliedSpeedBoost flag.
       if(!this._appliedSpeedBoost){
         for(const u of this.units){
-          u.s=Math.round(u.s*1.2);
+          if(!u._baseS)u._baseS=u.s;
+          u.s=Math.round(u._baseS*1.2);
         }
         this._appliedSpeedBoost=true;
       }
@@ -5394,10 +5549,10 @@ const Battle={
       if(u.slow>0)u.slow-=dt;
       if(u.stun>0)u.stun-=dt;
       if(u.cool>0)u.cool-=dt;
-      if(u.abCool>0)u.abCool-=dt;
+      if(u.abCool>0)u.abCool=Math.max(0,u.abCool-dt);
       if(u.shieldActive>0)u.shieldActive-=dt;
       if(u.frenzyT>0)u.frenzyT-=dt;
-      if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0)u.h=0;} // minion expires
+      if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0){u.h=0;u.lastAttacker=null;}} // minion expires (no kill attribution)
       // regen: heal 2% of max HP per second
       if(u.ability==="regen"&&u.h>0&&u.h<u.mh)u.h=Math.min(u.mh,u.h+u.mh*0.02*dt);
       // Phase 11: advance attack animation timer — speed scales with attack speed (frenzy doubles).
@@ -5421,8 +5576,15 @@ const Battle={
       if(u.h<=0&&u.deathT===undefined)this.onUnitDeath(u);
     }
     // 3. movement + attacks + abilities (split by team)
-    const players=this.units.filter(u=>u.team==="player"&&u.h>0);
-    const enemies=this.units.filter(u=>u.team==="enemy"&&u.h>0);
+    // PERF-R11: build alive arrays once per frame (reused by all units).
+    const players=[],enemies=[];
+    for(const u of this.units){
+      if(u.h<=0)continue;
+      if(u.team==="player")players.push(u);else enemies.push(u);
+    }
+    // PERF-R11: cache taunters per frame (avoids O(n) find per unit).
+    const playerTaunter=players.find(e=>e.ability==="taunt");
+    const enemyTaunter=enemies.find(e=>e.ability==="taunt");
     // Phase 11: reset per-frame animation flags.
     for(let u of this.units){
       if(u.h<=0)continue;
@@ -5433,7 +5595,8 @@ const Battle={
       if(u.h<=0)continue;
       const allies=u.team==="player"?players:enemies;
       const targets=u.team==="player"?enemies:players;
-      this.act(u,targets,allies,dt);
+      const taunter=u.team==="player"?enemyTaunter:playerTaunter;
+      this.act(u,targets,allies,dt,taunter);
       // Phase 11: detect movement for animation state.
       if(Math.abs(u.x-u.prevX)>0.5||Math.abs(u.y-u.prevY)>0.5)u.movedThisFrame=true;
       u.prevX=u.x;u.prevY=u.y;
@@ -5446,31 +5609,43 @@ const Battle={
     BattleFX.update(dt);
     // 6. clamp positions to canvas bounds (prevent flee/kite from flying off)
     // Use CSS pixel dimensions (canvasW/canvasH), NOT canvas.width/height which include DPR scaling.
+    // The sprite extends above u.y by (z/10)*1.8*26 (sprite scale factor * unscaled half-height).
+    // The name text and HP bar also sit above the sprite. Reserve that space so the
+    // sprite isn't cut off at the top of the screen.
     const cw=this.canvasW||400, ch=this.canvasH;
     for(let u of this.units){
       if(u.h<=0)continue;
+      const spriteH=(u.z||10)/10*1.8*26; // sprite height above u.y
       u.x=clamp(u.x,u.z,cw-u.z);
-      u.y=clamp(u.y,u.z,ch-u.z);
+      u.y=clamp(u.y,spriteH+12,ch-u.z); // +12 for name text above sprite
     }
     // 6. death cleanup: remove units with deathT >= 0.5 from active units.
     // Keep them in _allUnits for cumulative draft revival.
-    const removed=this.units.filter(u=>u.deathT!==undefined&&u.deathT>=0.5);
-    for(const r of removed){
-      const idx=this._allUnits.findIndex(a=>a.id===r.id);
-      if(idx>=0)this._allUnits[idx]={...r};
+    // PERF-R11: in-place filter to avoid allocating 2 arrays per frame.
+    let hasDead=false;
+    for(const u of this.units){
+      if(u.deathT!==undefined&&u.deathT>=0.5){
+        hasDead=true;
+        const idx=this._allUnits.findIndex(a=>a.id===u.id);
+        if(idx>=0)this._allUnits[idx]={...u};
+      }
     }
-    this.units=this.units.filter(u=>u.deathT===undefined||u.deathT<0.5);
-    // HUD
-    setText("battleHP",players.length);
-    setText("battleEnemy",enemies.length);
-    setText("turn","T"+Math.floor(this.time));
-    // Battle countdown timer: shows remaining time, turns red in last 15s.
-    const timerEl=$("battleTimer");
-    if(timerEl){
-      const remaining=Math.max(0,90-this.time);
-      if(remaining<=15){timerEl.style.color="#f84";timerEl.textContent="⏱ "+Math.ceil(remaining)+"s";}
-      else if(remaining<90){timerEl.style.color="var(--muted)";timerEl.textContent="⏱ "+Math.ceil(remaining)+"s";}
-      else{timerEl.textContent="";}
+    if(hasDead)this.units=this.units.filter(u=>u.deathT===undefined||u.deathT<0.5);
+    // HUD — PERF-R11: throttle to ~10fps to avoid DOM thrash every frame.
+    this._hudT=(this._hudT||0)+dt;
+    if(this._hudT>=0.1){
+      this._hudT=0;
+      setText("battleHP",players.length);
+      setText("battleEnemy",enemies.length);
+      setText("turn","T"+Math.floor(this.time));
+      // Battle countdown timer: shows remaining time, turns red in last 15s.
+      const timerEl=$("battleTimer");
+      if(timerEl){
+        const remaining=Math.max(0,90-this.time);
+        if(remaining<=15){timerEl.style.color="#f84";timerEl.textContent="⏱ "+Math.ceil(remaining)+"s";}
+        else if(remaining<90){timerEl.style.color="var(--muted)";timerEl.textContent="⏱ "+Math.ceil(remaining)+"s";}
+        else{timerEl.textContent="";}
+      }
     }
     // Debug logging: log all battle stats every ~1s when Battle.debug is on.
     // Includes positions, HP, all combat stats, status effects, abilities,
@@ -5527,11 +5702,12 @@ const Battle={
   },
 
   // Phase 10: 4-line composition via lookup tables.
-  act(u,enemies,allies,dt){
+  act(u,enemies,allies,dt,cachedTaunter){
     if(u.h<=0||u.stun>0)return;
     // taunt: if enemy team has a taunt unit, force target it
+    // PERF-R11: use cached taunter from update() instead of find() per unit.
     let targetEnemies=enemies;
-    const taunter=enemies.find(e=>e.h>0&&e.ability==="taunt");
+    const taunter=cachedTaunter!==undefined?cachedTaunter:enemies.find(e=>e.h>0&&e.ability==="taunt");
     if(taunter)targetEnemies=enemies.filter(e=>e===taunter);
     const targetFn=TARGETING[u.targeting];
     const target=targetFn?targetFn(u,targetEnemies,allies):null;
@@ -5541,9 +5717,11 @@ const Battle={
     // D5: soft avoidance — push away from nearby allies to prevent clumping.
     const av=avoidanceOffset(u,allies);
     u.x+=av.x; u.y+=av.y;
+    // PERF-R11: compute distance once, reuse for attack check + debug log.
     const atkCondFn=ATTACK_CONDITIONS[u.attackCondition];
-    if(target&&target.h>0&&atkCondFn&&atkCondFn(u,target)&&u.cool<=0&&dist(u,target)<=u.r){
-      if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+dist(u,target).toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
+    const tDist=target&&target.h>0?dist(u,target):Infinity;
+    if(target&&target.h>0&&atkCondFn&&atkCondFn(u,target)&&u.cool<=0&&tDist<=u.r){
+      if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+tDist.toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
       this.attack(u,target,enemies);
       u.cool=(1/u.a)*(u.frenzyT>0?0.5:1); // cooldown = 1 / attacks_per_second (frenzy halves)
       u.attackedThisFrame=true; // Phase 11: trigger attack animation
@@ -5587,7 +5765,10 @@ const Battle={
         n:attacker.n,baseD:attacker.baseD,
         c:attacker.c,ability:attacker.ability,crit:attacker.crit,
         role:attacker.role,moveSpeedMod:100,
-        life:2,dead:false
+        life:2,dead:false,trail:[],
+        weaponType:attacker.weaponType||"none",
+        fxType:attacker.fxType||deriveFxType(attacker),
+        accent:attacker.recipe?.accentHex||WEAPON_COLOR[attacker.weaponType]||attacker.c
       });
     }
     else{
@@ -5600,9 +5781,9 @@ const Battle={
   takeDamage(attacker,target,enemies,dmgOverride){
     if(target.h<=0)return;
     // dodge: 50% chance to completely avoid (was 20% in v4)
-    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");target.hasBeenHit=true;if(this.debug)console.log("[DODGE] t="+this.time.toFixed(2)+" "+target.n+" dodged "+attacker.n);return;}
+    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");if(this.debug)console.log("[DODGE] t="+this.time.toFixed(2)+" "+target.n+" dodged "+attacker.n);return;}
     // shield: immune if active
-    if(target.shieldActive>0){this.log(target.n+" shielded!");target.hasBeenHit=true;if(this.debug)console.log("[SHIELD] t="+this.time.toFixed(2)+" "+target.n+" shielded vs "+attacker.n);return;}
+    if(target.shieldActive>0){this.log(target.n+" shielded!");if(this.debug)console.log("[SHIELD] t="+this.time.toFixed(2)+" "+target.n+" shielded vs "+attacker.n);return;}
     let dmg=dmgOverride!=null?dmgOverride:attacker.d;
     // rage: damage scales linearly with missing HP (up to +100% at 0 HP)
     if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+Math.max(0,1-attacker.h/attacker.mh);
@@ -5692,6 +5873,7 @@ const Battle={
         break;
       }
       case "spawn":{
+        if(this.units.length<100){ // Cap total units to prevent memory issues
         const minion=unit({n:"Minion",h:20,d:5,r:20,s:50,a:1,c:u.c,
           targeting:"closest",movement:"chase",attackCondition:"always",
           abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
@@ -5701,6 +5883,7 @@ const Battle={
         minion.ttl=5;
         this.units.push(this.initRuntime(minion));
         BattleFX.onSpawn(minion); // Phase 17: spawn pop-in FX
+        }
         u.abCool=2.0;
         this.log(u.n+" spawns a minion");
         break;
@@ -5864,6 +6047,10 @@ const Battle={
     if(!this.projectiles.length)return;
     for(let p of this.projectiles){
       if(p.dead)continue;
+      // Record trail position for rendering (keep last 4 points).
+      if(!p.trail)p.trail=[];
+      p.trail.push({x:p.x,y:p.y});
+      if(p.trail.length>4)p.trail.shift();
       // Homing: track target unit if still alive, update target position.
       if(p.targetId!=null){
         const tgt=this.units.find(u=>u.id===p.targetId&&u.h>0);
@@ -5916,38 +6103,41 @@ const Battle={
 
   // Push overlapping units apart so they don't stack on one pixel.
   // J2: Spatial partitioning via uniform grid hash — O(n) instead of O(n²).
+  // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
   separate(all){
     const cellSize=60;
-    const grid=new Map();
-    const key=(x,y)=>Math.floor(x/cellSize)+","+Math.floor(y/cellSize);
-    // Bin units into cells.
+    const grid=this._sepGrid||(this._sepGrid=new Map());
+    grid.clear();
+    // Bin units into cells with numeric keys (faster than string concat).
     for(const u of all){
       if(u.h<=0)continue;
-      const k=key(u.x,u.y);
-      if(!grid.has(k))grid.set(k,[]);
-      grid.get(k).push(u);
+      const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
+      let cell=grid.get(k);
+      if(!cell){cell=[];grid.set(k,cell);}
+      cell.push(u);
     }
     // Check collisions within same + adjacent cells.
-    const checked=new Set();
     for(const [k,cell] of grid){
-      const [cx,cy]=k.split(",").map(Number);
+      const cx=k>>>16, cy=k&0xFFFF;
       // Check this cell + 4 adjacent (right, down, down-right, up-right) to avoid double-checks.
-      const neighbors=[[0,0],[1,0],[0,1],[1,1],[1,-1]];
-      for(const [dx,dy] of neighbors){
-        const nk=cx+dx+","+cy+dy;
+      const offsets=[[0,0],[1,0],[0,1],[1,1],[1,-1]];
+      for(let oi=0;oi<5;oi++){
+        const dx=offsets[oi][0],dy=offsets[oi][1];
+        const nk=((cx+dx)<<16)|(cy+dy);
         const ncell=grid.get(nk);
         if(!ncell)continue;
-        for(const a of cell){
-          for(const b of ncell){
-            if(a===b)continue;
-            const pairKey=a.id<b.id?a.id+"-"+b.id:b.id+"-"+a.id;
-            if(checked.has(pairKey))continue;
-            checked.add(pairKey);
+        const sameCell=(dx===0&&dy===0);
+        for(let ai=0;ai<cell.length;ai++){
+          const a=cell[ai];
+          const bStart=sameCell?ai+1:0;
+          for(let bi=bStart;bi<ncell.length;bi++){
+            const b=ncell[bi];
             const ddx=b.x-a.x, ddy=b.y-a.y;
-            const d=Math.hypot(ddx,ddy);
+            const d2=ddx*ddx+ddy*ddy;
             // D5: keep units at least 1.8× their radius apart so they don't visually overlap.
             const minD=Math.max(a.z,b.z)*1.8;
-            if(d<minD){
+            if(d2<minD*minD){
+              const d=Math.sqrt(d2);
               let nx,ny;
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
               else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
@@ -5968,6 +6158,24 @@ const Battle={
     plague: {top:"#1a1208",mid:"#241808",bot:"#0a0804",ground:"#2a1e10",accent:"#3a2818",ambient:"#8a6a3a",ambientType:"spore"},
     desert: {top:"#1a0e04",mid:"#2a1808",bot:"#0a0602",ground:"#3a2410",accent:"#4a3218",ambient:"#fa8a3a",ambientType:"sand"},
     void:   {top:"#0a0418",mid:"#120828",bot:"#04020a",ground:"#1a0e2a",accent:"#2a1840",ambient:"#a48aff",ambientType:"ember"},
+  },
+
+  // Lazily generate a reusable noise texture on an offscreen canvas.
+  // Returns a small tile (128x128) that is tiled across the background.
+  _getNoiseCanvas(){
+    if(this._noiseCanvas)return this._noiseCanvas;
+    const nc=document.createElement("canvas");
+    nc.width=128;nc.height=128;
+    const nctx=nc.getContext("2d");
+    const img=nctx.createImageData(128,128);
+    for(let i=0;i<img.data.length;i+=4){
+      const v=Math.random()*255;
+      img.data[i]=v;img.data[i+1]=v;img.data[i+2]=v;
+      img.data[i+3]=12; // very faint
+    }
+    nctx.putImageData(img,0,0);
+    this._noiseCanvas=nc;
+    return nc;
   },
 
   drawBackground(c){
@@ -5994,6 +6202,15 @@ const Battle={
       grad.addColorStop(1,theme.bot);
       c.fillStyle=grad;
       c.fillRect(0,0,w,h);
+      // Noise texture overlay — tiled faint grain for organic feel.
+      const noise=this._getNoiseCanvas();
+      if(noise){
+        const prevA=c.globalAlpha;
+        c.globalAlpha=0.5;
+        const pat=c.createPattern(noise,"repeat");
+        if(pat){c.fillStyle=pat;c.fillRect(0,0,w,h);}
+        c.globalAlpha=prevA;
+      }
       // Arena-colored radial glow at center.
       const arena=G.arenas?.[G.save?.arena||0];
       if(arena){
@@ -6028,6 +6245,27 @@ const Battle={
         c.arc(gx,gy,1.5,0,Math.PI*2);
         c.fill();
       }
+      // Parallax midground — silhouette ridge that drifts with screen shake.
+      const shakeX=this.shakeAmount||0;
+      const mgY=groundY-30;
+      c.fillStyle=theme.accent+"18";
+      c.beginPath();
+      c.moveTo(0,mgY+20);
+      for(let mx=0;mx<=w+20;mx+=20){
+        const ridge=Math.sin(mx*0.03+shakeX*0.1)*8+Math.sin(mx*0.07)*4;
+        c.lineTo(mx,mgY+ridge);
+      }
+      c.lineTo(w,mgY+20);
+      c.lineTo(w,h);
+      c.lineTo(0,h);
+      c.closePath();
+      c.fill();
+      // Depth fog — gradient darkening toward the top (far distance).
+      const fog=c.createLinearGradient(0,0,0,h*0.5);
+      fog.addColorStop(0,"rgba(0,0,0,0.35)");
+      fog.addColorStop(1,"rgba(0,0,0,0)");
+      c.fillStyle=fog;
+      c.fillRect(0,0,w,h*0.5);
       // Lane formation bands — show role-based formation zones.
       const canvasH=this.canvasH||h;
       const laneBands=[
@@ -6127,6 +6365,12 @@ const Battle={
   render(){
     let c=this.ctx;
     if(!c)return;
+    // Clear the full canvas (in raw pixel space) to prevent artifacts from
+    // previous frames, especially during screen transitions or resize.
+    c.save();
+    c.setTransform(1,0,0,1,0,0);
+    c.clearRect(0,0,c.canvas.width,c.canvas.height);
+    c.restore();
     // canvasH/canvasW are set in CSS pixels at init/resize time. Do NOT sync from
     // c.canvas.height (which is raw pixels including DPR) — that would overwrite
     // the CSS value and break clamping.
@@ -6155,6 +6399,16 @@ const Battle={
       u.x=origX+lunge.x;
       u.y=origY+lunge.y;
       u.z=origZ*spawnScale;
+      // Drop shadow — squashed dark ellipse at the unit's feet for grounding.
+      const shadowAlpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5)*0.35:0.35;
+      if(shadowAlpha>0.02){
+        c.globalAlpha=shadowAlpha;
+        c.fillStyle="#000";
+        c.beginPath();
+        c.ellipse(u.x,u.y+u.z*0.9,u.z*0.9,u.z*0.35,0,0,Math.PI*2);
+        c.fill();
+        c.globalAlpha=1;
+      }
       // Phase 11: use SpriteRenderer for units with recipes, fallback otherwise.
       const hasRecipe=!!u.recipe;
       if(hasRecipe){
@@ -6165,7 +6419,7 @@ const Battle={
         c.fillStyle=u.c;
         SpriteRenderer._drawRoleShape(c,u);
         c.fill();
-        c.strokeStyle=u.team==="enemy"?"#f44":"#0ff";
+        c.strokeStyle=TEAM_COLORS[u.team]||"#888";
         c.stroke();
         c.globalAlpha=1;
       }
@@ -6179,11 +6433,12 @@ const Battle={
       }
       // Restore original position (lunge is visual only).
       u.x=origX;u.y=origY;u.z=origZ;
-      // status rings (always drawn, on top of sprite)
-      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
-      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.beginPath();c.arc(u.x,u.y,u.z+3,0,Math.PI*2);c.stroke();c.lineWidth=1;}
-      if(u.poison>0){c.strokeStyle="#3f3";c.beginPath();c.arc(u.x,u.y,u.z+6,0,Math.PI*2);c.stroke();}
-      if(u.slow>0){c.strokeStyle="#39f";c.beginPath();c.arc(u.x,u.y,u.z+9,0,Math.PI*2);c.stroke();}
+      // status rings (always drawn, on top of sprite) — animated with subtle pulse.
+      const ringPulse=1+0.04*Math.sin(this.time*6);
+      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
+      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
       // Ability activation flash: expanding colored ring.
       if(u.abFlash>0){
         const t=1-u.abFlash/0.4;
@@ -6199,8 +6454,11 @@ const Battle={
       // name + HP bar (smooth animated HP bar).
       // D5: adjusted for sprite scale — sprite top is at u.y - 24*1.8*(z/10).
       const spriteTop=u.y-(u.z||10)/10*1.8*26;
-      c.fillStyle="#fff";c.font="9px sans-serif";c.textAlign="center";
+      c.fillStyle=TEAM_COLORS[u.team]||"#fff";c.font="9px sans-serif";c.textAlign="center";
+      c.strokeStyle="rgba(0,0,0,0.7)";c.lineWidth=2.5;
+      c.strokeText(u.n,u.x,spriteTop-2);
       c.fillText(u.n,u.x,spriteTop-2);
+      c.lineWidth=1;
       // Role indicator: small colored dot above name.
       if(u.role){
         c.fillStyle=ROLE_COLORS[u.role]||"#fff";
@@ -6210,7 +6468,7 @@ const Battle={
       if(u.h>0&&u.h<u.mh*0.25){
         const pulse=Math.sin(this.time*8)*0.5+0.5;
         c.globalAlpha=0.3+pulse*0.3;
-        c.strokeStyle="#fb7185";
+        c.strokeStyle=TEAM_COLORS[u.team]||"#fb7185";
         c.lineWidth=2;
         c.beginPath();
         c.arc(u.x,u.y,u.z+5+pulse*3,0,Math.PI*2);
@@ -6218,36 +6476,171 @@ const Battle={
         c.lineWidth=1;
         c.globalAlpha=1;
       }
-      c.fillStyle="#222";
-      c.fillRect(u.x-18,spriteTop+8,36,5);
+      // HP bar — beveled background, damage ghost bar, gradient fill, top highlight.
+      const barX=u.x-18,barY=spriteTop+8,barW=36,barH=5;
+      // Background (dark with subtle border).
+      c.fillStyle="#1a1a2e";
+      c.fillRect(barX,barY,barW,barH);
+      c.strokeStyle=TEAM_COLORS[u.team]||"#888";
+      c.lineWidth=1;
+      c.strokeRect(barX,barY,barW,barH);
       // Smooth HP bar: lerp displayed HP toward actual HP.
       if(u.dispH===undefined)u.dispH=u.h;
       u.dispH+=(u.h-u.dispH)*Math.min(1,(this._lastDt||0.05)*8);
       const hpRatio=Math.max(0,u.dispH/u.mh);
-      c.fillStyle=hpRatio>0.5?"#34d399":hpRatio>0.25?"#fbbf24":"#fb7185";
-      c.fillRect(u.x-18,spriteTop+8,36*hpRatio,5);
+      // Damage ghost bar — lerp slower, shows recent damage as a lighter trail.
+      if(u.ghostH===undefined)u.ghostH=u.h;
+      u.ghostH+=(u.h-u.ghostH)*Math.min(1,(this._lastDt||0.05)*3);
+      const ghostRatio=Math.max(0,u.ghostH/u.mh);
+      if(ghostRatio>hpRatio+0.01){
+        c.fillStyle="rgba(255,255,255,0.25)";
+        c.fillRect(barX,barY,barW*ghostRatio,barH);
+      }
+      // Gradient HP fill — color shifts green→yellow→red.
+      const hpColor=hpRatio>0.5?"#34d399":hpRatio>0.25?"#fbbf24":"#fb7185";
+      const hpColor2=hpRatio>0.5?"#10b981":hpRatio>0.25?"#f59e0b":"#ef4444";
+      if(hpRatio>0){
+        const hg=c.createLinearGradient(barX,barY,barX,barY+barH);
+        hg.addColorStop(0,hpColor);
+        hg.addColorStop(1,hpColor2);
+        c.fillStyle=hg;
+        c.fillRect(barX,barY,barW*hpRatio,barH);
+        // Top highlight — 1px glossy line.
+        c.fillStyle="rgba(255,255,255,0.35)";
+        c.fillRect(barX,barY,barW*hpRatio,1);
+      }
     }
-    // projectiles
+    // projectiles — weapon-specific shapes with glowing trail.
+    const projPrev=c.globalCompositeOperation;
     for(let p of this.projectiles){
-      c.fillStyle=p.c;
-      c.beginPath();
-      c.arc(p.x,p.y,3,0,Math.PI*2);
-      c.fill();
+      const wt=p.weaponType||"none";
+      const accent=p.accent||p.c;
+      const dx=p.tx-p.x,dy=p.ty-p.y;
+      const angle=Math.atan2(dy,dx);
+      const dist=Math.hypot(dx,dy)||1;
+      // Trail — fading line segments behind the projectile (additive).
+      c.globalCompositeOperation="lighter";
+      if(p.trail&&p.trail.length>1){
+        for(let i=0;i<p.trail.length-1;i++){
+          const a=(i+1)/p.trail.length*0.5;
+          c.globalAlpha=a;
+          c.strokeStyle=accent;
+          c.lineWidth=2+a*2;
+          c.beginPath();
+          c.moveTo(p.trail[i].x,p.trail[i].y);
+          c.lineTo(p.trail[i+1].x,p.trail[i+1].y);
+          c.stroke();
+        }
+      }
+      // Weapon-specific projectile shape.
+      c.save();
+      c.translate(p.x,p.y);
+      c.rotate(angle);
+      if(wt==="bow"||wt==="crossbow"){
+        // Arrow: elongated shaft + arrowhead triangle + fletching.
+        c.globalCompositeOperation="source-over";
+        c.globalAlpha=1;
+        c.strokeStyle=accent;
+        c.lineWidth=1.5;
+        c.beginPath();c.moveTo(-8,0);c.lineTo(5,0);c.stroke(); // shaft
+        c.fillStyle=accent;
+        c.beginPath();c.moveTo(5,0);c.lineTo(0,-2.5);c.lineTo(0,2.5);c.closePath();c.fill(); // head
+        c.strokeStyle=p.c;c.lineWidth=1;
+        c.beginPath();c.moveTo(-8,0);c.lineTo(-10,-2);c.moveTo(-8,0);c.lineTo(-10,2);c.stroke(); // fletching
+        // Glow tip (additive).
+        c.globalCompositeOperation="lighter";
+        c.globalAlpha=0.5;c.fillStyle=accent;
+        c.beginPath();c.arc(5,0,3,0,Math.PI*2);c.fill();
+      }else if(wt==="staff"||wt==="wand"||wt==="orb"){
+        // Magic bolt: pulsating orb + energy aura.
+        const pulse=1+0.2*Math.sin(this.time*15);
+        c.globalCompositeOperation="lighter";
+        c.globalAlpha=0.3;c.fillStyle=accent;
+        c.beginPath();c.arc(0,0,8*pulse,0,Math.PI*2);c.fill(); // outer aura
+        c.globalAlpha=0.6;c.fillStyle=p.c;
+        c.beginPath();c.arc(0,0,5*pulse,0,Math.PI*2);c.fill(); // mid glow
+        c.globalAlpha=1;c.fillStyle="#fff";
+        c.beginPath();c.arc(0,0,2.5,0,Math.PI*2);c.fill(); // bright core
+        // Sparkle particles around bolt.
+        c.globalAlpha=0.4;c.strokeStyle=accent;c.lineWidth=1;
+        for(let s=0;s<3;s++){
+          const sa=this.time*8+s*Math.PI*2/3;
+          c.beginPath();c.moveTo(0,0);c.lineTo(Math.cos(sa)*6,Math.sin(sa)*6);c.stroke();
+        }
+      }else if(wt==="rifle"){
+        // Bullet: small bright tracer + muzzle glow.
+        c.globalCompositeOperation="lighter";
+        c.globalAlpha=0.5;c.fillStyle=accent;
+        c.beginPath();c.arc(0,0,5,0,Math.PI*2);c.fill();
+        c.globalAlpha=1;c.fillStyle="#fff";
+        c.beginPath();c.ellipse(0,0,4,1.5,0,0,Math.PI*2);c.fill(); // elongated tracer
+      }else if(wt==="breath"){
+        // Dragon breath: fireball with flickering flame particles.
+        c.globalCompositeOperation="lighter";
+        const flick=0.8+0.2*Math.sin(this.time*20+p.x*0.1);
+        c.globalAlpha=0.4;c.fillStyle="#f80";
+        c.beginPath();c.arc(0,0,7*flick,0,Math.PI*2);c.fill();
+        c.globalAlpha=0.6;c.fillStyle="#fc4";
+        c.beginPath();c.arc(0,0,4*flick,0,Math.PI*2);c.fill();
+        c.globalAlpha=1;c.fillStyle="#ff0";
+        c.beginPath();c.arc(0,0,2,0,Math.PI*2);c.fill();
+      }else if(wt==="trident"||wt==="spear"){
+        // Spear/trident: long shaft + pointed tip.
+        c.globalCompositeOperation="source-over";
+        c.globalAlpha=1;
+        c.strokeStyle=accent;c.lineWidth=2;
+        c.beginPath();c.moveTo(-10,0);c.lineTo(6,0);c.stroke(); // shaft
+        c.fillStyle=accent;
+        c.beginPath();c.moveTo(6,0);c.lineTo(0,-3);c.lineTo(0,3);c.closePath();c.fill(); // tip
+        if(wt==="trident"){
+          c.beginPath();c.moveTo(3,-3);c.lineTo(6,-4);c.lineTo(6,-1);c.fill();
+          c.beginPath();c.moveTo(3,3);c.lineTo(6,4);c.lineTo(6,1);c.fill();
+        }
+        c.globalCompositeOperation="lighter";
+        c.globalAlpha=0.4;c.fillStyle=accent;
+        c.beginPath();c.arc(6,0,3,0,Math.PI*2);c.fill();
+      }else{
+        // Default: glowing orb (for any other ranged weapon).
+        c.globalCompositeOperation="lighter";
+        c.globalAlpha=0.4;c.fillStyle=accent;
+        c.beginPath();c.arc(0,0,7,0,Math.PI*2);c.fill();
+        c.globalAlpha=1;c.fillStyle="#fff";
+        c.beginPath();c.arc(0,0,2.5,0,Math.PI*2);c.fill();
+      }
+      c.restore();
     }
+    c.globalAlpha=1;
+    c.globalCompositeOperation=projPrev;
     // Phase 23: draw persistent spell zones.
     for(let z of this.zones){
-      const alpha=0.2+0.1*Math.sin(this.time*4);
+      const pulse=0.2+0.1*Math.sin(this.time*4);
       const colorMap={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
       const color=colorMap[z.spec.fxType]||"#fa4";
       c.save();
-      c.globalAlpha=alpha;
+      // Additive fill for energy glow.
+      c.globalCompositeOperation="lighter";
+      c.globalAlpha=pulse*0.6;
       c.fillStyle=color;
       c.beginPath();
       c.arc(z.x,z.y,z.radius,0,Math.PI*2);
       c.fill();
-      c.globalAlpha=0.5;
+      // Inner swirling rings — animated texture inside the zone.
+      c.globalAlpha=pulse*0.4;
+      c.strokeStyle=color;
+      c.lineWidth=1.5;
+      for(let ring=0;ring<3;ring++){
+        const rr=z.radius*(0.3+ring*0.25)*(1+0.08*Math.sin(this.time*3+ring*1.2));
+        c.beginPath();
+        c.arc(z.x,z.y,rr,0,Math.PI*2);
+        c.stroke();
+      }
+      // Crisp edge ring (normal blending).
+      c.globalCompositeOperation="source-over";
+      c.globalAlpha=0.6;
       c.strokeStyle=color;
       c.lineWidth=2;
+      c.beginPath();
+      c.arc(z.x,z.y,z.radius,0,Math.PI*2);
       c.stroke();
       c.restore();
     }
@@ -6261,6 +6654,13 @@ const Battle={
     c.restore();
     // Phase 17: draw round-end flash (in screen space, full canvas).
     BattleFX.drawRoundFlash(c);
+    // Vignette — radial darkening at screen edges for cinematic framing.
+    const vw=this.canvasW||400,vh=this.canvasH||550;
+    const vg=c.createRadialGradient(vw/2,vh/2,Math.min(vw,vh)*0.35,vw/2,vh/2,Math.max(vw,vh)*0.75);
+    vg.addColorStop(0,"rgba(0,0,0,0)");
+    vg.addColorStop(1,"rgba(0,0,0,0.45)");
+    c.fillStyle=vg;
+    c.fillRect(0,0,vw,vh);
   },
 
   log(t){
@@ -6274,6 +6674,7 @@ const Battle={
 
   // Spawn a floating damage number.
   spawnDmgNum(x,y,val,team,crit,type){
+    if(typeof x!=="number"||typeof y!=="number"||isNaN(x)||isNaN(y))return;
     if(!this.damageNums)this.damageNums=[];
     this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,team,crit:!!crit,type:type||"normal",vy:-40});
     if(this.damageNums.length>40)this.damageNums.shift();
@@ -6289,6 +6690,15 @@ const Battle={
     }
     this.damageNums=this.damageNums.filter(d=>d.life>0);
   },
+  // Sync _allUnits with current state of this.units (call at battle end).
+  // Units that died but weren't removed (deathT < 0.5) still have h=0 in this.units.
+  _syncAllUnits(){
+    if(!this._allUnits)return;
+    for(const u of this.units){
+      const idx=this._allUnits.findIndex(a=>a.id===u.id);
+      if(idx>=0)this._allUnits[idx]={...u};
+    }
+  },
   drawDmgNums(c){
     if(!this.damageNums||!this.damageNums.length)return;
     for(const d of this.damageNums){
@@ -6297,7 +6707,7 @@ const Battle={
       c.font=`bold ${d.crit?"14px":"10px"} sans-serif`;
       c.textAlign="center";
       const isHeal=typeof d.val==="string"&&d.val.startsWith("+");
-      const color=d.crit?"#fbbf24":isHeal?"#34d399":d.team==="player"?"#fb7185":"#fca5a5";
+      const color=d.crit?"#fbbf24":isHeal?"#34d399":TEAM_COLORS[d.team]||"#fff";
       c.fillStyle=color;
       c.strokeStyle="rgba(0,0,0,0.8)";
       c.lineWidth=3;
@@ -6334,6 +6744,7 @@ const Battle={
         BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
         BattleFX.shake(4);
         this._finalUnits=this.units.map(u=>({...u})); // snapshot before stop() clears units
+        this._syncAllUnits(); // update _allUnits with final state for cumulative draft
         this._finalSpells=(this.spells||[]).map(s=>({...s})); // snapshot spells for stats
         this.stop();
         if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle end handler failed: "+(e&&e.message||e));}
@@ -6351,6 +6762,7 @@ const Battle={
     BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
     BattleFX.shake(4);
     this._finalUnits=this.units.map(u=>({...u})); // snapshot before stop() clears units
+    this._syncAllUnits(); // update _allUnits with final state for cumulative draft
     this._finalSpells=(this.spells||[]).map(s=>({...s})); // snapshot spells for stats
     this.stop();
     if(this.onEnd)try{this.onEnd(this.winner);}catch(e){console.error("[Battle.checkEnd] onEnd failed:",e);showError("Battle end handler failed: "+(e&&e.message||e));}
@@ -6599,7 +7011,7 @@ const Battle={
       this.update(0.05*(this.speed||1));
       this.checkEnd();
     }
-    if(safety<=0){this.winner="draw";this._finalUnits=this.units.map(u=>({...u}));this._finalSpells=(this.spells||[]).map(s=>({...s}));this.stop();if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip safety end failed: "+(e&&e.message||e));}}
+    if(safety<=0){this.winner="draw";this._finalUnits=this.units.map(u=>({...u}));this._syncAllUnits();this._finalSpells=(this.spells||[]).map(s=>({...s}));this.stop();if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip safety end failed: "+(e&&e.message||e));}}
   },
 
   // Toggle pause.
@@ -6773,6 +7185,7 @@ const Quests={
   },
   checkStreak(){
     const q=G.save.quests;
+    if(!q||typeof q!=="object")return;
     if(!q.streak||typeof q.streak!=="object")q.streak={count:0,lastLogin:""};
     const today=this.todayStr();
     if(q.streak.lastLogin===today)return; // already checked today
@@ -6790,15 +7203,17 @@ const Quests={
   },
   generateDaily(){
     const q=G.save.quests;
+    if(!q||!Array.isArray(q.list))return;
     const today=this.todayStr();
     if(q.date===today&&q.list.length>0)return; // already generated
-    // Pick 3 random quests.
+    // Pick 3 random quests. Validate QUEST_POOL.
+    if(!Array.isArray(QUEST_POOL)||QUEST_POOL.length===0)return;
     const pool=[...QUEST_POOL];
     const picked=[];
     for(let i=0;i<3&&pool.length;i++){
       const idx=Math.floor(Math.random()*pool.length);
       const qe=pool.splice(idx,1)[0];
-      picked.push({...qe,progress:0,claimed:false});
+      if(qe&&qe.id&&qe.target)picked.push({...qe,progress:0,claimed:false});
     }
     q.date=today;
     q.list=picked;
@@ -6806,7 +7221,7 @@ const Quests={
   },
   track(event,data){
     const q=G.save.quests;
-    if(!q.list||!Array.isArray(q.list))return;
+    if(!q||!q.list||!Array.isArray(q.list))return;
     for(const quest of q.list){
       if(!quest||typeof quest!=="object")continue;
       if(quest.claimed)continue;
@@ -6821,15 +7236,19 @@ const Quests={
   },
   claim(id){
     const q=G.save.quests;
+    if(!q||!Array.isArray(q.list))return;
     const quest=q.list.find(x=>x.id===id);
     if(!quest||quest.claimed||quest.progress<quest.target)return;
     quest.claimed=true;
-    G.save.coins=(G.save.coins||0)+(quest.reward.coins||0);
-    G.save.xp=(G.save.xp||0)+(quest.reward.xp||0);
+    // Validate reward structure.
+    const coins=(quest.reward&&typeof quest.reward.coins==="number")?quest.reward.coins:0;
+    const xp=(quest.reward&&typeof quest.reward.xp==="number")?quest.reward.xp:0;
+    G.save.coins=(G.save.coins||0)+coins;
+    G.save.xp=(G.save.xp||0)+xp;
     saveData(G.save);
-    toast(`✅ ${quest.desc} complete! +${quest.reward.coins} coins`);
+    toast(`✅ ${quest.desc||"Quest"} complete! +${coins} coins`);
     // Bonus if all 3 claimed.
-    if(q.list.every(x=>x.claimed)){
+    if(q.list.length>=3&&q.list.every(x=>x.claimed)){
       G.save.coins=(G.save.coins||0)+50;
       saveData(G.save);
       toast(t("quests_done"));
@@ -7246,7 +7665,18 @@ const G={
     // Phase 7: migrate older saves forward, then fill any missing defaults.
     // J4: If localStorage was empty (quota exceeded), try IndexedDB fallback.
     if(!this.save.version){
+      // Bug #126: Safety timeout — if IDB hangs, force-init with defaults
+      // so the user isn't stuck on the splash screen forever.
+      if(this._initTimer)clearTimeout(this._initTimer);
+      this._initTimer=setTimeout(()=>{
+        if(!this._initialized){
+          console.warn("Init timeout — forcing default save");
+          this.save=migrateSave(this.save);
+          this._initRest();
+        }
+      },5000);
       loadDataAsync(data=>{
+        if(this._initTimer){clearTimeout(this._initTimer);this._initTimer=null;}
         if(data&&data.version){
           this.save=migrateSave(data);
           this._initRest();
@@ -7260,7 +7690,9 @@ const G={
     this.save=migrateSave(this.save);
     this._initRest();
   },
+  _initialized:false,
   _initRest(){
+    this._initialized=true;
     // Phase 30: init audio on first user gesture (mobile autoplay policy).
     const audioInit=()=>{GameAudio.init();GameAudio.resume();this.applyAudioSettings();document.removeEventListener("pointerdown",audioInit);document.removeEventListener("keydown",audioInit);};
     document.addEventListener("pointerdown",audioInit);
@@ -7335,8 +7767,9 @@ const G={
           this._draftTimerInterval=null;
           const bar=$("draftTimerBar");
           if(bar)bar.style.display="none";
-          // Auto-pick first card if player hasn't picked.
-          if(this.currentOffering&&this.currentOffering.length>0){
+          // Auto-pick first card if player hasn't picked (check _draftPicking to
+          // avoid race condition with a simultaneous manual pick).
+          if(this.currentOffering&&this.currentOffering.length>0&&!this._draftPicking){
             this.pickDraft(this.currentOffering[0]);
           }
         }
@@ -7390,6 +7823,11 @@ const G={
     }
     // Stop the draft battlefield animation loop when leaving the draft screen.
     if(id!=="draft")this._stopDraftAnim();
+    // Clean up matchmaking interval when leaving matchmaking screen.
+    if(id!=="matchmaking"&&this.matchmakingWaitInterval){
+      clearInterval(this.matchmakingWaitInterval);
+      this.matchmakingWaitInterval=null;
+    }
     // Hide spell bar when not in battle.
     if(id!=="battle"){
       const bar=$("spellBar");
@@ -7587,7 +8025,7 @@ const G={
       this.save.replays.unshift(replay);
       if(this.save.replays.length>10)this.save.replays=this.save.replays.slice(0,10);
       saveData(this.save);
-    }catch(e){}
+    }catch(e){console.warn("saveReplay failed:",e);}
   },
   // Share match result as text via clipboard or Web Share API.
   shareMatchResult(){
@@ -7627,14 +8065,20 @@ const G={
       // Sanitize name before rendering to prevent XSS.
       const sanitizedName=String(u._isSpell?u.name:u.n||"Unit").replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
       if(u._isSpell)u.name=sanitizedName;else u.n=sanitizedName;
+      // Security: sanitize effect/trigger for HTML display, and primaryColor.
+      const safeEffect=escapeHtml((u.effect||"").replace(/_/g," "));
+      const safeTrigger=escapeHtml((u.trigger||"").replace(/_/g," "));
+      const safeColor=sanitizeHex(u.primaryColor||"#4a7");
+      const safeRole=escapeHtml(u.role||"");
+      const safeAbility=escapeHtml(u.ability||"none");
       // Show preview.
       this.screen("forge");
       const preview=$("forgePreview");
       if(preview){
         if(u._isSpell){
-          preview.innerHTML=`<div class="card" style="border-color:#fa4;max-width:280px;margin:0 auto;"><div class="title" style="color:#fa4">✨ ${sanitizedName}</div><div class="detail">${(u.effect||'').replace(/_/g,' ')}<br><span style="color:var(--accent2)">${(u.trigger||'').replace(/_/g,' ')}</span></div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Spellbook</button>`;
+          preview.innerHTML=`<div class="card" style="border-color:#fa4;max-width:280px;margin:0 auto;"><div class="title" style="color:#fa4">✨ ${sanitizedName}</div><div class="detail">${safeEffect}<br><span style="color:var(--accent2)">${safeTrigger}</span></div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Spellbook</button>`;
         }else{
-          preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${u.primaryColor||'#4a7'}">${sanitizedName}</div><div class="detail">${u.h} HP · ${u.d} DMG · ${u.r} range<br>${u.role||''} · ${u.ability||'none'}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
+          preview.innerHTML=`<div class="card" style="border-color:var(--accent);max-width:280px;margin:0 auto;"><div class="title" style="color:${safeColor}">${sanitizedName}</div><div class="detail">${Number(u.h)||0} HP · ${Number(u.d)||0} DMG · ${Number(u.r)||0} range<br>${safeRole} · ${safeAbility}</div></div><button class="btn primary" onclick="G._importSharedUnit()">➕ Add to Collection</button>`;
         }
       }
       this._pendingImport=u;
@@ -7644,16 +8088,9 @@ const G={
     if(!this._pendingImport)return;
     if(this._pendingImport._isSpell){
       if(!this.save.spellbook)this.save.spellbook=[];
-      const spell=this._pendingImport;
-      // Sanitize: ensure required fields have valid values.
-      if(!SPELL_ENUM.trigger.includes(spell.trigger))spell.trigger="battle_start";
-      if(!SPELL_ENUM.effect.includes(spell.effect))spell.effect="damage";
-      if(!SPELL_ENUM.shape.includes(spell.shape))spell.shape="circle_aoe";
-      if(!SPELL_ENUM.fxType.includes(spell.fxType))spell.fxType="explosion";
-      if(!SPELL_ENUM.target.includes(spell.target))spell.target="enemy_cluster";
-      spell.magnitude=clamp(Number(spell.magnitude)||30,1,200);
-      spell.radius=clamp(Number(spell.radius)||60,10,200);
-      spell.duration=clamp(Number(spell.duration)||0,0,10);
+      // Security: sanitize spell name + enum values.
+      const spell=sanitizeSpell(this._pendingImport);
+      if(!spell)return;
       this.save.spellbook.push(spell);
       if(this.save.spellbook.length>20)this.save.spellbook=this.save.spellbook.slice(-20);
       saveData(this.save);
@@ -8035,6 +8472,14 @@ const G={
         const pulse=0.5+0.5*Math.sin(elapsed*2);
         fill.style.width=(40+pulse*60)+"%";
       }
+      // P2P: connection timeout — after 60s, offer bot match.
+      if(elapsed>=60){
+        clearInterval(this.matchmakingWaitInterval);
+        this.matchmakingWaitInterval=null;
+        setText("matchmakingStatus","No opponent found. Starting bot match...");
+        if(connected&&typeof disconnect==="function"){try{disconnect();}catch(e){}}
+        setTimeout(()=>this.startBotMatch(),1000);
+      }
     },1000);
   },
   // Skip the queue and play vs bot immediately.
@@ -8168,7 +8613,7 @@ const G={
     const cv=$("cv");
     if(!cv)return;
     const dpr=window.devicePixelRatio||1;
-    // Use the active screen container dimensions (mobile portrait, max 420px wide).
+    // Use the active screen container dimensions (fullscreen on phone and web).
     const screen=document.querySelector(".screen.active")||document.getElementById("draft");
     const dispW=screen?screen.clientWidth:Math.min(420,innerWidth);
     const dispH=screen?screen.clientHeight:innerHeight;
@@ -8176,6 +8621,9 @@ const G={
     cv.style.height=dispH+"px";
     cv.width=Math.round(dispW*dpr);
     cv.height=Math.round(dispH*dpr);
+    // Update Battle's cached canvas dimensions so _gameTransform centers correctly.
+    Battle.canvasW=dispW;
+    Battle.canvasH=dispH;
     // D5: reset Battle's cached ctx so it picks up the new bitmap size.
     Battle.ctx=null;
   },
@@ -8187,6 +8635,9 @@ const G={
     const w=cv.width,h=cv.height;
     const dpr=window.devicePixelRatio||1;
     const W=Battle.GAME_W,H=Battle.GAME_H;
+    // Clear previous frame to prevent artifacts.
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.clearRect(0,0,w,h);
     // Fill the full canvas with background (in bitmap pixel space).
     const arena=this.arenas?.[this.save?.arena||0];
     const bgTheme=Battle._bgThemes[arena?.bgTheme||"forest"]||Battle._bgThemes.forest;
@@ -8264,9 +8715,9 @@ const G={
     ctx.globalAlpha=1;
     Battle.time=savedTime;
     // --- Team labels + counts ---
-    ctx.fillStyle="#4af";ctx.font="bold 11px sans-serif";ctx.textAlign="left";
+    ctx.fillStyle=TEAM_COLORS.player;ctx.font="bold 11px sans-serif";ctx.textAlign="left";
     ctx.fillText("▼ You: "+allPlayer.length,4,H-6);
-    ctx.fillStyle="#f44";ctx.textAlign="right";
+    ctx.fillStyle=TEAM_COLORS.enemy;ctx.textAlign="right";
     ctx.fillText("Enemy: "+allEnemy.length+" ▲",W-4,14);
     ctx.textAlign="left";
     ctx.restore();
@@ -8396,9 +8847,18 @@ const G={
     const offering=[];
     for(let i=0;i<3;i++){
       const u=this.rollOne(usedNames);
-      if(!u)continue;
-      usedNames.add(u._isSpell?u.name:u.n);
-      offering.push(u);
+      if(u){
+        usedNames.add(u._isSpell?u.name:u.n);
+        offering.push(u);
+      }
+    }
+    // Fallback: if rollOne returned null, add a base unit to ensure 3 cards.
+    while(offering.length<3){
+      const fallback=G.base[offering.length%G.base.length];
+      if(fallback&&!usedNames.has(fallback.n)){
+        offering.push(unit(fallback));
+        usedNames.add(fallback.n);
+      }else break;
     }
     this.currentOffering=offering;
     this.renderDraw();
@@ -8669,7 +9129,12 @@ const G={
       return {...spell,_isSpell:true};
     }
     const pool=this.loadoutUnits();
-    if(pool.length===0)return null;
+    if(pool.length===0){
+      // Empty loadout — fall back to base units so the draft always offers a card.
+      const base=this.base||[];
+      if(base.length===0)return null;
+      return {...base[F(R()*base.length)]};
+    }
     const roll=R();
     const rar=roll<0.7?"common":(roll<0.95?"rare":"legendary");
     let candidates=pool.filter(u=>u.rar===rar&&!usedNames.has(u.n));
@@ -9035,6 +9500,7 @@ const G={
         delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
         delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
         delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
+        if(clean._baseS){clean.s=clean._baseS;delete clean._baseS;} // restore base speed (undo arena boost)
         return clean;
       });
       this.enemySurvivors=allUnits.filter(u=>u.team==="enemy").map(u=>{
@@ -9049,6 +9515,7 @@ const G={
         delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
         delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
         delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
+        if(clean._baseS){clean.s=clean._baseS;delete clean._baseS;} // restore base speed (undo arena boost)
         return clean;
       });
     }
@@ -9745,7 +10212,23 @@ const G={
   // Phase 5/10: guest applies a host snapshot and renders it (no local sim).
   // J3: Interpolates between previous and current snapshot for smooth rendering.
   applyRemoteSnapshot(snap){
-    if(!snap||!snap.units)return;
+    if(!snap||typeof snap!=="object")return;
+    // P2P security: validate snapshot structure.
+    if(!Array.isArray(snap.units))return;
+    // Cap units to prevent memory exhaustion (max 200 units per side).
+    if(snap.units.length>400)return;
+    // Validate each unit has required numeric fields.
+    for(const u of snap.units){
+      if(!u||typeof u.x!=="number"||typeof u.y!=="number"||typeof u.h!=="number")return;
+      // Clamp coordinates to game space.
+      if(u.x<-1000||u.x>1000||u.y<-1000||u.y>1000)return;
+      // P2P security: validate team value.
+      const team=u.t||u.team;
+      if(team!=="player"&&team!=="enemy")return;
+    }
+    // Validate projectiles if present.
+    if(snap.projectiles&&!Array.isArray(snap.projectiles))snap.projectiles=[];
+    if(snap.recentCrits&&!Array.isArray(snap.recentCrits))snap.recentCrits=[];
     // J3: Handle compressed snapshots (units have short keys).
     if(snap.units[0]&&snap.units[0].i!==undefined){
       snap={...snap,units:snap.units.map(u=>({
@@ -9881,6 +10364,13 @@ const G={
         let genPromise;
         if(watchAd && canUseLLM){
           if(llmLoading&&!llmReady)this._showModelProgress();
+          // Set up generation progress callback for spell fields.
+          forgeGenProgress=(current,total,field)=>{
+            const pct=Math.round((current/total)*100);
+            updateAI(`Crafting your spell... (${current+1}/${total}: ${FIELD_LABELS[field]||field})`,pct);
+            const prog=$("forgeModelProgress");
+            if(prog&&prog.style.display==="none")prog.style.display="block";
+          };
           genPromise=generateSpell(prompt,arenaIdx);
         }else{
           debugForge("spell using template fallback",{watchAd,canUseLLM});
@@ -9893,6 +10383,7 @@ const G={
           spell={...templateSpellFallback(prompt),_isSpell:true};
         }
         if(!spell)spell={...templateSpellFallback(prompt),_isSpell:true};
+        forgeGenProgress=null;
         this._hideModelProgress();
         this.pendingForgeSpell=spell;
         this.showSpellForgePreview(spell);
@@ -9900,6 +10391,7 @@ const G={
         debugForge("_doForge result",{spell,forgeMode:this.forgeMode});
       }catch(e){
         console.error("Spell forge failed:",e);
+        forgeGenProgress=null;
         this._hideModelProgress();
         toast("Forge failed. Please try again.");
       }finally{
@@ -9916,6 +10408,13 @@ const G={
         if(llmLoading&&!llmReady){
           this._showModelProgress();
         }
+        // Set up generation progress callback — reuses the forgeModelProgress bar.
+        forgeGenProgress=(current,total,field)=>{
+          const pct=Math.round((current/total)*100);
+          updateAI(`Designing your unit... (${current+1}/${total}: ${FIELD_LABELS[field]||field})`,pct);
+          const prog=$("forgeModelProgress");
+          if(prog&&prog.style.display==="none")prog.style.display="block";
+        };
         genPromise=generateUnit(prompt,arenaIdx);
       }else{
         // No LLM / skip ad — use template fallback directly.
@@ -9932,6 +10431,7 @@ const G={
       if(!unit){
         unit=attrsToUnit(templateFallback(prompt),arenaIdx);
       }
+      forgeGenProgress=null;
       this._hideModelProgress();
       this.pendingForgeUnit=unit;
       this.showForgePreview(unit);
@@ -9939,6 +10439,7 @@ const G={
       debugForge("_doForge result",{unit,forgeMode:this.forgeMode});
     }catch(e){
       console.error("Forge failed:",e);
+      forgeGenProgress=null;
       this._hideModelProgress();
       toast("Forge failed. Please try again.");
     }finally{
@@ -10161,11 +10662,11 @@ const G={
     if(!name||!name.trim())return;
     if(!this.save.presets)this.save.presets={};
     const key=name.trim();
-    if(this.save.presets[key]){showConfirm("Preset '"+key+"' already exists. Overwrite?",()=>{this.save.presets[key]=this.save.loadout.slice();saveData(this.save);GameAudio.sfx("ui_click");toast("Preset saved");});return;}
+    if(this.save.presets[key]){showConfirm("Preset '"+esc(key)+"' already exists. Overwrite?",()=>{this.save.presets[key]=this.save.loadout.slice();saveData(this.save);GameAudio.sfx("ui_click");toast("Preset saved");});return;}
     this.save.presets[key]=this.save.loadout.slice();
     saveData(this.save);
     GameAudio.sfx("ui_click");
-    toast("💾 Preset '"+key+"' saved!");
+    toast("💾 Preset '"+esc(key)+"' saved!");
     this._renderPresetList();
   },
   // Load a preset — shows a list of saved presets to choose from.
@@ -10513,10 +11014,16 @@ const G={
       `</div>`+
       `<div style="display:flex;gap:8px;margin-top:12px;">`+
       `<button class="btn" onclick="document.getElementById('fusePreviewModal').remove()" style="flex:1;">Cancel</button>`+
-      `<button class="btn primary" onclick="G._confirmFuse('${name}');document.getElementById('fusePreviewModal').remove()" style="flex:1;">🔮 Fuse!</button>`+
+      `<button class="btn primary" id="confirmFuseBtn" style="flex:1;">🔮 Fuse!</button>`+
       `</div>`;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
+    const fuseBtn=modal.querySelector("#confirmFuseBtn");
+    if(fuseBtn)fuseBtn.onclick=()=>{
+      const m=document.getElementById("fusePreviewModal");
+      if(m)m.remove();
+      this._confirmFuse(name);
+    };
   },
   _confirmFuse(name){
     const coll=this.save.collection||[];
@@ -11075,10 +11582,11 @@ const G={
         `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">`+
         `<span style="background:${tiers[t].color};color:#000;font-weight:900;font-size:1rem;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:6px;">${tiers[t].label}</span>`+
         `<span style="font-size:.7rem;color:var(--muted);">${tiers[t].desc}</span></div>`;
-      for(const {u,score,lvl} of tierUnits){
+      for(let i=0;i<tierUnits.length;i++){
+        const {u,score,lvl}=tierUnits[i];
         const abLabel=u.ability&&u.ability!=="none"?`<span style="color:var(--accent2);font-size:.65rem;">${u.ability}</span>`:"";
         const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
-        html+=`<div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;margin:3px 0;cursor:pointer;" onclick="G.showUnitDetail(this._unitData)" id="tierUnit_${u.n}">`+
+        html+=`<div style="display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px 10px;margin:3px 0;cursor:pointer;" onclick="G.showUnitDetail(this._unitData)" id="tierUnit_${start+i}">`+
           `<span style="color:${u.c};font-weight:700;font-size:.8rem;flex:1;">${u.n}${lvlBadge}</span>`+
           `${abLabel}`+
           `<span style="font-size:.65rem;color:var(--muted);">${u.h}HP ${u.d}DMG</span>`+
@@ -11088,9 +11596,9 @@ const G={
     }
     el.innerHTML=html;
     // Attach unit data for onclick.
-    for(const {u} of scored){
-      const el2=document.getElementById("tierUnit_"+u.n);
-      if(el2)el2._unitData=u;
+    for(let i=0;i<scored.length;i++){
+      const el2=document.getElementById("tierUnit_"+i);
+      if(el2)el2._unitData=scored[i].u;
     }
   },
   codexTab(tab){
@@ -11181,6 +11689,10 @@ const G={
   },
 
   reset(){showConfirm("Reset progress?",()=>{
+    // Nullify in-memory save BEFORE clearing storage so the beforeunload
+    // handler (which calls saveDataNow(G.save)) writes an empty save
+    // instead of re-writing the old progress.
+    this.save={version:0};
     localStorage.removeItem(SAVE_KEY);
     localStorage.removeItem(SAVE_BACKUP_KEY);
     // Also clear IndexedDB fallback so loadDataAsync doesn't restore it.
@@ -11243,6 +11755,14 @@ const G={
         try{
           const migrated=migrateSave(data);
           if(!migrated){toast("Import failed: migration error");return;}
+          // Security: sanitize spell names in imported spellbook.
+          if(Array.isArray(migrated.spellbook)){
+            migrated.spellbook=migrated.spellbook.map(s=>sanitizeSpell(s)).filter(Boolean);
+          }
+          // Security: sanitize unit colors in imported collection.
+          if(Array.isArray(migrated.collection)){
+            migrated.collection=migrated.collection.map(u=>unit(u));
+          }
           this.save=migrated;
           saveData(this.save);
           toast("Save imported successfully!");
@@ -11337,7 +11857,7 @@ G.p2pTestHost=function(){
     G._p2pTestLog("Network setup OK, waiting for peer...");
     G._p2pTestStartWaitTimer();
     // Send role announcement after 500ms (same as normal host).
-    setTimeout(()=>{transmit("role","host");G._p2pTestLog("Sent role: host");},500);
+    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION});G._p2pTestLog("Sent role: host");},500);
   }else{
     G._p2pTestLog("Network setup FAILED");
   }
@@ -11352,7 +11872,7 @@ G.p2pTestJoin=function(){
   if(setupNetwork(roomName)){
     G._p2pTestLog("Network setup OK, waiting for host...");
     G._p2pTestStartWaitTimer();
-    setTimeout(()=>{transmit("role","guest");G._p2pTestLog("Sent role: guest");},500);
+    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION});G._p2pTestLog("Sent role: guest");},500);
   }else{
     G._p2pTestLog("Network setup FAILED");
   }
@@ -11387,25 +11907,33 @@ G.p2pTestStartMatch=function(){
 // Handle ping messages in networkReceive (add to existing handler).
 // We hook this via the wrapped networkReceive above — pings are logged there.
 
-G.host=function(roomName,silent){
+G.host=function(roomName,silent,password){
   role="host";
   const rid=$("roomId");
-  const room=roomName||(rid?rid.value:"room1");
-  const ok=setupNetwork(room);
+  // P2P security: generate cryptographically random room ID if none provided.
+  let room=roomName;
+  if(!room){
+    // Generate a random 8-char room ID for unguessable rooms.
+    const arr=new Uint8Array(6);
+    crypto.getRandomValues(arr);
+    room=Array.from(arr).map(b=>b.toString(36).padStart(2,"0")).join("");
+    if(rid)rid.value=room;
+  }
+  const ok=setupNetwork(room,password);
   if(ok){
-    setTimeout(()=>{transmit("role","host");},500);
+    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION});},500);
     if(!silent){
       const c=$("connection");
-      if(c)c.innerText="Status: hosting room "+room;
+      if(c)c.innerText="Status: hosting room "+room+(password?" (protected)":"");
     }
   }
   return ok;
 };
-G.join=function(){
+G.join=function(password){
   role="guest";
   const rid=$("roomId");
-  if(setupNetwork(rid?rid.value:"room1")){
-    setTimeout(()=>{transmit("role","guest");},500);
+  if(setupNetwork(rid?rid.value:"room1",password)){
+    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION});},500);
   }
 };
 
@@ -11421,6 +11949,14 @@ window.t=t;
 window.unit=unit;
 window.attrsToUnit=attrsToUnit;
 window.validateUnit=validateUnit;
+window.saveData=saveData;
+window.saveDataDebounced=saveDataDebounced;
+window.migrateSave=migrateSave;
+window.sanitizeSpell=sanitizeSpell;
+window.cloneUnit=cloneUnit;
+window.Spell=Spell;
+window.SpriteRenderer=SpriteRenderer;
+if(typeof LZString!=="undefined")window.LZString=LZString;
 window.templateFallback=templateFallback;
 window.clearError=clearError;
 window.cancelLLM=cancelLLM;
@@ -11439,8 +11975,11 @@ function hideSplash(){
   if(sp){sp.style.display="none";if(sp.parentNode)sp.parentNode.removeChild(sp);}
 }
 
-// Phase 7: register a PWA manifest via a blob URL (single-file friendly).
-// H1: Inline service worker for offline play via Blob URL.
+// Phase 7: register a PWA manifest via a data URL (persists across reloads).
+// H1: Inline service worker for offline play.
+// Bug #142-145: Use data URLs instead of blob URLs (which don't persist),
+// add cache versioning, and clean up old caches on activate.
+const PWA_CACHE_VERSION="promptshowdown-v2";
 function setupPWA(){
   try{
     const manifest={
@@ -11459,20 +11998,32 @@ function setupPWA(){
         sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"
       }]
     };
-    const blob=new Blob([JSON.stringify(manifest)],{type:"application/manifest+json"});
-    const url=URL.createObjectURL(blob);
+    // Bug #143: Use data URL instead of blob URL — data URLs persist across
+    // page reloads because the content is embedded in the URL itself.
+    const manifestUrl="data:application/manifest+json,"+encodeURIComponent(JSON.stringify(manifest));
     let link=document.querySelector('link[rel="manifest"]');
     if(!link){link=document.createElement("link");link.rel="manifest";document.head.appendChild(link);}
-    link.href=url;
+    link.href=manifestUrl;
     // H1: Register inline service worker for offline caching.
+    // Bug #142: Use data URL instead of blob URL for SW registration.
+    // Note: Some browsers block data URL SW registration for security.
+    // If registration fails, the app still works as an installable PWA
+    // via the manifest — just without offline SW caching.
     if("serviceWorker" in navigator){
       const swCode=`
-        const CACHE="promptshowdown-v1";
+        const CACHE="${PWA_CACHE_VERSION}";
         self.addEventListener("install",e=>{
           e.waitUntil(caches.open(CACHE).then(c=>c.addAll(["./"])));
           self.skipWaiting();
         });
-        self.addEventListener("activate",e=>{self.clients.claim();});
+        // Bug #145: Clean up old caches on activate.
+        self.addEventListener("activate",e=>{
+          e.waitUntil(
+            caches.keys().then(keys=>
+              Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+            ).then(()=>self.clients.claim())
+          );
+        });
         self.addEventListener("fetch",e=>{
           if(e.request.method!=="GET")return;
           e.respondWith(
@@ -11484,9 +12035,22 @@ function setupPWA(){
           );
         });
       `;
-      const swBlob=new Blob([swCode],{type:"application/javascript"});
-      const swUrl=URL.createObjectURL(swBlob);
-      navigator.serviceWorker.register(swUrl).catch(()=>{/* SW registration best-effort */});
+      // Bug #142: Try data URL first (persists across reloads).
+      const swUrl="data:application/javascript,"+encodeURIComponent(swCode);
+      navigator.serviceWorker.register(swUrl).then(reg=>{
+        // P2P: check for SW updates every 60s.
+        reg.addEventListener("updatefound",()=>{console.log("SW update found");});
+        setInterval(()=>reg.update().catch(()=>{}),60000);
+      }).catch(e=>{
+        // Data URL SW registration may fail in some browsers (Chrome blocks it).
+        // Fall back to blob URL — works for the current session but won't persist.
+        console.warn("SW registration via data URL failed, trying blob:",e.message);
+        try{
+          const swBlob=new Blob([swCode],{type:"application/javascript"});
+          const swBlobUrl=URL.createObjectURL(swBlob);
+          navigator.serviceWorker.register(swBlobUrl).catch(()=>{/* SW best-effort */});
+        }catch(e2){/* SW registration best-effort */}
+      });
     }
   }catch(e){/* PWA setup is best-effort */}
 }
@@ -11559,7 +12123,7 @@ document.addEventListener("keydown",e=>{
 
 // Accessibility: Enter/Space on role="button" elements triggers click.
 document.addEventListener("keydown",e=>{
-  if((e.key==="Enter"||e.key===" ")&&e.target&&e.target.getAttribute&&e.target.getAttribute("role")==="button"){
+  if((e.key==="Enter"||e.key===" ")&&e.target&&e.target.getAttribute&&e.target.getAttribute("role")==="button"&&typeof e.target.click==="function"){
     e.preventDefault();
     e.target.click();
   }
@@ -11568,13 +12132,13 @@ document.addEventListener("keydown",e=>{
 // Phase 7: reset Battle.last on visibility change so dt doesn't jump.
 // Phase 30: pause/resume music on visibility change.
 document.addEventListener("visibilitychange",()=>{
-  if(!document.hidden&&Battle.running){Battle.last=performance.now();GameAudio.startMusic();}
+  if(!document.hidden&&Battle.running&&Battle.last){Battle.last=performance.now();if(GameAudio.enabled)GameAudio.startMusic();}
   else{GameAudio.stopMusic();}
   // Phase 35: flush analytics on visibility change.
   if(document.hidden)Analytics.flushNow();
 });
 // Phase 35: flush analytics on page unload.
-window.addEventListener("beforeunload",()=>{Analytics.flushNow();if(G.save)saveDataNow(G.save);});
+window.addEventListener("beforeunload",()=>{Analytics.flushNow();if(G.save)saveDataNow(G.save);try{GameAudio.stopMusic();if(GameAudio.ctx)GameAudio.ctx.close();}catch(e){}});
 
 // Phase 30: delegated UI click sound for all buttons.
 document.addEventListener("click",e=>{
@@ -11614,9 +12178,10 @@ loadModules()
     try{
       G.init();
       preloadAI();setupPWA();
-      // J4: hide splash after init (or after async IDB fallback completes).
-      // If init was async (IDB fallback), _initRest will call hideSplash.
-      if(G.save&&G.save.version)hideSplash();
+      // Bug #126: hideSplash is now called only from _initRest() (or the
+      // safety timeout). Do NOT call it here — doing so could hide the
+      // splash before the async IDB fallback completes, exposing
+      // uninitialized state to the user.
     }
     catch(e){
       showError("Startup crashed (save may be corrupt): "+(e&&e.message||e)+

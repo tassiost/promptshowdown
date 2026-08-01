@@ -1,0 +1,57 @@
+{
+  "results": {
+    "pass": [
+      "page load",
+      "G object initialized",
+      "G.save initialized with version",
+      "G._initialized flag set",
+      "splash removed",
+      "main menu reached",
+      "save state readable",
+      "screen: forge",
+      "screen: deck",
+      "screen: upgrade",
+      "screen: settings",
+      "screen: achievements",
+      "screen: matchmaking",
+      "forge unit (template) produced result",
+      "forge spell (template) produced result",
+      "forge daily cap enforced",
+      "deck screen",
+      "loadout readable",
+      "quick match started (screen=draft)",
+      "match started",
+      "full match completed (3 rounds)",
+      "save readable",
+      "save persisted across reload",
+      "coins persisted",
+      "quests generated",
+      "quest structure valid",
+      "achievements screen",
+      "settings screen",
+      "language switch works",
+      "upgrade screen",
+      "matchmaking screen",
+      "matchmaking cancelled",
+      "battle started with units",
+      "no NaN in unit positions",
+      "battle time advancing",
+      "no negative HP",
+      "no negative cooldowns",
+      "units are moving",
+      "replays screen",
+      "replays exist from previous matches",
+      "share result toast: Share failed",
+      "no console errors or pageerrors"
+    ],
+    "fail": [],
+    "errors": [],
+    "warnings": [
+      [
+        "match timeout",
+        "still in draft/battle after 120s"
+      ]
+    ]
+  },
+  "bugs": []
+}

@@ -208,21 +208,22 @@ The name and HP bar are positioned relative to `spriteTop = u.y - (u.z/10) * 1.8
 There is only **one** canvas element (`#cv`) for both the draft battlefield and the battle screen. `G.screen(id)` reparents `#cv` between `#draftCanvasSlot` (in the draft screen) and `#battle` (inserted before `#spellBar`). This avoids a duplicate canvas and keeps the rendered state continuous across the draft→battle transition.
 
 Key rules:
-- `_sizeDraftCanvas()` sizes `#cv` for draft mode and sets `Battle.ctx = null` so `Battle.start`/`renderOnly` re-initialize the canvas context with the correct bitmap size when transitioning to battle.
+- `_sizeDraftCanvas()` sizes `#cv` for draft mode, updates `Battle.canvasW`/`Battle.canvasH`, and sets `Battle.ctx = null` so `Battle.start`/`renderOnly` re-initialize the canvas context with the correct bitmap size when transitioning to battle.
 - `renderDraftBattlefield()` uses `$("cv")`, not a separate draft canvas.
 - Never re-create `#cv` — it must persist as a single DOM node. Only reparent it.
 - `Battle.start` re-initializes the canvas size and context, so it's safe to call after reparenting from draft to battle.
 
 ### Full-Screen Battlefield
 
-The canvas fills the **entire viewport** in both draft and battle screens. UI elements (HUD, draft cards, controls) are overlaid on top using `position:fixed` with semi-transparent backgrounds.
+The canvas fills the **entire viewport** on both phone and web. UI elements (HUD, draft cards, controls) are overlaid on top using `position:fixed` with semi-transparent backgrounds.
 
 Key rules:
-- Draft and battle screens use the `fullscreen` CSS class: `max-width:none; padding:0; overflow:hidden` — no scroll, no max-width constraint.
-- The canvas is `position:absolute; inset:0` — fills the full screen.
+- Draft and battle screens use the `fullscreen` CSS class: `max-width:none; width:100vw; height:100vh; position:fixed; inset:0; padding:0; overflow:hidden` — escapes the body's `max-width:420px` and `padding:8px` to truly fill the viewport.
+- The canvas `#cv` has no border/radius/shadow — it's a plain fullscreen surface. `position:absolute; inset:0` fills the screen.
 - `#draftCanvasSlot` is also `position:absolute; inset:0` — the canvas is reparented into it for draft.
+- `_sizeDraftCanvas()` MUST update `Battle.canvasW`/`Battle.canvasH` (not just the canvas element size) so `_gameTransform()` centers correctly. Without this, the transform uses stale default dimensions (400×550) and the game content is not centered.
 - Game coordinate space is 400×550 (`Battle.GAME_W`/`Battle.GAME_H`). Units, projectiles, zones, and particles are positioned in this space.
-- `Battle._gameTransform()` computes a "cover" transform: scale to fill the viewport, center, crop overflow. Applied in `render()` and `renderDraftBattlefield()` via `c.translate(offsetX,offsetY); c.scale(scale,scale)`.
+- `Battle._gameTransform()` computes a "contain" transform: `scale = Math.min(vw/GAME_W, vh/GAME_H)` — fits the full game space within the viewport, centered. This letterboxes (pillarboxes on wide screens, letterboxes on tall screens). The background fills the entire viewport, so letterbox areas show the themed gradient.
 - `Battle.drawBackground()` fills the full viewport in screen space (before the game-space transform) — gradient, ground line, lane bands all use `canvasW`/`canvasH`.
 - `Battle.screenToGame(sx,sy)` converts screen coordinates to game-space coordinates for click detection.
 - UI overlays: `#draftHUD` (top bar), `#draftOverlay` (bottom card area), `#battleHUD` (top bar), `#spellBar` (bottom), control buttons (bottom) — all `position:fixed` with `z-index:50+`.
@@ -276,3 +277,290 @@ Enemy units are horizontally flipped via `c.scale(-1,1)` in `SpriteRenderer.draw
 ### P2P Serialization
 
 Starter units are compared by stats (not deep equality) during P2P serialization so that recipe rebuilds don't cause false desyncs between host and guest. Forged units are serialized by full recipe since they're unique.
+
+## CSS calc() Whitespace Rule
+
+### The Bug (BUG-101)
+
+All 16 `calc(NNpx+env(safe-area-inset-*,0px))` expressions in `index.html` were missing whitespace around the `+` operator. CSS `calc()` **requires** whitespace around `+` and `-` operators — without it, the entire declaration is invalid and discarded by the browser.
+
+```css
+/* BROKEN — no spaces around +, entire declaration invalid */
+bottom:calc(50px+env(safe-area-inset-bottom,0px));
+
+/* FIXED — spaces around +, declaration valid */
+bottom:calc(50px + env(safe-area-inset-bottom,0px));
+```
+
+### The Rule
+
+**Always put whitespace around `+` and `-` in CSS `calc()` expressions.** The `*` and `/` operators do not require whitespace, but `+` and `-` do (because `-` can be part of a number literal like `-5px`, and `+` needs disambiguation).
+
+When writing `calc()` with `env()`:
+```css
+/* Correct */
+calc(50px + env(safe-area-inset-bottom, 0px))
+calc(100% - 20px)
+
+/* Incorrect — will be discarded */
+calc(50px+env(safe-area-inset-bottom,0px))
+calc(100%-20px)
+```
+
+### Impact
+
+When a `calc()` declaration is invalid, the browser falls back to the property's initial value or `auto`. For `position:fixed` elements with `top`/`bottom` set via invalid `calc()`, the element falls to its static position (typically top:0). This caused:
+- `#spellBar` to render at top:0 (overlapped by Forfeit button, making spell casting impossible)
+- All battle HUD stats, kill feed, comp bonus, round history to overlap at top:0
+- Safe-area paddings on `#app` and `.screen` to be ignored
+
+## Quests Null Safety Rule
+
+### The Bug (BUG-102)
+
+`Quests.track`, `Quests.checkStreak`, `Quests.generateDaily`, and `Quests.claim` all dereference `G.save.quests` without first checking that it exists. If `G.save.quests` is `undefined` (fresh save, incomplete migration, or async IDB load not yet complete), these methods throw `TypeError: Cannot read properties of undefined`.
+
+`Spell.fire` calls `Quests.track("spell_use")` unconditionally, so any spell cast before the save is fully loaded would crash.
+
+### The Rule
+
+**All `Quests.*` methods must null-check `G.save.quests` before accessing its properties:**
+
+```js
+const q=G.save.quests;
+if(!q||!q.list||!Array.isArray(q.list))return;  // guard against undefined q
+```
+
+This is especially important for `Quests.track` since it's called from `Spell.fire` during battle, which can happen before the async IDB save load completes.
+
+## Canvas Rendering Rules
+
+### 2D Canvas Has No Context Loss
+
+Do NOT add `webglcontextlost`/`webglcontextrestored` event listeners to a 2D canvas (`getContext("2d")`). These events are WebGL-only and never fire for 2D contexts. The render loop already guards against null `ctx` (returns early), and `Battle.start` re-initializes `ctx` on every new battle.
+
+### Always clearRect Before Drawing
+
+Both `render()` and `renderDraftBattlefield()` must call `clearRect(0,0,canvas.width,canvas.height)` with `setTransform(1,0,0,1,0,0)` (to clear in raw pixel space) before drawing the background. Without this, resize events and screen transitions can leave visual artifacts from the previous frame.
+
+### Sprite Height in Y-Clamp
+
+The y-position clamp must account for the sprite's visual height above the unit center, not just `u.z`. The sprite extends `(u.z/10)*1.8*26` pixels above `u.y` (sprite scale factor × unscaled half-height), plus 12px for the name text. The clamp is:
+
+```js
+const spriteH=(u.z||10)/10*1.8*26;
+u.y=clamp(u.y,spriteH+12,ch-u.z);
+```
+
+Using only `u.z` as the minimum y causes sprites to be cut off at the top of the screen.
+
+## Audio Node Lifecycle Rules
+
+### Disconnect Audio Nodes After Playback
+
+All Web Audio nodes (oscillators, gain nodes, filter nodes) created for SFX or music must be disconnected after playback ends. Use the `onended` event on the oscillator/buffer source:
+
+```js
+osc.onended=()=>{try{osc.disconnect();gain.disconnect();filter.disconnect();}catch(e){}};
+```
+
+Without this, nodes accumulate in the audio graph even after they stop producing sound, causing memory leaks in long battles. This applies to:
+- `GameAudio.sfx()` — `make()` and `noise()` helper functions
+- `GameAudio.startMusic()` — interval-created notes
+- `GameAudio.startAmbient()` — interval-created notes
+
+## Team Color System
+
+### TEAM_COLORS Constant
+
+All team-colored rendering must use the `TEAM_COLORS` constant (`{player:"#4af",enemy:"#f44"}`), not hardcoded hex values. This ensures consistent team identification across:
+- HP bar borders
+- Name text (with dark outline for readability)
+- Damage numbers
+- Low-HP warning rings
+- Fallback sprite outlines
+- Ground decals
+- Draft team labels
+
+### Projectile Weapon Rendering
+
+Projectiles carry `weaponType`, `fxType`, and `accent` from the attacking unit. The render loop switches on `weaponType` to draw weapon-specific shapes:
+- `bow`/`crossbow` → arrow (shaft + arrowhead + fletching)
+- `staff`/`wand`/`orb` → magic bolt (pulsating orb + aura + sparkles)
+- `rifle` → bullet tracer
+- `breath` → fireball (flickering flame)
+- `trident`/`spear` → spear (shaft + pointed tip)
+- default → glowing orb
+
+All projectiles rotate to face their target direction and have additive-blended fading trails.
+
+## Ability Trigger Timing Rules
+
+### Use Battle.time for Periodic Triggers
+
+Periodic ability triggers (e.g., `periodic_3s`) must use `Battle.time` delta, not hardcoded frame time increments. Hardcoded increments (e.g., `+0.05` per call) assume a fixed frame rate and break at 2x/4x battle speed:
+
+```js
+// WRONG — assumes 20fps, breaks at speed multipliers
+periodic_3s:(u)=>{u._periodicT=(u._periodicT||0)+0.05;return u._periodicT>=3&&...}
+
+// CORRECT — uses actual game time
+periodic_3s:(u)=>{if(u._periodicLastT===undefined)u._periodicLastT=Battle.time;const dt=Battle.time-u._periodicLastT;if(dt>=3){u._periodicLastT=Battle.time;return u.abCool<=0;}return false;}
+```
+
+## Draft Timer Race Condition
+
+### Check _draftPicking Before Auto-Pick
+
+The draft timer's auto-pick must check `!this._draftPicking` before calling `pickDraft()`. Without this guard, a manual pick at the exact moment the timer expires can race with the auto-pick, causing a double-pick.
+
+## Forge Generation Progress
+
+### forgeGenProgress Callback
+
+The `forgeGenProgress` global is set by `_doForge` before calling `generateUnit`/`generateSpell`. It receives `(current, total, fieldName)` for each LLM field question. The callback updates the `forgeModelProgress` bar text and fill width. It must be set to `null` in all exit paths (success, error, finally).
+
+### FIELD_LABELS Map
+
+Human-readable labels for all forge fields are in the `FIELD_LABELS` constant. Use `FIELD_LABELS[field]||field` to display field names in progress text.
+
+## P2P Security Rules
+
+### Message Validation
+
+All incoming P2P messages must be validated before processing. The `networkReceive` function enforces:
+- **Rate limiting**: Max 60 messages/sec per peer via `_p2pRateCheck()`. Floods are dropped.
+- **Size limits**: Max 256KB per message via `P2P_MAX_MSG_SIZE`. Checked in `transmit()`.
+- **Type checking**: Reject non-objects, non-string `t` fields, and unknown message types.
+- **Payload validation**: Each message handler validates its `data.d` structure before use.
+
+### Snapshot Validation
+
+`applyRemoteSnapshot` must validate all incoming snapshot data:
+- `snap` must be an object with an array `units` field
+- Unit count capped at 400 (200 per side)
+- Each unit must have numeric `x`, `y`, `h` fields
+- Coordinates clamped to [-1000, 1000] game space
+- `projectiles` and `recentCrits` must be arrays if present
+
+### Forge/Deck Message Validation
+
+- Forge units must pass through the `unit()` factory (sanitizes all fields including color)
+- Forge spells must have a string `name` (max 40 chars) and an `effect` field
+- Deck `selected` must be an array with max 20 entries
+- Match/round data must be objects with validated enum values (winner: player/enemy/draw)
+
+### Room Authentication
+
+Room IDs incorporate an optional password: `setupNetwork(id, password)` creates room `id:pw:password`. Only peers with the same password can find each other. Host generates cryptographically random room IDs by default using `crypto.getRandomValues`.
+
+### P2P Quest Tracking
+
+In P2P mode, only the host runs the battle simulation. When a guest-team spell fires, the host must send a `spell_used` message so the guest can call `Quests.track("spell_use")`. Without this, spell-use quests are impossible for guests.
+
+## Initialization Guard Rules
+
+### Splash Screen Lifecycle
+
+The splash screen must only be hidden via `_initRest()`, never from the startup code. The `_initialized` flag is set at the end of `_initRest()`.
+
+- **Sync path** (localStorage has save): `G.init()` → `migrateSave()` → `_initRest()` → `hideSplash()`
+- **Async path** (IDB fallback): `G.init()` → `loadDataAsync(cb)` → cb → `migrateSave()` → `_initRest()` → `hideSplash()`
+- **Timeout fallback**: If IDB doesn't respond within 5 seconds, force-init with defaults
+
+Never call `hideSplash()` from the `.then()` handler in the startup code — it can race with the async path and expose uninitialized state.
+
+## PWA Rules
+
+### Data URLs Instead of Blob URLs
+
+PWA manifest and service worker must use data URLs, not blob URLs. Blob URLs are ephemeral — they don't persist across page reloads, causing the SW registration and manifest to be lost. Data URLs are self-contained and persist:
+
+```js
+// WRONG — blob URL lost on reload
+const url=URL.createObjectURL(new Blob([data]));
+link.href=url;
+
+// CORRECT — data URL persists
+const url="data:application/manifest+json,"+encodeURIComponent(JSON.stringify(data));
+link.href=url;
+```
+
+### Cache Versioning
+
+The service worker cache name must include a version: `PWA_CACHE_VERSION="promptshowdown-v2"`. When the version is bumped, the `activate` handler deletes all old caches:
+
+```js
+self.addEventListener("activate",e=>{
+  e.waitUntil(
+    caches.keys().then(keys=>
+      Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))
+    ).then(()=>self.clients.claim())
+  );
+});
+```
+
+### SW Registration Fallback
+
+Data URL SW registration may fail in some browsers (Chrome blocks it for security). Fall back to blob URL for the current session. The app still works as an installable PWA via the manifest even without SW caching.
+
+## Spell Sanitization Rules
+
+### sanitizeSpell() for Untrusted Spell Data
+
+All spells from untrusted sources (P2P, URL import, save import) must pass through `sanitizeSpell()`. This function:
+- Sanitizes the spell name (strips `<>`, replaces `"` with `'`, truncates to 40 chars)
+- Validates all enum fields (trigger, effect, shape, fxType, target) against `SPELL_ENUM`
+- Clamps numeric fields (magnitude, radius, duration) to safe ranges
+- Returns `null` for invalid input
+
+Never add a spell to the spellbook without sanitizing it first. The `unit()` factory handles unit sanitization; `sanitizeSpell()` is the equivalent for spells.
+
+### escapeHtml() for User-Generated Strings
+
+When embedding user-generated strings (unit names, spell names, effect/trigger labels) in `innerHTML`, use `escapeHtml()` to prevent XSS:
+```js
+const safe=escapeHtml(userString);
+el.innerHTML=`<div>${safe}</div>`;
+```
+
+Unit names are already sanitized at creation by `unit()`, so they're safe in templates. Spell names from trusted sources (LLM forge) are sanitized by `sanitizeSpell()`. But strings from URL parameters or raw save data must be escaped before rendering.
+
+## Audio Rate Limiting
+
+### SFX Rate Limit
+
+`GameAudio.sfx()` enforces a max of 30 SFX per second via `_sfxRate` counter. This prevents audio clipping when many units attack simultaneously. The counter resets every 1 second via `_sfxRateTimer`. Calls exceeding the limit are silently dropped.
+
+### Audio Cleanup on Unload
+
+The `beforeunload` handler calls `GameAudio.stopMusic()` and `GameAudio.ctx.close()` to release audio resources when the page unloads. This prevents orphaned audio nodes in the browser's audio graph.
+
+## Reduced Motion Support
+
+### BattleFX reducedMotion Checks
+
+All `BattleFX` particle/shake functions (`onCrit`, `onDeath`, `onKill`, `onSpell`) check `G.save?.reducedMotion` before creating particles or screen shake. When reduced motion is enabled:
+- Hit flash is still applied (visual feedback without motion)
+- Particles and screen shake are skipped
+- Audio cues still play
+
+## P2P Version Compatibility
+
+### Version Check in Role Handshake
+
+Role messages now include the game version: `transmit("role", {role:"host", v:CURRENT_VERSION})`. The receiver checks `data.d.v !== CURRENT_VERSION` and disconnects with a descriptive error if versions don't match. This prevents desync between different game versions.
+
+## Ability Trigger Rules
+
+### on_first_hit Only on Actual Damage
+
+`hasBeenHit` is only set to `true` when the unit actually takes damage. Dodge and shield paths do NOT set `hasBeenHit` — they return early before damage is applied. This ensures `on_first_hit` abilities only trigger when the unit was actually hit, not when the attack was avoided.
+
+### Cooldown Cap at Zero
+
+Ability cooldowns (`u.abCool`) must never go negative. Use `Math.max(0, u.abCool - dt)` when decrementing, not `u.abCool -= dt`. Negative cooldowns could cause abilities to fire immediately on the next frame.
+
+### Minion Spawn Unit Limit
+
+The `spawn` ability checks `this.units.length < 100` before creating a minion. This prevents memory exhaustion from unlimited minion spawning in long battles.

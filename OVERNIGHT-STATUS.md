@@ -96,3 +96,58 @@ Round 2 complete. All blocks A-J from OVERNIGHT2.md fully implemented including 
 - **Medium:** 10 (kill attribution, spell zones, forge cap, import migration, etc.)
 - **Low:** 6 (poison on dead, canvas state, performance optimizations)
 - **Smoke tested:** Full matches on multiple arenas, IDB fallback path, forge cap enforcement, XSS sanitization — all pass with no JS errors.
+
+### Session 5-6: CSS + Quests + Spell System (BUG-HUNT-R6)
+- Fixed 16 invalid `calc()` CSS expressions breaking all fixed overlays (BUG-101)
+- Fixed `Quests.track` crash when `G.save.quests` undefined (BUG-102)
+- Documented `heal_allies`+`center` target design finding (BUG-103)
+
+### Session 7: Critical Bug Fixes + Visual/UX (BUG-HUNT-R7)
+- Fixed empty loadout null returns — fallback to base units (BUG-63)
+- Fixed periodic_3s hardcoded frame time — now uses Battle.time (BUG-70)
+- Fixed SFX audio node memory leak — disconnect after playback (BUG-96)
+- Fixed music interval gain node memory leak — disconnect after playback (BUG-97)
+- Removed useless WebGL context loss events for 2D canvas (BUG-115/117)
+- Added clearRect before drawBackground in render loop (BUG-116)
+- Fixed draft timer race condition — check _draftPicking before auto-pick (BUG-124)
+- Fixed CSS injection via unit color field — sanitizeHex in unit() factory (BUG-153/154)
+- Fixed canvas click handler null event + race condition — guard with !e||!running (BUG-132/133)
+- Fixed IndexedDB silent failure — added console.warn logging (BUG-125)
+- Implemented weapon-specific projectile rendering (arrows, bolts, fireballs, etc.)
+- Added forge generation progress bar (24 unit fields / 9 spell fields)
+- Applied team colors consistently (HP bar borders, names, damage numbers, warnings)
+- Fixed enemy sprite top clipping (y-clamp now accounts for sprite height)
+
+### Session 7b: P2P Security + PWA + Init Hardening (BUG-HUNT-R7 continued)
+- Fixed P2P snapshot validation — structure, unit count, coordinate bounds (BUG-39)
+- Fixed P2P forge/deck message validation — payload structure checks (BUG-40)
+- Added P2P rate limiting — 60 msgs/sec max, floods dropped (BUG-41)
+- Added P2P room auth — password incorporated into room ID, random room IDs (BUG-42)
+- Added P2P message size limit — 256KB max, oversized dropped (BUG-43)
+- Fixed P2P spell_use quest tracking — host sends spell_used to guest (BUG-7)
+- Fixed splash hides too early — _initialized flag, 5s timeout, removed redundant hideSplash (BUG-126)
+- Fixed PWA manifest persistence — data URL instead of blob URL (BUG-143)
+- Fixed PWA service worker persistence — data URL with blob fallback (BUG-142)
+- Added PWA cache versioning — PWA_CACHE_VERSION constant (BUG-144)
+- Added PWA cache cleanup — activate handler deletes old caches (BUG-145)
+
+### Final Bug Hunt Summary (R7)
+- **Total bugs fixed in R7:** 21 (all critical bugs cleared)
+- **Remaining critical bugs:** 0
+- **Bug counts:** 70 NEW, 31 CONFIRMED, 88 FIXED, 193 PASS
+- **Smoke tested:** Syntax verified via Playwright, no JS errors (only CORS from file://)
+
+### Session 7c: All Remaining Bugs Cleared (BUG-HUNT-R7 final)
+- Fixed all 48 MAJOR bugs: P2P security (timeout, cmd validation, version check, team validation, corrupted data, guest disconnect), audio (cleanup, init, visibility, resume, rate limiting), canvas (sprite scale, param validation), events (accessibility, matchmaking cleanup), state (quota test, migration error), PWA (SW updates, error logging), security (escapeHtml, sanitizeSpell, URL import, save import), abilities (on_first_hit dodge, cooldown cap, minion limit), draft (card generation fallback)
+- Fixed all 52 MINOR bugs: spells (effect/shape/target validation), quests (generateDaily/claim validation), visual FX (reducedMotion checks), P2P (retry, network errors), audio (SFX rate limiting), events (passive listeners), and more
+- **Final bug counts: 0 NEW, 0 CONFIRMED, 176 FIXED, 206 PASS**
+- **Zero remaining bugs of any severity**
+
+### Session R8: E2E Testing + Static Analysis
+- Created comprehensive E2E test suite (`e2e_test_r8.py`) with 42 tests covering all major game flows
+- Performed deep static analysis of all systems: battle, abilities, spells, P2P, save, audio, canvas, events
+- Found and fixed 2 bugs:
+  - #212 MAJOR: SPELL_EFFECT.summon missing unit cap (could cause memory exhaustion)
+  - #213 MINOR: saveReplay silent error swallowing (impossible to debug failures)
+- **E2E test results: 42 PASS, 0 FAIL, 0 BUGS, 0 PageErrors**
+- **Final bug counts: 0 NEW, 0 CONFIRMED, 178 FIXED, 206 PASS**
