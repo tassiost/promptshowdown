@@ -1446,6 +1446,10 @@ function sanitizeHex(hex){
   if(h.length!==6||!/^[0-9a-fA-F]{6}$/.test(h))return"#888";
   return"#"+h;
 }
+// PERF-R11: cache lighten/darken results — these are called per shape per frame
+// and do expensive string manipulation + parseInt + toString.
+const _lightenCache={};
+const _darkenCache={};
 // Security: escape HTML entities in user-generated strings for safe innerHTML embedding.
 function escapeHtml(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 // Security: sanitize a spell spec from untrusted source (P2P, URL import, save import).
@@ -1463,22 +1467,30 @@ function sanitizeSpell(d){
   return d;
 }
 function lighten(hex,amt){
+  const key=hex+"_"+amt;
+  if(_lightenCache[key])return _lightenCache[key];
   let h=hex.slice(1);
   if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
   const n=parseInt(h,16);
   const r=Math.min(255,Math.round(((n>>16)&255)+amt*255));
   const g=Math.min(255,Math.round(((n>>8)&255)+amt*255));
   const b=Math.min(255,Math.round((n&255)+amt*255));
-  return"#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+  const result="#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+  _lightenCache[key]=result;
+  return result;
 }
 function darken(hex,amt){
+  const key=hex+"_"+amt;
+  if(_darkenCache[key])return _darkenCache[key];
   let h=hex.slice(1);
   if(h.length===3)h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
   const n=parseInt(h,16);
   const r=Math.max(0,Math.round(((n>>16)&255)-amt*255));
   const g=Math.max(0,Math.round(((n>>8)&255)-amt*255));
   const b=Math.max(0,Math.round((n&255)-amt*255));
-  return"#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+  const result="#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+  _darkenCache[key]=result;
+  return result;
 }
 function deriveAtkSpd(a){
   const base=a.role==="carry"?1.2:a.role==="frontline"?0.8:1.0;
@@ -3920,23 +3932,26 @@ const SpriteRenderer={
   },
   _drawShapeRaw(c,shape,u){
     const ox=u.x,oy=u.y;
-    // Phase 32: apply colorblind filter to shape color (in-place remap).
-    if(G.save?.settings?.colorblind&&G.save.settings.colorblind!=="off"&&shape.c){
-      shape={...shape,c:G.applyColorblind(shape.c)};
-      if(shape.c2)shape={...shape,c2:G.applyColorblind(shape.c2)};
+    // PERF-R11: avoid per-frame object spread ({...shape}) — use local vars instead.
+    // Phase 32: apply colorblind filter to shape color.
+    let sc=shape.c,sc2=shape.c2,soc=shape.oc,soutline=shape.outline;
+    if(G.save?.settings?.colorblind&&G.save.settings.colorblind!=="off"){
+      if(sc)sc=G.applyColorblind(sc);
+      if(sc2)sc2=G.applyColorblind(sc2);
     }
     // Sanitize colors to prevent malformed hex from crashing gradient rendering.
-    if(shape.c)shape={...shape,c:sanitizeHex(shape.c)};
-    if(shape.c2)shape={...shape,c2:sanitizeHex(shape.c2)};
-    if(shape.oc)shape={...shape,oc:sanitizeHex(shape.oc)};
+    if(sc)sc=sanitizeHex(sc);
+    if(sc2)sc2=sanitizeHex(sc2);
+    if(soc)soc=sanitizeHex(soc);
     // Phase 32: high contrast — thicker outlines.
-    if(G.save?.settings?.highContrast&&shape.outline)shape={...shape,outline:shape.outline+1};
+    if(G.save?.settings?.highContrast&&soutline)soutline=soutline+1;
     // Phase 24b: per-shape alpha.
     const prevAlpha=c.globalAlpha;
     if(shape.alpha!==undefined)c.globalAlpha=shape.alpha;
     // Phase 24b: gradient fill support + D1: auto gradient shading for flat colors.
+    // PERF-R11: use cached color vars (sc, sc2, soc) instead of re-reading shape.c.
     let g;
-    if(shape.fill==="gradient"&&shape.c2){
+    if(shape.fill==="gradient"&&sc2){
       if(shape.t==="circle"){
         g=c.createRadialGradient(ox+shape.cx-(shape.r||4)*0.3,oy+shape.cy-(shape.r||4)*0.3,1,
           ox+shape.cx,oy+shape.cy,shape.r||4);
@@ -3947,13 +3962,13 @@ const SpriteRenderer={
         const h=shape.h!==undefined?shape.h:20;
         g=c.createLinearGradient(ox+x,oy+y,ox+x+w,oy+y+h);
       }
-      g.addColorStop(0,lighten(sanitizeHex(shape.c||"#888"),0.1));
-      g.addColorStop(1,shape.c2);
+      g.addColorStop(0,lighten(sc||"#888",0.1));
+      g.addColorStop(1,sc2);
       c.fillStyle=g;
-    }else if(shape.c&&shape.fill!=="gradient"&&!shape.glow){
+    }else if(sc&&shape.fill!=="gradient"&&!shape.glow){
       // D1: auto gradient — lighter top, darker bottom for depth.
       // V2: increased contrast (0.18 vs 0.12) for more vibrant cartoon look.
-      const base=sanitizeHex(shape.c);
+      const base=sc;
       if(shape.t==="circle"||shape.t==="ellipse"){
         const r=shape.r||shape.rx||4;
         g=c.createRadialGradient(ox+(shape.cx||0)-r*0.3,oy+(shape.cy||0)-r*0.3,1,
@@ -3972,21 +3987,22 @@ const SpriteRenderer={
         c.fillStyle=g;
       }
     }else{
-      c.fillStyle=shape.c||"#888";
+      c.fillStyle=sc||"#888";
     }
-    c.strokeStyle=shape.oc||shape.c||"#888";
-    c.lineWidth=shape.outline||shape.w||1;
-    if(shape.glow){c.shadowBlur=shape.glow;c.shadowColor=shape.c||"#fff";}
-    const hasOutline=!!shape.outline;
+    c.strokeStyle=soc||sc||"#888";
+    c.lineWidth=soutline||shape.w||1;
+    // PERF-R11: skip shadowBlur when many units on screen (expensive GPU op).
+    if(shape.glow&&Battle.units.length<=10){c.shadowBlur=shape.glow;c.shadowColor=sc||"#fff";}
+    const hasOutline=!!soutline;
     const strokeBlack=()=>{if(!hasOutline){c.strokeStyle="#000";c.lineWidth=1;c.stroke();}};
     switch(shape.t){
       case "circle":
         c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,0,Math.PI*2);c.fill();
-        if(shape.outline)c.stroke();else strokeBlack();
+        if(soutline)c.stroke();else strokeBlack();
         break;
       case "rect":
         c.fillRect(ox+shape.x,oy+shape.y,shape.w,shape.h);
-        if(shape.outline)c.strokeRect(ox+shape.x,oy+shape.y,shape.w,shape.h);else{c.strokeStyle="#000";c.lineWidth=1;c.strokeRect(ox+shape.x,oy+shape.y,shape.w,shape.h);}
+        if(soutline)c.strokeRect(ox+shape.x,oy+shape.y,shape.w,shape.h);else{c.strokeStyle="#000";c.lineWidth=1;c.strokeRect(ox+shape.x,oy+shape.y,shape.w,shape.h);}
         break;
       case "line":
         c.beginPath();c.moveTo(ox+shape.x1,oy+shape.y1);c.lineTo(ox+shape.x2,oy+shape.y2);c.stroke();break;
@@ -3998,20 +4014,20 @@ const SpriteRenderer={
           if(i===0)c.moveTo(px,py);else c.lineTo(px,py);
         }
         c.closePath();c.fill();
-        if(shape.outline)c.stroke();else strokeBlack();
+        if(soutline)c.stroke();else strokeBlack();
         break;
       case "arc":
         c.beginPath();c.arc(ox+shape.cx,oy+shape.cy,shape.r,shape.start,shape.end);c.stroke();break;
       case "ellipse":
         c.beginPath();c.ellipse(ox+shape.cx,oy+shape.cy,shape.rx,shape.ry,0,0,Math.PI*2);c.fill();
-        if(shape.outline)c.stroke();else strokeBlack();
+        if(soutline)c.stroke();else strokeBlack();
         break;
     }
     // Phase 24b: surface patterns (stripes, spots, scales, runes, cracks, circuit, tribal, stars, hexagons, marble).
-    if(shape.pattern&&shape.c2){
+    if(shape.pattern&&sc2){
       c.save();
-      c.fillStyle=shape.c2;
-      c.strokeStyle=shape.c2;
+      c.fillStyle=sc2;
+      c.strokeStyle=sc2;
       c.globalAlpha=(shape.alpha!==undefined?shape.alpha:1)*0.5;
       if(shape.t==="rect"||shape.t==="circle"||shape.t==="polygon"||shape.t==="ellipse"){
         // Clip to shape bounds.
@@ -4195,12 +4211,14 @@ const SpriteRenderer={
       c.fill();
       c.restore();
     }
-    // Phase 24b: drop shadow — soft blurred ellipse under the unit (D2).
+    // Phase 24b: drop shadow — soft ellipse under the unit (D2).
+    // PERF-R11: removed c.filter="blur(3px)" — canvas blur is 10-50x slower
+    // than a regular fill and causes frame drops on mobile/low-end GPUs.
+    // The shadow is now a flat semi-transparent ellipse (visually similar).
     if(!recipe.noShadow&&state!=="death"){
       c.save();
-      c.globalAlpha=0.3*alpha;
+      c.globalAlpha=0.25*alpha;
       c.fillStyle="#000";
-      if(c.filter!==undefined){c.filter="blur(3px)";}
       c.beginPath();
       c.ellipse(drawX,saveY+(u.z||10)*0.8,(u.z||10)*0.9,(u.z||10)*0.3,0,0,Math.PI*2);
       c.fill();
@@ -4211,7 +4229,9 @@ const SpriteRenderer={
     }
     // Silhouette outline: draw a thin black outline around the entire sprite
     // by re-stroking all shapes with a unified black stroke at slightly larger width.
-    if(state!=="death"&&recipe.shapes){
+    // PERF-R11: skip this second pass when many units are on screen (doubles draw calls).
+    // Each shape already has its own black outline via strokeBlack() in _drawShapeRaw.
+    if(state!=="death"&&recipe.shapes&&Battle.units.length<=12){
       c.save();
       c.globalAlpha=alpha*0.6;
       c.strokeStyle="#000";
@@ -4273,7 +4293,8 @@ const SpriteRenderer={
       dx=(tdx/td)*1.5;dy=(tdy/td)*1.5;
     }
     c.save();
-    if(eyeGlow){c.shadowBlur=eyeGlow;c.shadowColor=eyeColor;}
+    // PERF-R11: skip shadowBlur on glowing eyes when many units (expensive GPU op).
+    if(eyeGlow&&Battle.units.length<=10){c.shadowBlur=eyeGlow;c.shadowColor=eyeColor;}
     c.fillStyle=eyeColor;
     // Render eyes differently based on eye style.
     switch(eyeStyle){
@@ -5502,7 +5523,7 @@ const Battle={
     }
     // Update spell bar cooldown display (throttled to ~4fps to avoid DOM thrash).
     this._spellBarT=(this._spellBarT||0)+dt;
-    if(this._spellBarT>=0.25){
+    if(this._spellBarT>=0.5){
       this._spellBarT=0;
       this._renderSpellBar();
       this._renderBattleStats();
@@ -6182,6 +6203,25 @@ const Battle={
     // Use CSS pixel dimensions (not c.canvas.width/height which include DPR scaling).
     const w=this.canvasW||400,h=this.canvasH||550;
     const theme=this._bgThemes[this.bgTheme]||this._bgThemes.forest;
+    // PERF-R11: cache background gradients (they only depend on w/h/theme, not per-frame state).
+    const cacheKey=w+"x"+h+"_"+this.bgTheme;
+    if(!this._bgGradCache||this._bgGradCacheKey!==cacheKey){
+      this._bgGradCacheKey=cacheKey;
+      const bgGrad=c.createLinearGradient(0,0,0,h);
+      bgGrad.addColorStop(0,theme.top);
+      bgGrad.addColorStop(0.5,theme.mid);
+      bgGrad.addColorStop(1,theme.bot);
+      const fogGrad=c.createLinearGradient(0,0,0,h*0.5);
+      fogGrad.addColorStop(0,"rgba(0,0,0,0.35)");
+      fogGrad.addColorStop(1,"rgba(0,0,0,0)");
+      const groundY=h*0.72;
+      const groundGrad=c.createLinearGradient(0,groundY-20,0,groundY+30);
+      groundGrad.addColorStop(0,"rgba(0,0,0,0)");
+      groundGrad.addColorStop(0.5,theme.ground+"40");
+      groundGrad.addColorStop(1,theme.ground+"20");
+      this._bgGradCache={bg:bgGrad,fog:fogGrad,ground:groundGrad,groundY};
+    }
+    const grads=this._bgGradCache;
     // If a sprite background image is loaded, draw it with parallax.
     if(this.bgImage&&this.bgImage.complete){
       const shake=this.shakeAmount||0;
@@ -6196,11 +6236,7 @@ const Battle={
       c.fillRect(0,0,w,h);
     }else{
       // Procedural gradient background.
-      const grad=c.createLinearGradient(0,0,0,h);
-      grad.addColorStop(0,theme.top);
-      grad.addColorStop(0.5,theme.mid);
-      grad.addColorStop(1,theme.bot);
-      c.fillStyle=grad;
+      c.fillStyle=grads.bg;
       c.fillRect(0,0,w,h);
       // Noise texture overlay — tiled faint grain for organic feel.
       const noise=this._getNoiseCanvas();
@@ -6222,32 +6258,27 @@ const Battle={
         c.fillRect(0,0,w,h);
       }
       // Ground line — subtle horizontal band where units stand.
-      const groundY=h*0.72;
-      const gg=c.createLinearGradient(0,groundY-20,0,groundY+30);
-      gg.addColorStop(0,"rgba(0,0,0,0)");
-      gg.addColorStop(0.5,theme.ground+"40");
-      gg.addColorStop(1,theme.ground+"20");
-      c.fillStyle=gg;
-      c.fillRect(0,groundY-20,w,50);
+      c.fillStyle=grads.ground;
+      c.fillRect(0,grads.groundY-20,w,50);
       // Ground accent line.
       c.strokeStyle=theme.accent+"30";
       c.lineWidth=1;
       c.beginPath();
-      c.moveTo(0,groundY);
-      c.lineTo(w,groundY);
+      c.moveTo(0,grads.groundY);
+      c.lineTo(w,grads.groundY);
       c.stroke();
       // Decorative ground dots — sparse texture.
       c.fillStyle=theme.accent+"20";
       for(let i=0;i<12;i++){
         const gx=(i*37+13)%w;
-        const gy=groundY+((i*23+7)%30)-5;
+        const gy=grads.groundY+((i*23+7)%30)-5;
         c.beginPath();
         c.arc(gx,gy,1.5,0,Math.PI*2);
         c.fill();
       }
       // Parallax midground — silhouette ridge that drifts with screen shake.
       const shakeX=this.shakeAmount||0;
-      const mgY=groundY-30;
+      const mgY=grads.groundY-30;
       c.fillStyle=theme.accent+"18";
       c.beginPath();
       c.moveTo(0,mgY+20);
@@ -6261,10 +6292,7 @@ const Battle={
       c.closePath();
       c.fill();
       // Depth fog — gradient darkening toward the top (far distance).
-      const fog=c.createLinearGradient(0,0,0,h*0.5);
-      fog.addColorStop(0,"rgba(0,0,0,0.35)");
-      fog.addColorStop(1,"rgba(0,0,0,0)");
-      c.fillStyle=fog;
+      c.fillStyle=grads.fog;
       c.fillRect(0,0,w,h*0.5);
       // Lane formation bands — show role-based formation zones.
       const canvasH=this.canvasH||h;
@@ -6497,13 +6525,11 @@ const Battle={
         c.fillRect(barX,barY,barW*ghostRatio,barH);
       }
       // Gradient HP fill — color shifts green→yellow→red.
+      // PERF-R11: use flat color instead of createLinearGradient per unit per frame.
+      // The bar is only 5px tall — the gradient is barely visible.
       const hpColor=hpRatio>0.5?"#34d399":hpRatio>0.25?"#fbbf24":"#fb7185";
-      const hpColor2=hpRatio>0.5?"#10b981":hpRatio>0.25?"#f59e0b":"#ef4444";
       if(hpRatio>0){
-        const hg=c.createLinearGradient(barX,barY,barX,barY+barH);
-        hg.addColorStop(0,hpColor);
-        hg.addColorStop(1,hpColor2);
-        c.fillStyle=hg;
+        c.fillStyle=hpColor;
         c.fillRect(barX,barY,barW*hpRatio,barH);
         // Top highlight — 1px glossy line.
         c.fillStyle="rgba(255,255,255,0.35)";
