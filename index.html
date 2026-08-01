@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#080810">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -26,11 +26,12 @@
 body{
   background:radial-gradient(ellipse at top,var(--bg2) 0%,var(--bg) 60%);
   color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;
+  height:100vh;overflow:hidden;display:flex;flex-direction:column;align-items:center;padding:8px;padding-top:calc(8px+env(safe-area-inset-top,0px));padding-bottom:calc(8px+env(safe-area-inset-bottom,0px));padding-left:calc(8px+env(safe-area-inset-left,0px));padding-right:calc(8px+env(safe-area-inset-right,0px));
   -webkit-font-smoothing:antialiased;
 }
-.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;padding:16px 12px;animation:fadeIn .3s ease;}
+.screen{display:none;flex-direction:column;align-items:center;width:100%;max-width:420px;height:100%;overflow-y:auto;padding:16px 12px;animation:fadeIn .3s ease;padding-top:calc(16px+env(safe-area-inset-top,0px));padding-bottom:calc(16px+env(safe-area-inset-bottom,0px));}
 .screen.active{display:flex;}
+.screen.fullscreen{padding:0;overflow:hidden;}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 h1{font-size:1.6rem;font-weight:900;letter-spacing:-.03em;text-align:center;margin:12px 6px;background:linear-gradient(135deg,var(--gold),var(--accent2),var(--epic));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;text-shadow:0 0 30px rgba(124,58,237,.3);}
 h2{font-size:1.1rem;font-weight:800;text-align:center;margin:10px 6px;color:var(--text);text-shadow:0 1px 2px rgba(0,0,0,.5);}
@@ -185,8 +186,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 
 <div class="screen" id="settings">
 <h2>⚙️ Settings</h2>
-<div class="group" style="max-width:300px;margin:0 auto;">
-<h3 style="font-size:.9rem;margin-bottom:8px;">Audio</h3>
+<div style="max-width:300px;margin:0 auto;display:flex;flex-direction:column;gap:6px;text-align:left;">
+<h3 style="font-size:.9rem;margin:12px 0 8px;">Audio</h3>
 <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
 <span>Audio Enabled</span><input type="checkbox" id="setAudioEnabled" onchange="G.saveSetting('audioEnabled',this.checked)">
 </label>
@@ -223,7 +224,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <div style="font-size:.72rem;color:var(--muted);margin:4px 0;">Anonymous usage stats help improve the game. No personal data collected.</div>
 <h3 style="font-size:.9rem;margin:12px 0 8px;">Language</h3>
 <label style="display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:.85rem;">
-<span>Language</span>
+<span>Interface language</span>
 <select id="setLang" onchange="G.saveSetting('lang',this.value)" style="padding:4px;font-size:.8rem;">
 <option value="en">English</option><option value="es">Español</option><option value="pt">Português</option><option value="de">Deutsch (beta)</option><option value="fr">Français (beta)</option><option value="ja">日本語 (beta)</option>
 </select>
@@ -307,8 +308,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back to Menu</button>
 </div>
 
-<div class="screen" id="draft">
-<div style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));border-radius:10px;border:1px solid var(--border);gap:4px;margin-bottom:6px;">
+<div class="screen fullscreen" id="draft">
+<div id="draftCanvasSlot" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;"></div>
+<div id="draftHUD" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:calc(4px+env(safe-area-inset-top,0px)) 8px 4px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));gap:4px;">
   <div style="display:flex;align-items:center;gap:6px;">
     <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#4af,#26d);border:2px solid #4af;display:flex;align-items:center;justify-content:center;font-size:.7rem;">👑</div>
     <div>
@@ -328,16 +330,15 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#f44,#c22);border:2px solid #f44;display:flex;align-items:center;justify-content:center;font-size:.7rem;">💀</div>
   </div>
 </div>
-<div id="comebackBanner" style="display:none;font-size:1rem;color:var(--warn);margin:8px;padding:10px;border-radius:var(--radius);background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--warn);text-align:center;font-weight:800;letter-spacing:1px;animation:victoryPulse 1.5s ease-in-out infinite;">⭐ COMEBACK BONUS — 4th draw!</div>
-<canvas id="draftCanvas" width="400" height="200" style="background:radial-gradient(ellipse at center,#1a2540 0%,#0d1526 70%);border:1px solid var(--border);border-radius:var(--radius-sm);max-width:100%;touch-action:none;"></canvas>
-<div class="detail" id="draftHint" style="margin-bottom:8px;font-size:.78rem;font-weight:700;color:var(--accent2);">Pick 1 unit</div>
-<div id="draftTimerBar" style="display:none;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;margin:4px 0 8px;max-width:280px;margin-left:auto;margin-right:auto;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);"><div id="draftTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
-<div id="draftRoles" style="display:flex;gap:4px;justify-content:center;margin:4px 0 8px;flex-wrap:wrap;"></div>
-<div id="draftCounterPicks" style="display:none;margin:4px 0;padding:8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;"></div>
-<div id="draftArmyPreview" style="display:none;margin:6px 0;padding:8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
-<div id="draftArea" style="display:flex;justify-content:center;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:12px 0;"></div>
-<div class="group">
-<button class="btn" id="rerollButton" onclick="G.reroll()">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
+<div id="comebackBanner" style="display:none;position:fixed;top:calc(40px+env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);z-index:50;font-size:1rem;color:var(--warn);padding:8px 16px;border-radius:var(--radius);background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05));border:2px solid var(--warn);text-align:center;font-weight:800;letter-spacing:1px;animation:victoryPulse 1.5s ease-in-out infinite;">⭐ COMEBACK BONUS — 4th draw!</div>
+<div id="draftOverlay" style="position:fixed;bottom:0;left:0;right:0;z-index:50;padding:8px 12px calc(12px+env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,rgba(11,17,32,.95),rgba(11,17,32,.7) 70%,transparent);display:flex;flex-direction:column;align-items:center;gap:6px;">
+<div class="detail" id="draftHint" style="font-size:.78rem;font-weight:700;color:var(--accent2);">Pick 1 unit</div>
+<div id="draftTimerBar" style="display:none;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;width:100%;max-width:280px;box-shadow:inset 0 1px 2px rgba(0,0,0,.3);"><div id="draftTimerFill" style="height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px;transition:width .1s linear;width:100%;box-shadow:0 0 8px rgba(124,58,237,.5);"></div></div>
+<div id="draftRoles" style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap;"></div>
+<div id="draftCounterPicks" style="display:none;padding:6px 8px;border-radius:var(--radius);background:rgba(124,58,237,.08);border:1px solid var(--accent);font-size:.7rem;text-align:center;"></div>
+<div id="draftArmyPreview" style="display:none;padding:6px 8px;border-radius:var(--radius);background:var(--card);border:1px solid var(--border);text-align:center;font-size:.72rem;"></div>
+<div id="draftArea" style="display:flex;justify-content:center;align-items:flex-start;gap:8px;flex-wrap:wrap;"></div>
+<button class="btn" id="rerollButton" onclick="G.reroll()" style="max-width:200px;">🎲 Reroll (<span id="rerollsLeft">3</span>)</button>
 </div>
 </div>
 
@@ -353,8 +354,9 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <button class="btn primary" onclick="G.startBattle()">⚔️ To Battle</button>
 </div>
 
-<div class="screen" id="battle">
-<div id="battleHUD" style="width:100%;display:flex;align-items:center;justify-content:space-between;padding:4px 8px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));border-radius:10px 10px 0 0;border:1px solid var(--border);border-bottom:none;gap:4px;">
+<div class="screen fullscreen" id="battle">
+<canvas id="cv" role="img" aria-label="Battle arena — tap to advance one tick" style="position:absolute;inset:0;"></canvas>
+<div id="battleHUD" style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:calc(4px+env(safe-area-inset-top,0px)) 8px 4px;background:linear-gradient(180deg,rgba(28,38,64,.9),rgba(28,38,64,.3));gap:4px;">
   <div style="display:flex;align-items:center;gap:6px;min-width:0;flex:1;">
     <div id="hudPlayerAvatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#4af,#26d);border:2px solid #4af;box-shadow:0 0 8px rgba(68,170,255,.4);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;">👑</div>
     <div style="min-width:0;">
@@ -376,29 +378,28 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
     <div id="hudEnemyAvatar" style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#f44,#c22);border:2px solid #f44;box-shadow:0 0 8px rgba(255,68,68,.4);display:flex;align-items:center;justify-content:center;font-size:.8rem;flex-shrink:0;">💀</div>
   </div>
 </div>
-<div style="width:100%;display:flex;justify-content:space-between;padding:2px 8px;font-size:.65rem;font-weight:600;color:var(--muted);">
+<div style="position:fixed;top:calc(42px+env(safe-area-inset-top,0px));left:0;right:0;z-index:50;display:flex;justify-content:space-between;padding:2px 8px;font-size:.65rem;font-weight:600;color:var(--muted);">
   <span>❤️ <b id="battleHP">0</b> | 💀 <b id="battleEnemy">0</b></span>
   <span id="turn">T0</span>
   <span id="battleTimer" style="color:var(--muted);font-size:.65rem;"></span>
 </div>
-<div id="roundHistoryBar" style="display:flex;gap:4px;justify-content:center;margin:2px 0 4px;"></div>
-<canvas id="cv" role="img" aria-label="Battle arena — tap to advance one tick"></canvas>
-<div id="spellBar" style="display:none;flex-direction:row;gap:6px;justify-content:center;margin:6px 0;flex-wrap:wrap;" role="toolbar" aria-label="Spell bar"></div>
-<div id="battleLog" role="log" aria-label="Battle log"></div>
-<div id="compBonus" style="display:none;position:fixed;left:5px;top:70px;max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
-<div id="battleStats" style="display:none;position:fixed;right:5px;top:70px;max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
-<div id="killFeed" style="display:none;position:fixed;right:5px;top:130px;max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
-<div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:80px;transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
+<div id="roundHistoryBar" style="position:fixed;top:calc(62px+env(safe-area-inset-top,0px));left:0;right:0;z-index:50;display:flex;gap:4px;justify-content:center;"></div>
+<div id="spellBar" style="display:none;position:fixed;bottom:calc(50px+env(safe-area-inset-bottom,0px));left:0;right:0;z-index:50;flex-direction:row;gap:6px;justify-content:center;flex-wrap:wrap;" role="toolbar" aria-label="Spell bar"></div>
+<div id="battleLog" role="log" aria-label="Battle log" style="display:none;"></div>
+<div id="compBonus" style="display:none;position:fixed;left:5px;top:calc(80px+env(safe-area-inset-top,0px));max-width:140px;background:rgba(11,17,32,.85);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--accent2);pointer-events:none;z-index:99;"></div>
+<div id="battleStats" style="display:none;position:fixed;right:5px;top:calc(80px+env(safe-area-inset-top,0px));max-width:130px;background:rgba(11,17,32,.85);border:1px solid var(--border);border-radius:var(--radius-sm);padding:6px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:99;"></div>
+<div id="killFeed" style="display:none;position:fixed;right:5px;top:calc(140px+env(safe-area-inset-top,0px));max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
+<div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:calc(80px+env(safe-area-inset-bottom,0px));transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
-<button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:60px;right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
-<div class="group">
-<button class="btn primary" onclick="G.tick()" style="width:auto;padding:12px 18px;">⏵</button>
-<button class="btn" onclick="G.auto()" style="width:auto;padding:12px 18px;" id="autoBtn">⏩</button>
-<button class="btn" onclick="G.cycleSpeed()" style="width:auto;padding:12px 12px;font-size:.7rem;" id="speedBtn">1×</button>
-<button class="btn" onclick="G.togglePause()" style="width:auto;padding:12px 14px;" id="pauseBtn">⏸</button>
-<button class="btn red" onclick="G.skip()" style="width:auto;padding:12px 18px;">⏭</button>
+<button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:calc(70px+env(safe-area-inset-top,0px));right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
+<div class="group" style="position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;justify-content:center;gap:4px;padding:6px 6px calc(6px+env(safe-area-inset-bottom,0px));background:linear-gradient(0deg,rgba(11,17,32,.9),transparent);">
+<button class="btn primary" onclick="G.tick()" style="width:auto;padding:10px 16px;">⏵</button>
+<button class="btn" onclick="G.auto()" style="width:auto;padding:10px 16px;" id="autoBtn">⏩</button>
+<button class="btn" onclick="G.cycleSpeed()" style="width:auto;padding:10px 10px;font-size:.7rem;" id="speedBtn">1×</button>
+<button class="btn" onclick="G.togglePause()" style="width:auto;padding:10px 12px;" id="pauseBtn">⏸</button>
+<button class="btn red" onclick="G.skip()" style="width:auto;padding:10px 16px;">⏭</button>
 </div>
-<div id="battleControlsHint" style="text-align:center;font-size:.6rem;color:var(--muted);margin:4px 0;opacity:0.7;">Space: tick · P: pause · 1/2/3: speed · S: skip · A: auto</div>
+<div id="battleControlsHint" style="position:fixed;bottom:calc(46px+env(safe-area-inset-bottom,0px));left:0;right:0;text-align:center;font-size:.6rem;color:var(--muted);opacity:0.7;z-index:50;">Space: tick · P: pause · 1/2/3: speed · S: skip · A: auto</div>
 </div>
 
 <div class="screen" id="result">
@@ -431,7 +432,6 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <div style="margin-bottom:8px;">
 <button class="btn" id="forgeModeUnit" onclick="G.setForgeMode('unit')" style="font-size:.78rem;padding:4px 10px;" aria-label="Forge mode: unit">⚔️ Unit</button>
 <button class="btn" id="forgeModeSpell" onclick="G.setForgeMode('spell')" style="font-size:.78rem;padding:4px 10px;" aria-label="Forge mode: spell">✨ Spell</button>
-<button class="btn" onclick="G.menu()" style="font-size:.78rem;padding:4px 10px;float:right;" aria-label="Back to menu">← Back</button>
 </div>
 <div class="detail" id="aiStatus" style="margin-bottom:8px;">AI: idle</div>
 <input id="forgePrompt" type="text" placeholder="e.g. ice mage, fire dragon, ninja..." aria-label="Enter a concept for your custom unit">
@@ -444,6 +444,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
   <div style="background:var(--bg);border-radius:6px;height:8px;margin:6px 0;overflow:hidden;">
     <div id="forgeModelFill" style="background:linear-gradient(90deg,var(--accent),var(--accent2));height:8px;border-radius:6px;width:0%;transition:width .3s;"></div>
   </div>
+  <div class="detail" id="forgeModelStats" style="margin-top:6px;font-size:.7rem;color:var(--muted);"></div>
   <button class="btn red" id="forgeModelCancelBtn" onclick="cancelLLM()" style="margin-top:8px;font-size:.78rem;">✖ Cancel download</button>
 </div>
 <div id="forgePreview" style="margin:12px 0;"></div>
@@ -509,7 +510,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <div id="shopOffer" style="margin:10px 0;"></div>
 <div class="group">
 <button class="btn primary" onclick="G.buyShopUnit()" id="buyBtn">🎲 Buy Random Unit (<span id="shopCost">50</span> coins)</button>
-<button class="btn" onclick="G.rerollShop()">🔄 New Offer (10 coins)</button>
+<button class="btn" onclick="G.rerollShop()" id="rerollShopBtn">🔄 New Offer (10 coins)</button>
 </div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
@@ -598,6 +599,10 @@ async function loadModules(){
       // Expected on many setups — don't show a scary error panel, just log.
       console.warn("web-llm import failed ("+url+"): "+(e&&e.message||e));
     }
+  }
+  // NEW: start the LLM download as soon as the module is available.
+  if(W && navigator.gpu){
+    preloadAI().catch(e=>console.warn("early preloadAI error:",e.message));
   }
   // trystero: vendored locally to avoid esm.sh connection issues.
   try{
@@ -927,6 +932,8 @@ function t(key){
 }
 
 // Phase 38: Ad SDK abstraction — falls back to stub when no real SDK is loaded.
+const FORGE_AD_MS=1000;
+
 const AdSDK={
   loaded:false,
   sdk:null,
@@ -985,18 +992,28 @@ const Analytics={
 };
 // Phase 7: load with crash recovery — fall back to backup if primary is corrupt.
 function loadData(){
-  try{return JSON.parse(localStorage.getItem(SAVE_KEY))||{};}
-  catch(e){
+  try{
+    const data=JSON.parse(localStorage.getItem(SAVE_KEY));
+    if(data&&typeof data==="object"&&!Array.isArray(data)){
+      return data;
+    }
+    return {};
+  }catch(e){
     showError("Save corrupt, restoring backup.");
-    try{return JSON.parse(localStorage.getItem(SAVE_BACKUP_KEY))||{};}
-    catch(e2){return {};}
+    try{
+      const backup=JSON.parse(localStorage.getItem(SAVE_BACKUP_KEY));
+      if(backup&&typeof backup==="object"&&!Array.isArray(backup)){
+        return backup;
+      }
+    }catch(e2){}
+    return {};
   }
 }
 // J4: Async load — tries localStorage first, then IndexedDB fallback.
 // Used by G.init() to recover saves written to IDB when localStorage was full.
 function loadDataAsync(cb){
   const sync=loadData();
-  if(sync&&sync.version){cb(sync);return;} // fast path: localStorage has data
+  if(sync&&typeof sync.version==="number"&&!isNaN(sync.version)){cb(sync);return;} // fast path: localStorage has valid data
   // No localStorage data — try IndexedDB.
   idbGet(SAVE_KEY,data=>{
     if(data){
@@ -1008,15 +1025,19 @@ function loadDataAsync(cb){
 // Phase 7: migrate older save schemas forward.
 function migrateSave(s){
   if(!s)return s;
-  // Future-version save: warn but don't downgrade (may have new fields we don't know).
-  if(s.version>CURRENT_VERSION){
-    console.warn("Save version "+s.version+" > current "+CURRENT_VERSION+" — may have issues.");
-  }
-  if(!s.version||s.version<4){
-    // v3 and earlier had no progression fields; re-init defaults via G.init.
-    s.version=4;
-  }
-  if(s.version<5){
+  try{
+    // Validate version is a number to prevent type coercion bugs.
+    const ver=typeof s.version==="number"&&!isNaN(s.version)?s.version:0;
+    // Future-version save: refuse to load to prevent data loss.
+    if(ver>CURRENT_VERSION){
+      console.warn("Save version "+ver+" > current "+CURRENT_VERSION+" — refusing to load to prevent data loss.");
+      return null;
+    }
+    if(!s.version||ver<4){
+      // v3 and earlier had no progression fields; re-init defaults via G.init.
+      s.version=4;
+    }
+  if(ver<5){
     // v4 -> v5: add progression fields (achievements, upgrades, xp, coins).
     s.achievements=s.achievements||{};
     s.upgrades=s.upgrades||{};
@@ -1024,13 +1045,17 @@ function migrateSave(s){
     s.coins=s.coins||0;
     s.version=5;
   }
-  if(s.version<6){
+  if(ver<6){
     // v5 -> v6 (Phase 8): match/lives/loadout/collection schema.
     // All new save fields defined here so subsequent phases can use them.
     s.matchWins=s.matchWins||0;
     s.arena=s.arena||0;
+    if(!Array.isArray(s.ai))s.ai=[];
     // collection = existing AI units (legacy format, no behaviour API fields).
-    s.collection=(Array.isArray(s.ai)?s.ai:[]).map(u=>({...u,legacy:true}));
+    // Preserve existing collection if present (re-migration or newer save).
+    if(!Array.isArray(s.collection)||s.collection.length===0){
+      s.collection=s.ai.map(u=>({...u,legacy:true}));
+    }
     // loadout = first 4 of deck (or first 4 base unit names if deck missing).
     if(s.loadout&&s.loadout.length>0){
       // already has loadout (re-migrating)
@@ -1043,14 +1068,14 @@ function migrateSave(s){
     if(s.achievements)delete s.achievements.forge5;
     s.version=6;
   }
-  if(s.version<7){
+  if(ver<7){
     // v6 -> v7 (Phase 19b): daily forge cap tracking.
     s.forgeDate=s.forgeDate||"";
     s.forgeCount=s.forgeCount||0;
     s.roleWins=s.roleWins||{};
     s.version=7;
   }
-  if(s.version<8){
+  if(ver<8){
     // v7 -> v8 (Phase 23): spellbook for forged spells.
     s.spellbook=Array.isArray(s.spellbook)?s.spellbook:[];
     // Starter spells: TNT + Heal Rain.
@@ -1062,31 +1087,36 @@ function migrateSave(s){
     }
     s.version=8;
   }
-  if(s.version<9){
+  if(ver<9){
     // v8 -> v9 (Phase 31): onboarding flag + settings.
     s.onboarded=s.onboarded||false;
     s.settings=s.settings||{audioEnabled:true,reducedMotion:false,quality:"auto"};
     s.version=9;
   }
-  if(s.version<10){
+  if(ver<10){
     // v9 -> v10 (Phase 33): daily quests + login streaks.
     s.quests=(s.quests&&typeof s.quests==="object")?s.quests:{date:"",list:[],streak:{count:0,lastLogin:""}};
     if(!Array.isArray(s.quests.list))s.quests.list=[];
     if(!s.quests.streak||typeof s.quests.streak!=="object")s.quests.streak={count:0,lastLogin:""};
     s.version=10;
   }
-  if(s.version<11){
+  if(ver<11){
     // v10 -> v11 (Phase 35): analytics opt-out + ranked.
     s.analyticsOptOut=s.analyticsOptOut||false;
     s.ranked=s.ranked||{name:"",rating:1000,wins:0,losses:0,season:0,peakRating:1000};
     s.version=11;
   }
-  if(s.version<12){
+  if(ver<12){
     // v11 -> v12 (Phase 37): replays.
     s.replays=s.replays||[];
     s.version=12;
   }
   return s;
+  }catch(e){
+    console.error("Migration failed:",e);
+    // Return a safe default save to prevent corruption
+    return {version:CURRENT_VERSION};
+  }
 }
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 
@@ -1099,6 +1129,33 @@ function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 //   targeting, movement, attackCondition, abilityTrigger, moveSpeedMod, role
 // Runtime-only fields (poison/slow/stun/dead/deathT) are added by Battle, not persisted.
 function unit(x={}){
+  const bodyPlan=x.bodyPlan||"humanoid";
+  const weaponType=["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"].includes(x.weaponType)?x.weaponType:"none";
+  // D5: rebuild stale/missing recipes so visual changes (weapon attachment, facing)
+  // apply to saved/base units too. New recipes carry recipeVersion:1.
+  let recipe=x.recipe;
+  if((!recipe||recipe.recipeVersion!==1)&&typeof RecipeAssembler!=="undefined"){
+    try{
+      recipe=RecipeAssembler.build({
+        primaryColor:x.primaryColor||"gray",
+        accentColor:x.accentColor||"gray",
+        primaryHex:x.c||"#888",
+        accentHex:x.c?lighten(x.c,0.3):"#aaa",
+        headHex:x.c?lighten(x.c,0.2):"#999",
+        weaponHex:WEAPON_COLOR[weaponType],
+        bodyPlan,
+        weaponType,
+        sizeMod:x.sizeMod||"medium",
+        pattern:x.pattern||"none",
+        headFeature:x.headFeature||"none",
+        backFeature:x.backFeature||"none",
+        tailFeature:x.tailFeature||"none",
+        aura:x.aura||"none",
+        eyeStyle:x.eyeStyle||"normal",
+        weaponStyle:x.weaponStyle||"standard"
+      });
+    }catch(e){recipe=x.recipe||null;}
+  }
   return {
     id:x.id||Date.now()+F(R()*99999),
     n:String(x.n||"Unit").slice(0,20).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'"),
@@ -1120,9 +1177,9 @@ function unit(x={}){
     abilityTrigger:ABILITY_TRIGGER_OPTS.includes(x.abilityTrigger)?x.abilityTrigger:"never",
     moveSpeedMod:clamp(Number(x.moveSpeedMod)||100,50,150),
     role:ROLE_OPTS.includes(x.role)?x.role:"frontline",
-    weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"].includes(x.weaponType)?x.weaponType:"none",
+    weaponType,
     // Phase 25: visual modifier fields (preserved for P2P + share + clone).
-    bodyPlan:x.bodyPlan||null,
+    bodyPlan,
     headFeature:x.headFeature||"none",
     backFeature:x.backFeature||"none",
     tailFeature:x.tailFeature||"none",
@@ -1130,7 +1187,7 @@ function unit(x={}){
     eyeStyle:x.eyeStyle||"normal",
     pattern:x.pattern||"none",
     weaponStyle:x.weaponStyle||"standard",
-    recipe:x.recipe||null // Phase 11: visual recipe (null = role-coded fallback)
+    recipe // Phase 11: visual recipe (null = role-coded fallback)
   };
 }
 function cloneUnit(u){return unit(deepClone(u));}
@@ -1152,6 +1209,11 @@ const MODEL="Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 // and we don't re-query the LLM every round.
 let aiCache=[];
 
+function debugForge(...args){console.log("[Forge]",...args);}
+
+let llmStartTime=0;
+let llmLastSample={p:0,t:0};
+
 // Phase 4: update the forge model-download progress UI.
 // (The legacy aiText/aiFill elements don't exist in the DOM, so we drive
 // the forgeModelProgress bar directly plus a global for pollers.)
@@ -1160,6 +1222,25 @@ async function updateAI(text,percent){
   aiProgress={text:text||"",pct:percent||0};
   setText("forgeModelText",text);
   setStyle("forgeModelFill","width",(percent||0)+"%");
+}
+
+function updateAIFromProgress(p){
+  if(llmCancelled)return;
+  if(!llmStartTime)llmStartTime=Date.now();
+  const now=Date.now();
+  const elapsed=(now-llmStartTime)/1000;
+  const pct=Math.floor(p.progress*100);
+  let speed=0;
+  if(elapsed>0)speed=(p.progress*100)/elapsed;
+  let eta="";
+  if(speed>0.1&&pct<100)eta=`~${Math.ceil((100-pct)/speed)}s left`;
+  let text=`Downloading AI ${pct}%`;
+  if(pct<100&&speed>0)text+=` · ${speed.toFixed(1)}%/s · ${eta}`;
+  if(pct>=100)text="AI ready";
+  updateAI(text,pct);
+  const stats=$("forgeModelStats");
+  if(stats)stats.innerText=`${pct}% downloaded · ${speed.toFixed(1)}% per second · ${eta}`;
+  llmLastSample={p:p.progress,t:now};
 }
 
 // A promise that resolves when the user cancels the in-flight download.
@@ -1184,6 +1265,9 @@ function cancelLLM(){
   updateAI("AI cancelled (templates)",0);
   const aiStatus=$("aiStatus");
   if(aiStatus)aiStatus.innerText="AI: Cancelled (templates)";
+  const stats=$("forgeModelStats");
+  if(stats)stats.innerText="";
+  llmStartTime=0;
   console.warn("AI load cancelled by user — using procedural forge.");
 }
 
@@ -1201,7 +1285,11 @@ async function initLLM(){
   }
   llmLoading=true;
   llmCancelled=false;
+  llmStartTime=0;
+  llmLastSample={p:0,t:0};
   resetCancelSignal();
+  const stats=$("forgeModelStats");
+  if(stats)stats.innerText="";
   await updateAI("AI loading...",0);
   // Phase 12: cache the downloaded model so it only downloads once.
   // web-llm supports "cache" (Cache API, default), "indexeddb", "opfs".
@@ -1217,18 +1305,10 @@ async function initLLM(){
         const workerCode='import{WebWorkerMLCEngineHandler}from"https://esm.run/@mlc-ai/web-llm";const h=new WebWorkerMLCEngineHandler();self.onmessage=m=>h.onmessage(m);';
         const blob=new Blob([workerCode],{type:"application/javascript"});
         llmWorker=new Worker(URL.createObjectURL(blob),{type:"module"});
-        llm=await W.CreateWebWorkerMLCEngine(llmWorker,MODEL,{appConfig,initProgressCallback:p=>{
-          if(llmCancelled)return;
-          let percent=Math.floor(p.progress*100);
-          updateAI("Downloading AI "+percent+"%",percent);
-        }});
+        llm=await W.CreateWebWorkerMLCEngine(llmWorker,MODEL,{appConfig,initProgressCallback:updateAIFromProgress});
       }else{
         // Fallback: main-thread engine (older web-llm versions).
-        llm=await W.CreateMLCEngine(MODEL,{appConfig,initProgressCallback:p=>{
-          if(llmCancelled)return;
-          let percent=Math.floor(p.progress*100);
-          updateAI("Downloading AI "+percent+"%",percent);
-        }});
+        llm=await W.CreateMLCEngine(MODEL,{appConfig,initProgressCallback:updateAIFromProgress});
       }
       if(llmCancelled){llm=null;return null;}
       llmReady=true;
@@ -1991,44 +2071,49 @@ const BODY_PLANS={
   })
 };
 const WEAPONS={
-  sword:{shape:{t:"line",x1:9,y1:-8,x2:16,y2:-16,c:"#ccc",w:2,joint:"arm_raise"},
+  // D5: weapon shapes are now defined relative to the grip (hand position).
+  // RecipeAssembler shifts them to grip-origin and attaches them to the arm.
+  sword:{shape:{t:"line",x1:0,y1:0,x2:7,y2:-8,c:"#ccc",w:2},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  bow:{shape:{t:"arc",cx:12,cy:-10,r:8,start:-1,end:1,c:"#a72",w:2,joint:"bow_draw"},
-    attack:[{t:0,bow_draw:0,arm_raise:0},{t:0.5,bow_draw:1,arm_raise:0.5},{t:1,bow_draw:0,arm_raise:0}]},
-  staff:{shape:{t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#a72",w:2,joint:"arm_raise"},
+  bow:{shapes:[
+    {t:"arc",cx:0,cy:0,r:8,start:-1,end:1,c:"#a72",w:2},
+    {t:"line",x1:0,y1:-6.7,x2:0,y2:6.7,c:"#ddd",w:1,joint:"bow_draw",jointAxis:"x",jointRange:-5,grip:{x:0,y:0}}
+  ],attack:[{t:0,bow_draw:0,arm_raise:0},{t:0.5,bow_draw:1,arm_raise:0.5},{t:1,bow_draw:0,arm_raise:0}]},
+  staff:{shape:{t:"line",x1:0,y1:0,x2:0,y2:-12,c:"#a72",w:2},
     attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
-  dagger:{shape:{t:"line",x1:9,y1:-8,x2:13,y2:-12,c:"#ccc",w:1,joint:"arm_raise"},
+  dagger:{shape:{t:"line",x1:0,y1:0,x2:4,y2:-4,c:"#ccc",w:1},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  shield:{shape:{t:"rect",x:-13,y:-10,w:6,h:10,c:"#ccc"},
+  shield:{shape:{t:"rect",x:-6,y:-5,w:6,h:10,c:"#ccc",grip:{x:0,y:0}},
     attack:[{t:0,arm_raise:0},{t:1,arm_raise:0}]},
-  hammer:{shape:{t:"rect",x:12,y:-18,w:6,h:6,c:"#888",joint:"arm_raise"},
+  hammer:{shape:{t:"rect",x:0,y:-6,w:6,h:6,c:"#888"},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  claws:{shape:{t:"line",x1:9,y1:-6,x2:12,y2:-2,c:"#ccc",w:1,joint:"arm_raise"},
+  claws:{shape:{t:"line",x1:0,y1:0,x2:3,y2:4,c:"#ccc",w:1},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  breath:{shape:{t:"circle",cx:10,cy:-10,r:4,c:"#f80",glow:6,joint:"arm_raise"},
+  breath:{shape:{t:"circle",cx:0,cy:0,r:4,c:"#f80",glow:6},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  scythe:{shape:{t:"arc",cx:14,cy:-12,r:8,start:-0.5,end:1.2,c:"#9f9",w:2,joint:"arm_raise"},
+  scythe:{shape:{t:"arc",cx:0,cy:-8,r:8,start:-0.5,end:1.2,c:"#9f9",w:2},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  whip:{shape:{t:"line",x1:8,y1:-8,x2:18,y2:-4,c:"#a72",w:1,joint:"arm_raise"},
+  whip:{shape:{t:"line",x1:0,y1:0,x2:10,y2:4,c:"#a72",w:1},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:0.6,arm_raise:0.5},{t:1,arm_raise:0}]},
-  spear:{shape:{t:"line",x1:8,y1:-10,x2:20,y2:-10,c:"#aaa",w:2,joint:"arm_raise"},
+  spear:{shape:{t:"line",x1:0,y1:0,x2:8,y2:-10,c:"#aaa",w:2},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  rifle:{shape:{t:"rect",x:8,y:-12,w:10,h:4,c:"#666",joint:"arm_raise"},
+  rifle:{shape:{t:"rect",x:0,y:0,w:10,h:4,c:"#666"},
     attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:0.5},{t:1,arm_raise:0}]},
-  wand:{shape:{t:"line",x1:8,y1:-12,x2:10,y2:-22,c:"#a72",w:1,joint:"arm_raise"},
+  wand:{shape:{t:"line",x1:0,y1:0,x2:2,y2:-10,c:"#a72",w:1},
     attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
-  axe:{shape:{t:"polygon",pts:[[10,-14],[16,-18],[16,-10],[10,-14]],c:"#999",joint:"arm_raise"},
+  axe:{shape:{t:"polygon",pts:[[0,0],[6,-4],[6,4],[0,0]],c:"#999"},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  trident:{shape:{t:"line",x1:8,y1:-8,x2:14,y2:-20,c:"#7bb",w:2,joint:"arm_raise"},
+  trident:{shape:{t:"line",x1:0,y1:0,x2:6,y2:-12,c:"#7bb",w:2},
     attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]},
-  crossbow:{shape:{t:"rect",x:8,y:-12,w:8,h:3,c:"#864",joint:"arm_raise"},
+  crossbow:{shape:{t:"rect",x:0,y:0,w:8,h:3,c:"#864"},
     attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:0.5},{t:1,arm_raise:0}]},
-  orb:{shape:{t:"circle",cx:10,cy:-14,r:5,c:"#f0f",glow:8,joint:"arm_raise"},
+  orb:{shape:{t:"circle",cx:0,cy:0,r:5,c:"#f0f",glow:8},
     attack:[{t:0,arm_raise:0},{t:0.5,arm_raise:1},{t:1,arm_raise:0}]},
-  dual_blades:{shape:{t:"line",x1:9,y1:-8,x2:14,y2:-14,c:"#ddd",w:1,joint:"arm_raise"},
+  dual_blades:{shape:{t:"line",x1:0,y1:0,x2:5,y2:-6,c:"#ddd",w:1},
     attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:1},{t:0.5,arm_raise:0.3},{t:0.8,arm_raise:1},{t:1,arm_raise:0}]},
   none:{shape:null,attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]}
 };
+
 function scaleShape(s,scale){
   if(!scale||scale===1)return s;
   const out={...s};
@@ -2046,6 +2131,10 @@ function scaleShape(s,scale){
   if(out.rx!==undefined)out.rx*=scale;
   if(out.ry!==undefined)out.ry*=scale;
   if(out.pts)out.pts=out.pts.map(p=>[p[0]*scale,p[1]*scale]);
+  if(out.parentPivot){out.parentPivot={x:out.parentPivot.x*scale,y:out.parentPivot.y*scale};}
+  if(out.gripOffset){out.gripOffset={x:out.gripOffset.x*scale,y:out.gripOffset.y*scale};}
+  if(out.grip){out.grip={x:out.grip.x*scale,y:out.grip.y*scale};}
+  if(out.jointRange!==undefined)out.jointRange*=scale;
   return out;
 }
 // Phase 25: Visual modifier lookup tables — each enum value maps to shapes.
@@ -2127,11 +2216,53 @@ const WEAPON_STYLE_MODIFIERS={
 };
 
 const RecipeAssembler={
+  // D5: find a body-plan arm for weapon attachment.
+  _findArm(body,side="right"){
+    const arms=(body.shapes||[]).filter(s=>s.joint==="arm_raise");
+    if(!arms.length) return null;
+    const centerX=s=>{
+      if(s.cx!==undefined) return s.cx;
+      if(s.x!==undefined) return s.x+(s.w||0)/2;
+      if(s.x1!==undefined) return (s.x1+(s.x2||s.x1))/2;
+      if(s.pts) return s.pts.reduce((a,p)=>a+p[0],0)/s.pts.length;
+      return 0;
+    };
+    const pick=side==="right"
+      ? arms.reduce((a,b)=>centerX(a)>centerX(b)?a:b)
+      : arms.reduce((a,b)=>centerX(a)<centerX(b)?a:b);
+    return RecipeAssembler._armShoulderHand(pick);
+  },
+  _armShoulderHand(s){
+    if(s.t==="rect") return {shoulder:{x:s.x+s.w/2,y:s.y},hand:{x:s.x+s.w/2,y:s.y+s.h}};
+    if(s.t==="line") return {shoulder:{x:s.x1,y:s.y1},hand:{x:s.x2,y:s.y2}};
+    if(s.t==="circle"||s.t==="arc") return {shoulder:{x:s.cx,y:s.cy-s.r},hand:{x:s.cx,y:s.cy+s.r}};
+    if(s.t==="polygon"&&s.pts&&s.pts.length) return {shoulder:s.pts[0],hand:s.pts[1]||s.pts[0]};
+    return {shoulder:{x:0,y:0},hand:{x:0,y:0}};
+  },
+  _inferGrip(s){
+    if(s.grip) return s.grip;
+    if(s.t==="line") return {x:s.x1,y:s.y1};
+    if(s.t==="rect") return {x:s.x,y:s.y+s.h};
+    if(s.t==="circle"||s.t==="arc") return {x:s.cx,y:s.cy};
+    if(s.t==="polygon"&&s.pts&&s.pts.length) return {x:s.pts[0][0],y:s.pts[0][1]};
+    return {x:0,y:0};
+  },
+  _shiftToGrip(s,g){
+    const out={...s};
+    const tx=-g.x,ty=-g.y;
+    if(out.cx!==undefined){out.cx+=tx;out.cy+=ty;}
+    if(out.x!==undefined){out.x+=tx;out.y+=ty;}
+    if(out.x1!==undefined){out.x1+=tx;out.y1+=ty;out.x2+=tx;out.y2+=ty;}
+    if(out.pts) out.pts=out.pts.map(p=>[p[0]+tx,p[1]+ty]);
+    if(out.parentPivot){out.parentPivot={x:out.parentPivot.x+tx,y:out.parentPivot.y+ty};}
+    if(out.gripOffset){out.gripOffset={x:out.gripOffset.x+tx,y:out.gripOffset.y+ty};}
+    return out;
+  },
   build(attrs){
-    const primary=COLOR_MAP[attrs.primaryColor]||"#888";
-    const accent=COLOR_MAP[attrs.accentColor]||"#aaa";
-    const head=lighten(primary,0.2);
-    const weapon=WEAPON_COLOR[attrs.weaponType]||primary;
+    const primary=attrs.primaryHex||COLOR_MAP[attrs.primaryColor]||"#888";
+    const accent=attrs.accentHex||COLOR_MAP[attrs.accentColor]||"#aaa";
+    const head=attrs.headHex||lighten(primary,0.2);
+    const weapon=attrs.weaponHex||WEAPON_COLOR[attrs.weaponType]||primary;
     const colors={primary,accent,head,weapon};
     const scale=SIZE_SCALE[attrs.sizeMod]||1.0;
     const bodyBase=BODY_SIZE[attrs.bodyPlan]||1.0;
@@ -2150,11 +2281,32 @@ const RecipeAssembler={
       }
       return scaled;
     });
-    if(weaponTpl.shape){
-      // Phase 25: apply weapon style modifiers.
-      const ws=WEAPON_STYLE_MODIFIERS[attrs.weaponStyle||"standard"]||{};
-      const wShape={...scaleShape(weaponTpl.shape,totalScale),...ws};
-      shapes.push(wShape);
+    // D5: attach weapon(s) to the unit's right arm (or left for shields).
+    if(weaponTpl.shape||weaponTpl.shapes){
+      const wlist=[];
+      if(weaponTpl.shapes) wlist.push(...weaponTpl.shapes);
+      else if(weaponTpl.shape) wlist.push(weaponTpl.shape);
+      const side=attrs.weaponType==="shield"?"left":"right";
+      let arm=RecipeAssembler._findArm(body,side);
+      // D5 fallback for body plans without arm_raise joints: attach at a default
+      // shoulder/hand so the weapon is still visible.
+      if(!arm) arm={shoulder:{x:0,y:-10},hand:{x:side==="left"?-7:7,y:0}};
+      const shoulder={x:arm.shoulder.x*totalScale,y:arm.shoulder.y*totalScale};
+      const hand={x:arm.hand.x*totalScale,y:arm.hand.y*totalScale};
+      for(const ws of wlist){
+        const wsMod=WEAPON_STYLE_MODIFIERS[attrs.weaponStyle||"standard"]||{};
+        let s=scaleShape(ws,totalScale);
+        // Shift shape so its grip is at (0,0).
+        const grip=RecipeAssembler._inferGrip(s);
+        s=RecipeAssembler._shiftToGrip(s,grip);
+        // Attach to arm; the merged attack keyframes still drive arm_raise.
+        s.parentJoint="arm_raise";
+        s.parentPivot=shoulder;
+        s.gripOffset=hand;
+        // Remove the old own-joint arm_raise; keep special joints like bow_draw.
+        if(s.joint==="arm_raise") delete s.joint;
+        shapes.push({...s,...wsMod});
+      }
     }
     // Phase 25: merge visual modifiers.
     const headFeat=HEAD_FEATURES[attrs.headFeature||"none"]||HEAD_FEATURES.none;
@@ -2199,6 +2351,8 @@ const RecipeAssembler={
         ...body.animations,
         attack:mergedAttack
       },
+      // D5: recipe version so old cached/saved recipes can be rebuilt.
+      recipeVersion:1,
       // Phase 25: visual modifier metadata for rendering.
       aura:attrs.aura||"none",
       auraColor:AURA_MAP_VISUAL[attrs.aura||"none"]||null,
@@ -2254,16 +2408,17 @@ const TEMPLATES=[
   {kw:["treant","flower","mushroom","plant"],a:{role:"frontline",targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"when_ally_hurt",moveSpeedMod:50,hp:120,dmg:10,range:80,speed:35,ability:"heal_burst",bodyPlan:"plant",weaponType:"none",primaryColor:"green",accentColor:"yellow",sizeMod:"large"}},
 ];
 function templateFallback(prompt){
+  debugForge("templateFallback start",prompt);
   const p=(prompt||"").toLowerCase();
   let match=TEMPLATES.find(t=>t.kw.some(k=>p.includes(k)));
   let attrs;
   if(match){
     attrs={...match.a};
-    attrs.name=prompt.slice(0,20);
+    attrs.name=String(prompt).slice(0,20).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
   }else{
     // Random template with the prompt as name.
     attrs={...TEMPLATES[F(R()*TEMPLATES.length)].a};
-    attrs.name=(prompt||"Unknown").slice(0,20);
+    attrs.name=String(prompt||"Unknown").slice(0,20).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
   }
   // ±20% param variation.
   const v=()=>0.8+R()*0.4;
@@ -2271,6 +2426,7 @@ function templateFallback(prompt){
   attrs.dmg=Math.round(attrs.dmg*v());
   attrs.range=Math.round(attrs.range*v());
   attrs.speed=Math.round(attrs.speed*v());
+  debugForge("templateFallback result",{match:match?match.a.name||null:null,attrs});
   return attrs;
 }
 
@@ -2325,9 +2481,9 @@ function expandRecipe(min){
 function serializeUnitsForPeer(units){
   const data=units.map(u=>{
     // Starter unit: send name only, receiver resolves from G.base.
-    // A unit is a starter if its name matches a base unit with the same recipe.
+    // A unit is a starter if its name + core stats match a base unit.
     const starter=G.base.find(b=>b.n===u.n);
-    if(starter&&JSON.stringify(starter.recipe)===JSON.stringify(u.recipe))return u.n;
+    if(starter&&starter.h===u.h&&starter.d===u.d&&starter.r===u.r&&starter.s===u.s&&starter.a===u.a&&starter.weaponType===u.weaponType&&starter.ability===u.ability)return u.n;
     // Custom unit (LLM-forged or modified): send full data with minified recipe.
     const recipe=minifyRecipe(u.recipe);
     return{...u,recipe};
@@ -2372,6 +2528,7 @@ function deserializeUnitsFromPeer(data){
 
 // Phase 12: build a unit object from LLM/template attributes.
 function attrsToUnit(attrs,arenaIndex){
+  debugForge("attrsToUnit input",{attrs,arenaIndex});
   const primaryHex=COLOR_MAP[attrs.primaryColor]||"#4a7";
   const accentHex=COLOR_MAP[attrs.accentColor]||"#0ff";
   const headHex=lighten(primaryHex,0.2);
@@ -2382,6 +2539,10 @@ function attrsToUnit(attrs,arenaIndex){
   });
   const atkSpd=deriveAtkSpd(attrs);
   const crit=deriveCrit(attrs);
+  // Derive z (collision/visual size) from sizeMod + bodyPlan so it matches the recipe scale.
+  const sizeScale=SIZE_SCALE[attrs.sizeMod||"medium"]||1.0;
+  const bodySize=BODY_SIZE[attrs.bodyPlan||"humanoid"]||1.0;
+  const z=Math.round(10*sizeScale*bodySize);
   return validateUnit({
     n:attrs.name,
     role:attrs.role,
@@ -2392,8 +2553,10 @@ function attrsToUnit(attrs,arenaIndex){
     a:atkSpd,crit:crit,
     ability:attrs.ability,
     c:primaryHex,
+    z,
     weaponType:attrs.weaponType,
     bodyPlan:attrs.bodyPlan,
+    sizeMod:attrs.sizeMod||"medium",
     // Phase 25: visual modifier fields (stored for P2P + re-render).
     headFeature:attrs.headFeature||"none",
     backFeature:attrs.backFeature||"none",
@@ -2404,6 +2567,8 @@ function attrsToUnit(attrs,arenaIndex){
     weaponStyle:attrs.weaponStyle||"standard",
     recipe
   },arenaIndex);
+  debugForge("attrsToUnit output",u);
+  return u;
 }
 
 // Phase 12: IndexedDB cache for generated units.
@@ -2559,12 +2724,14 @@ async function askField(field,name,attrs,customPrompts,customParsers){
       ?`You are designing a spell for a top-down auto-battler. So far the spell is:\n${JSON.stringify(ctx)}\nAnswer the next question with a single word or number only.`
       :`You are designing a game unit for a top-down auto-battler. So far the unit is:\n${JSON.stringify(ctx)}\nAnswer the next question with a single word or number only.`;
     const user=prompts[field](name,attrs);
+    debugForge("askField prompt",{field,mode:customPrompts?"spell":"unit",user,sys});
     const reply=await llm.chat.completions.create({
       messages:[{role:"system",content:sys},{role:"user",content:user}],
       temperature:0.7,stream:false
     });
     const answer=(reply.choices[0].message.content||"").trim();
     const parsed=parsers[field](answer);
+    debugForge("askField response",{field,answer,parsed});
     // Check if the parser returned the default (first enum value) because the
     // answer wasn't recognised — that counts as a miss so we can retry.
     const enumCheck=customPrompts?SPELL_ENUM:ENUM_FIELDS;
@@ -2572,6 +2739,7 @@ async function askField(field,name,attrs,customPrompts,customParsers){
       return null; // answer wasn't a valid enum value
     return parsed;
   }catch(e){
+    debugForge("askField error",{field,error:e.message});
     return null;
   }
 }
@@ -2641,9 +2809,11 @@ async function askFieldsBatch(fields,name,attrs){
 async function generateUnit(rawPrompt,arenaIndex){
   const prompt=normalizePrompt(rawPrompt);
   const key=cacheKey(prompt,MODEL);
+  debugForge("generateUnit start",{rawPrompt,prompt,arenaIndex});
   // 1. Cache hit?
   const cached=await cacheGet(key);
-  if(cached)return cached;
+  if(cached){debugForge("generateUnit cache hit",cached);return cached;}
+  debugForge("generateUnit cache miss");
   // 2. If the model is still downloading, wait for it so the forge produces
   //    a creative unit instead of a template. The user can Cancel via the
   //    forge progress UI, which resolves the cancel signal and unblocks this.
@@ -2662,26 +2832,31 @@ async function generateUnit(rawPrompt,arenaIndex){
   let attrs={};
   for(const field of FIELD_ORDER){
     let val=null;
-    for(let attempt=0;attempt<2&&val===null;attempt++){
+    let attempt=0;
+    for(;attempt<2&&val===null;attempt++){
       val=await askField(field,attrs.name||prompt,attrs);
     }
     attrs[field]=val!==null?val:FIELD_PARSERS[field](""); // parser default
+    debugForge("generateUnit field",{field,val:attrs[field],attempts:attempt});
   }
   // 5. Semantic validation + per-field retry for inconsistent fields.
   const flagged=semanticValidate(attrs);
   if(flagged.length>0){
+    debugForge("generateUnit flagged",{attrs,flagged});
     attrs=autoFixFields(attrs,flagged);
     attrs=await reaskFields(attrs.name,attrs,flagged);
   }
   // 6. Build unit from attributes.
   const u=attrsToUnit(attrs,arenaIndex);
   if(!u){
+    debugForge("generateUnit attrsToUnit failed, using template",{attrs});
     attrs=templateFallback(prompt);
     const u2=attrsToUnit(attrs,arenaIndex);
     if(u2){await cachePut(key,prompt,MODEL,u2);return u2;}
     return null;
   }
   // 6. Cache.
+  debugForge("generateUnit final unit",u);
   await cachePut(key,prompt,MODEL,u);
   return u;
 }
@@ -2724,6 +2899,7 @@ const SPELL_TEMPLATES=[
   {kw:["buff","rage","frenzy","empower"],a:{name:"Rage",trigger:"battle_start",target:"ally_cluster",effect:"buff_dmg",shape:"circle_aoe",fxType:"shockwave",magnitude:30,radius:60,duration:0}},
 ];
 function templateSpellFallback(prompt){
+  debugForge("templateSpellFallback start",prompt);
   const p=(prompt||"").toLowerCase();
   let match=SPELL_TEMPLATES.find(t=>t.kw.some(k=>p.includes(k)));
   let attrs;
@@ -2731,6 +2907,7 @@ function templateSpellFallback(prompt){
   else{attrs={...SPELL_TEMPLATES[0].a};}
   // Customize name from prompt if no keyword match.
   if(!match&&prompt){attrs.name=prompt.slice(0,18).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");}
+  debugForge("templateSpellFallback result",{match:match?match.a.name||null:null,attrs});
   return attrs;
 }
 // Phase 23: semantic validation for spells.
@@ -2748,8 +2925,10 @@ function semanticValidateSpell(a){
 async function generateSpell(rawPrompt,arenaIndex){
   const prompt=normalizePrompt(rawPrompt);
   const key="spell:"+cacheKey(prompt,MODEL);
+  debugForge("generateSpell start",{rawPrompt,prompt,arenaIndex});
   const cached=await cacheGet(key);
-  if(cached)return cached;
+  if(cached){debugForge("generateSpell cache hit",cached);return cached;}
+  debugForge("generateSpell cache miss");
   if(llmLoading&&!llmReady&&!llmCancelled&&llmLoadPromise){
     try{await Promise.race([llmLoadPromise,llmCancelPromise]);}catch(e){/* */}
   }
@@ -2761,13 +2940,16 @@ async function generateSpell(rawPrompt,arenaIndex){
   let attrs={};
   for(const field of SPELL_FIELD_ORDER){
     let val=null;
-    for(let attempt=0;attempt<2&&val===null;attempt++){
+    let attempt=0;
+    for(;attempt<2&&val===null;attempt++){
       val=await askField(field,prompt,attrs,SPELL_FIELD_PROMPTS,SPELL_FIELD_PARSERS);
     }
     attrs[field]=val!==null?val:SPELL_FIELD_PARSERS[field]("");
+    debugForge("generateSpell field",{field,val:attrs[field],attempts:attempt});
   }
   const flagged=semanticValidateSpell(attrs);
   if(flagged.length>0){
+    debugForge("generateSpell flagged",{attrs,flagged});
     // Auto-fix: set ally target for ally effects, duration=3 for DoT.
     if(flagged.includes("target")&&SPELL_ALLY_EFFECTS.includes(attrs.effect))attrs.target="ally_cluster";
     if(flagged.includes("duration")&&(attrs.effect==="damage_over_time"||attrs.shape==="persistent_zone"))attrs.duration=3;
@@ -2778,11 +2960,13 @@ async function generateSpell(rawPrompt,arenaIndex){
     if(flagged.includes("fxType"))attrs.fxType="explosion";
   }
   const spell={...attrs,_isSpell:true};
+  debugForge("generateSpell final spell",spell);
   await cachePut(key,prompt,MODEL,spell);
   return spell;
 }
 
 function showAdStub(duration,onComplete){
+  console.log("[Ad] stub start",duration+"ms");
   const overlay=document.createElement("div");
   overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
   let remaining=Math.ceil(duration/1000);
@@ -2795,6 +2979,7 @@ function showAdStub(duration,onComplete){
     if(remaining<=0){
       clearInterval(interval);
       overlay.remove();
+      console.log("[Ad] stub complete");
       onComplete();
     }
   },1000);
@@ -2849,9 +3034,11 @@ function setupNetwork(id){
         G._p2pTestLog("❌ Peer left. Disconnected.");
         G._p2pTestUpdateUI();
       }
-      // Phase 18: mid-match disconnect — offer "Continue vs Bot" (host) or return to menu (guest).
+      // Phase 18/34: mid-match disconnect — offer reconnect grace period (host)
+      // or return to menu (guest). Host gets 30s to wait for peer reconnect,
+      // then "Continue vs Bot" prompt. Guest returns to menu immediately.
       if(Match.active&&role==="host"){
-        showDisconnectPrompt(Match.opponentPicks||[]);
+        Match.gracefulDisconnect();
       }else if(Match.active&&role==="guest"){
         Match.active=false;
         Battle.stop();
@@ -2953,6 +3140,12 @@ function networkReceive(data){
     if(data.t==="role_tiebreak"){
       if(!_peerId)_peerId=Math.random().toString(36).slice(2);
       const otherId=data.d.id;
+      if(_peerId===otherId){
+        // Extremely unlikely collision — re-roll and re-send.
+        _peerId=Math.random().toString(36).slice(2);
+        transmit("role_tiebreak",{id:_peerId});
+        return;
+      }
       if(_peerId<otherId){
         role="host";
       }else{
@@ -3003,6 +3196,7 @@ function networkReceive(data){
         const c=data.d&&data.d.cmd;
         if(c==="tick")Battle.tick();
         else if(c==="auto")Battle.auto();
+        else if(c==="auto_stop"){if(Battle.autoTimer){clearInterval(Battle.autoTimer);Battle.autoTimer=null;}}
         else if(c==="skip")Battle.skip();
         else if(c==="speed")G.cycleSpeed();
         else if(c==="pause")G.togglePause();
@@ -3011,13 +3205,22 @@ function networkReceive(data){
     if(data.t==="forge"){
       if(data.d._isSpell){
         if(!G.save.spellbook)G.save.spellbook=[];
-        if(!G.save.spellbook.some(s=>s.name===data.d.name)){G.save.spellbook.push(data.d);saveData(G.save);G.wins();}
+        if(!G.save.spellbook.some(s=>s.name===data.d.name)){G.save.spellbook.push(data.d);if(G.save.spellbook.length>20)G.save.spellbook=G.save.spellbook.slice(-20);saveData(G.save);G.wins();}
       }else{
         let u=unit(data.d);
         if(!G.save.collection)G.save.collection=[];
-        if(!G.save.collection.some(x=>x.n===u.n)){G.save.collection.push(u);if(G.save.collection.length>50)G.save.collection.shift();}
+        if(!G.save.collection.some(x=>x.n===u.n)){
+          G.save.collection.push(u);
+          // Cap collection at 50 — but never remove units in the current loadout.
+          while(G.save.collection.length>50){
+            const loadout=new Set(G.save.loadout||[]);
+            const idx=G.save.collection.findIndex(c=>!loadout.has(c.n));
+            if(idx<0)break;
+            G.save.collection.splice(idx,1);
+          }
+        }
         if(!G.save.ai)G.save.ai=[];
-        if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);}
+        if(!G.save.ai.some(x=>x.n===u.n)){G.save.ai.push(u);if(G.save.ai.length>50)G.save.ai.shift();}
         saveData(G.save);G.wins();
       }
     }
@@ -3113,6 +3316,31 @@ function moveAway(u,t,d){
 function effSpeed(u){
   const base=u.s*(u.moveSpeedMod/100);
   return u.slow>0?base*0.5:base;
+}
+// D5: soft avoidance — gently push u away from nearby allies so units don't clump.
+// Returns a {x,y} offset (in pixels) to add to u's position. Only considers allies
+// within `radius` (default 28px). Falloff is linear: full push at distance 0, none at radius.
+function avoidanceOffset(u,allies,radius){
+  radius=radius||28;
+  let ax=0,ay=0;
+  for(const a of allies){
+    if(a===u||a.h<=0)continue;
+    const dx=u.x-a.x, dy=u.y-a.y;
+    const d=Math.hypot(dx,dy);
+    if(d<radius){
+      // Strength falls off with distance; normalize direction.
+      const strength=(radius-d)/radius;
+      if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
+      else{const ang=Math.random()*Math.PI*2; ax+=Math.cos(ang)*strength; ay+=Math.sin(ang)*strength;}
+    }
+  }
+  // Scale the accumulated push by u's effective speed so fast units separate faster.
+  const mag=Math.hypot(ax,ay);
+  if(mag<0.001)return {x:0,y:0};
+  // Cap the push to a fraction of unit speed per tick (avoids jitter when stationary).
+  const maxPush=effSpeed(u)*0.4;
+  const scale=Math.min(mag,maxPush)/mag;
+  return {x:ax*scale, y:ay*scale};
 }
 function closestEnemy(u,enemies){
   let best=null,bd=Infinity;
@@ -3233,23 +3461,26 @@ const TARGETING={
   enemy_carry:(u,enemies,allies)=>enemies.find(e=>e.h>0&&e.role==="carry")||closestEnemy(u,enemies),
   enemy_support:(u,enemies,allies)=>enemies.find(e=>e.h>0&&e.role==="support")||closestEnemy(u,enemies),
   enemy_backline:(u,enemies,allies)=>{
-    if(!enemies.length)return null;
-    const backY=enemies[0].team==="player"?Math.max(...enemies.map(e=>e.y)):Math.min(...enemies.map(e=>e.y));
-    return enemies.reduce((b,e)=>Math.abs(e.y-backY)<Math.abs(b.y-backY)?e:b,enemies[0]);
+    const alive=enemies.filter(e=>e.h>0);
+    if(!alive.length)return null;
+    const backY=alive[0].team==="player"?Math.max(...alive.map(e=>e.y)):Math.min(...alive.map(e=>e.y));
+    return alive.reduce((b,e)=>Math.abs(e.y-backY)<Math.abs(b.y-backY)?e:b,alive[0]);
   },
   enemy_frontline:(u,enemies,allies)=>{
-    if(!enemies.length)return null;
-    const frontY=enemies[0].team==="player"?Math.min(...enemies.map(e=>e.y)):Math.max(...enemies.map(e=>e.y));
-    return enemies.reduce((b,e)=>Math.abs(e.y-frontY)<Math.abs(b.y-frontY)?e:b,enemies[0]);
+    const alive=enemies.filter(e=>e.h>0);
+    if(!alive.length)return null;
+    const frontY=alive[0].team==="player"?Math.min(...alive.map(e=>e.y)):Math.max(...alive.map(e=>e.y));
+    return alive.reduce((b,e)=>Math.abs(e.y-frontY)<Math.abs(b.y-frontY)?e:b,alive[0]);
   },
   enemy_cluster:(u,enemies,allies)=>{
-    if(!enemies.length)return null;
-    let best=enemies[0],bestCount=0;
-    for(let i=0;i<enemies.length;i++){
+    const alive=enemies.filter(e=>e.h>0);
+    if(!alive.length)return null;
+    let best=alive[0],bestCount=0;
+    for(let i=0;i<alive.length;i++){
       let count=0;
-      const ei=enemies[i];
-      for(let j=0;j<enemies.length;j++){
-        const ej=enemies[j];
+      const ei=alive[i];
+      for(let j=0;j<alive.length;j++){
+        const ej=alive[j];
         if((ei.x-ej.x)*(ei.x-ej.x)+(ei.y-ej.y)*(ei.y-ej.y)<6400)count++;
       }
       if(count>bestCount){bestCount=count;best=ei;}
@@ -3294,8 +3525,9 @@ const MOVEMENT={
   },
   blink:(u,target,dt)=>{
     // blink: teleport toward target every 2s, otherwise hold
+    if(!target||target.h<=0)return;
     u.blinkT=(u.blinkT||0)+dt;
-    if(target&&target.h>0&&u.blinkT>=2&&dist(u,target)>u.r){
+    if(u.blinkT>=2&&dist(u,target)>u.r){
       u.x=target.x+Q(-20,20);u.y=target.y+Q(-20,20);
       u.blinkT=0;
       BattleFX.burst(u.x,u.y,u.c,4,20);
@@ -3303,13 +3535,12 @@ const MOVEMENT={
   },
   strafe:(u,target,dt)=>{
     // strafe: move side-to-side while approaching
-    if(target&&target.h>0){
-      const d=dist(u,target);
-      const sp=effSpeed(u)*dt;
-      if(d>u.r)moveToward(u,target,sp*0.7);
-      u.strafeT=(u.strafeT||0)+dt;
-      u.y+=Math.sin(u.strafeT*3)*sp*0.5;
-    }
+    if(!target||target.h<=0)return;
+    const d=dist(u,target);
+    const sp=effSpeed(u)*dt;
+    if(d>u.r)moveToward(u,target,sp*0.7);
+    u.strafeT=(u.strafeT||0)+dt;
+    u.y+=Math.sin(u.strafeT*3)*sp*0.5;
   },
 };
 
@@ -3408,14 +3639,21 @@ const Match={
   // Phase 18: forfeit the current match (used on disconnect).
   forfeit(){
     this.active=false;
+    // Stop the battle simulation — without this, the battle loop keeps running
+    // in the background after forfeit, consuming CPU and causing state issues.
+    if(Battle.running)Battle.stop();
     if(connected&&role==="host")transmit("match_end",{winner:"enemy"});
     if(this.onMatchEnd)try{this.onMatchEnd("enemy");}catch(e){showError("Match forfeit handler failed: "+(e&&e.message||e));}
   },
   // Phase 34: graceful disconnect with reconnect grace period.
   gracefulDisconnect(){
     if(!this.active)return;
-    Battle.running=false;
-    G.showReconnect(30,()=>Match.forfeit());
+    // Use stop() instead of just setting running=false to properly clean up
+    // all timers (frame, interpRAF, autoTimer, music).
+    if(Battle.running)Battle.stop();
+    G.stopSnapshots();
+    // Show 30s reconnect grace period, then offer "Continue vs Bot" or "Forfeit".
+    G.showReconnect(30,()=>showDisconnectPrompt(this.opponentPicks||[]));
   },
 };
 
@@ -3430,7 +3668,7 @@ const JOINT_ANGLES={ // channel name → max rotation in degrees (for rotate mod
 // Phase 24c: joint config — mode + axis + range per channel.
 const JOINT_CONFIG={
   arm_raise:{mode:"rotate"}, arm_swing:{mode:"rotate"}, leg_swing:{mode:"rotate"},
-  bow_draw:{mode:"rotate"}, head_tilt:{mode:"rotate"}, bob:{mode:"translate",axis:"y",range:2},
+  bow_draw:{mode:"translate",axis:"x",range:-5}, head_tilt:{mode:"rotate"}, bob:{mode:"translate",axis:"y",range:2},
   staff_raise:{mode:"rotate"}, rot:{mode:"rotate"}, tail_wag:{mode:"rotate"},
   wing_flap:{mode:"translate",axis:"y",range:6}, jaw_open:{mode:"translate",axis:"y",range:4},
   recoil:{mode:"translate",axis:"y",range:5}, lunge:{mode:"translate",axis:"x",range:4},
@@ -3469,105 +3707,70 @@ const SpriteRenderer={
     return out;
   },
 
-  // Draw a single shape with optional joint transform.
-  // Phase 24c: supports rotate (default), translate, scale joint modes.
+  // Draw a single shape with optional parent + own joint transforms.
+  // D5: parentJoint allows weapons to inherit arm_raise, attached to the hand.
   drawShape(c,shape,channels,u){
-    const joint=shape.joint;
-    if(joint){
-      // Phase 24c: look up the specific channel by joint name.
-      const chVal=channels[joint]||0;
-      const cfg=JOINT_CONFIG[joint]||{mode:"rotate"};
-      const mode=shape.jointMode||cfg.mode;
-      if(mode==="rotate"){
-        const maxAngle=(JOINT_ANGLES[joint]||30)*Math.PI/180;
-        let px,py;
-        if(shape.t==="rect"){px=shape.x+shape.w/2;py=shape.y;}
-        else{px=shape.cx||shape.x||0;py=shape.cy||shape.y||0;}
-        c.save();
-        c.translate(u.x+px,u.y+py);
-        c.rotate(chVal*maxAngle);
-        c.translate(-px,-py);
-        this._drawShapeRaw(c,shape,u);
-        c.restore();
-      }else if(mode==="translate"){
-        const range=shape.jointRange||cfg.range||5;
-        const axis=shape.jointAxis||cfg.axis||"y";
-        const offset=chVal*range;
-        c.save();
-        if(axis==="x")c.translate(offset,0);
-        else if(axis==="y")c.translate(0,offset);
-        else c.translate(offset*0.7,offset*0.3);
-        this._drawShapeRaw(c,shape,u);
-        c.restore();
-      }else if(mode==="scale"){
-        const range=shape.jointRange||cfg.range||0.1;
-        const axis=shape.jointAxis||cfg.axis||"both";
-        const sx=axis==="x"||axis==="both"?1+chVal*range:1;
-        const sy=axis==="y"||axis==="both"?1+chVal*range:1;
-        let cx,cy;
-        if(shape.t==="rect"){cx=shape.x+shape.w/2;cy=shape.y+shape.h/2;}
-        else{cx=shape.cx||shape.x||0;cy=shape.cy||shape.y||0;}
-        c.save();
-        c.translate(u.x+cx,u.y+cy);
-        c.scale(sx,sy);
-        c.translate(-cx,-cy);
-        this._drawShapeRaw(c,shape,u);
-        c.restore();
-      }else{
-        this._drawShapeRaw(c,shape,u);
-      }
-    }else{
-      this._drawShapeRaw(c,shape,u);
-    }
+    this._drawOne(c,shape,channels,u,false);
   },
 
   // Stroke a shape outline only (for silhouette outline pass).
   _strokeShape(c,shape,channels,u){
+    this._drawOne(c,shape,channels,u,true);
+  },
+
+  // Unified shape draw/stroke with parentJoint + own joint support.
+  _drawOne(c,shape,channels,u,isStroke){
+    const raw=(isStroke?this._strokeShapeRaw:this._drawShapeRaw).bind(this);
+    const parent=shape.parentJoint;
     const joint=shape.joint;
+    if(!parent&&!joint){raw(c,shape,u);return;}
+    // When parented, the weapon is drawn at the unit's position + gripOffset (the hand)
+    // in the parent-rotated frame. The parent pivot is the shoulder.
+    const uLocal=parent?{...u,x:u.x+(shape.gripOffset?.x||0),y:u.y+(shape.gripOffset?.y||0)}:u;
+    if(parent&&!isStroke)console.log("WPN",u.n,shape.t,"u=",u.x.toFixed(0),u.y.toFixed(0),"grip=",shape.gripOffset,"local=",uLocal.x.toFixed(0),uLocal.y.toFixed(0),"pivot=",shape.parentPivot);
+    c.save();
+    if(parent) this._applyJoint(c,shape,channels,u,parent,shape.parentPivot);
     if(joint){
-      const chVal=channels[joint]||0;
-      const cfg=JOINT_CONFIG[joint]||{mode:"rotate"};
-      const mode=shape.jointMode||cfg.mode;
-      if(mode==="rotate"){
-        const maxAngle=(JOINT_ANGLES[joint]||30)*Math.PI/180;
-        let px,py;
-        if(shape.t==="rect"){px=shape.x+shape.w/2;py=shape.y;}
-        else{px=shape.cx||shape.x||0;py=shape.cy||shape.y||0;}
-        c.save();
-        c.translate(u.x+px,u.y+py);
-        c.rotate(chVal*maxAngle);
-        c.translate(-px,-py);
-        this._strokeShapeRaw(c,shape,u);
-        c.restore();
-      }else if(mode==="translate"){
-        const range=shape.jointRange||cfg.range||5;
-        const axis=shape.jointAxis||cfg.axis||"y";
-        const offset=chVal*range;
-        c.save();
-        if(axis==="x")c.translate(offset,0);
-        else if(axis==="y")c.translate(0,offset);
-        else c.translate(offset*0.7,offset*0.3);
-        this._strokeShapeRaw(c,shape,u);
-        c.restore();
-      }else if(mode==="scale"){
-        const range=shape.jointRange||cfg.range||0.1;
-        const axis=shape.jointAxis||cfg.axis||"both";
-        const sx=axis==="x"||axis==="both"?1+chVal*range:1;
-        const sy=axis==="y"||axis==="both"?1+chVal*range:1;
-        let cx,cy;
-        if(shape.t==="rect"){cx=shape.x+shape.w/2;cy=shape.y+shape.h/2;}
-        else{cx=shape.cx||shape.x||0;cy=shape.cy||shape.y||0;}
-        c.save();
-        c.translate(u.x+cx,u.y+cy);
-        c.scale(sx,sy);
-        c.translate(-cx,-cy);
-        this._strokeShapeRaw(c,shape,u);
-        c.restore();
-      }else{
-        this._strokeShapeRaw(c,shape,u);
-      }
+      c.save();
+      this._applyJoint(c,shape,channels,uLocal,joint,null);
+      raw(c,shape,uLocal);
+      c.restore();
     }else{
-      this._strokeShapeRaw(c,shape,u);
+      raw(c,shape,uLocal);
+    }
+    c.restore();
+  },
+
+  // Apply a single joint transform. pivotOverride (for parentJoint) or shape's
+  // own pivot (if null). Does NOT save/restore — caller handles that.
+  _applyJoint(c,shape,channels,u,jointName,pivotOverride){
+    const chVal=channels[jointName]||0;
+    const cfg=JOINT_CONFIG[jointName]||{mode:"rotate"};
+    const mode=shape.jointMode||cfg.mode;
+    const px=pivotOverride?pivotOverride.x:(shape.t==="rect"?shape.x+shape.w/2:(shape.cx||shape.x||0));
+    const py=pivotOverride?pivotOverride.y:(shape.t==="rect"?shape.y:(shape.cy||shape.y||0));
+    if(mode==="rotate"){
+      const maxAngle=(JOINT_ANGLES[jointName]||30)*Math.PI/180;
+      c.translate(u.x+px,u.y+py);
+      c.rotate(chVal*maxAngle);
+      c.translate(-px,-py);
+    }else if(mode==="translate"){
+      const range=shape.jointRange||cfg.range||5;
+      const axis=shape.jointAxis||cfg.axis||"y";
+      const offset=chVal*range;
+      if(axis==="x")c.translate(offset,0);
+      else if(axis==="y")c.translate(0,offset);
+      else c.translate(offset*0.7,offset*0.3);
+    }else if(mode==="scale"){
+      const range=shape.jointRange||cfg.range||0.1;
+      const axis=shape.jointAxis||cfg.axis||"both";
+      const sx=axis==="x"||axis==="both"?1+chVal*range:1;
+      const sy=axis==="y"||axis==="both"?1+chVal*range:1;
+      const cx=shape.t==="rect"?shape.x+shape.w/2:(shape.cx||shape.x||0);
+      const cy=shape.t==="rect"?shape.y+shape.h/2:(shape.cy||shape.y||0);
+      c.translate(u.x+cx,u.y+cy);
+      c.scale(sx,sy);
+      c.translate(-cx,-cy);
     }
   },
 
@@ -3839,6 +4042,13 @@ const SpriteRenderer={
     const rot=rm?0:(channels.rot||0);
     c.save();
     c.globalAlpha=alpha;
+    // D5: scale sprite by z so limbs are visible (shapes are designed for z=10).
+    const spriteScale=(u.z||10)/10*1.8;
+    c.translate(u.x,u.y);
+    c.scale(spriteScale,spriteScale);
+    c.translate(-u.x,-u.y);
+    // D5: enemy units face left — mirror horizontally around the unit.
+    if(u.team==="enemy"){c.translate(u.x,u.y);c.scale(-1,1);c.translate(-u.x,-u.y);}
     if(rot){c.translate(u.x,u.y);c.rotate(rot*Math.PI/180);c.translate(-u.x,-u.y);}
     // Draw shapes (with bob offset applied via temporary y adjustment).
     const saveY=u.y;
@@ -4054,8 +4264,10 @@ const SpriteRenderer={
     if(!c)return;
     const w=canvas.width,h=canvas.height;
     c.clearRect(0,0,w,h);
-    // Set up a temporary unit with centered position for rendering.
-    const tmp={...u,x:w/2,y:h/2,z:Math.min(u.z||14,w*0.35),animState:"idle"};
+    // D5: sprite is scaled by z/10*1.8 in draw(). Cap z so the sprite fits:
+    // sprite height ~36px at scale 1, so z/10*1.8*36 <= h*0.85 → z <= h*0.85/(36*0.18).
+    const z=Math.min(u.z||10,h*0.13);
+    const tmp={...u,x:w/2,y:h*0.6,z,animState:"idle"};
     // Temporarily set Battle.time for animation interpolation (idle pose).
     const savedTime=Battle.time;
     Battle.time=0;
@@ -4612,6 +4824,7 @@ const SPELL_SHAPE={
     if(!anchor)return[];
     const ax=anchor.x??0,ay=anchor.y??0;
     const sx=team==="player"?40:360;
+    const sy=ay;
     const dirX=ax-sx,dirY=ay-sy;
     const dirLen=Math.hypot(dirX,dirY)||1;
     const ux=dirX/dirLen,uy=dirY/dirLen;
@@ -4655,6 +4868,7 @@ const SPELL_EFFECT={
       minion.x=anchor.x+Q(-20,20);
       minion.y=anchor.y+Q(-20,20);
       minion.ttl=8;
+      minion.lastAttacker={team,n:"Spell",id:team+"_spell"};
       b.units.push(b.initRuntime(minion));
       BattleFX.onSpawn(minion);
     }
@@ -4671,7 +4885,7 @@ const SPELL_EFFECT={
     });
   },
   buff_dmg(units,spec){units.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(spec.magnitude||20)/100);u.d=Math.round((u.baseD||u.d)*u._buffDmgApplied);});},
-  buff_speed(units,spec){units.forEach(u=>{u._buffSpeedApplied=Math.max(u._buffSpeedApplied||0,spec.magnitude||20);u.moveSpeedMod=(u._baseSpeedMod||u.moveSpeedMod||100)+u._buffSpeedApplied;});},
+  buff_speed(units,spec){units.forEach(u=>{u._buffSpeedApplied=Math.max(u._buffSpeedApplied||0,spec.magnitude||20);u.moveSpeedMod=Math.max(u.moveSpeedMod||100,100+u._buffSpeedApplied);});},
 };
 // Phase 23: Spell object — resolves a spell spec into an effect at battle time.
 const Spell={
@@ -4748,21 +4962,23 @@ const Spell={
         const allyZone=tgt.startsWith("ally");
         const affected=allyZone?units.filter(u=>u.team===z.team):units.filter(u=>u.team!==z.team);
         if(z.spec.effect==="damage"){
-          affected.forEach(u=>{u.h-=z.spec.magnitude||10;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};});
+          affected.forEach(u=>{const dmg=z.spec.magnitude||10;u.h-=dmg;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});
         }else if(z.spec.effect==="damage_over_time"){
           // Apply poison status (DoT) — uses Math.max to avoid overwriting higher poison.
-          affected.forEach(u=>{u.poison=Math.max(u.poison||0,3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};});
+          affected.forEach(u=>{u.poison=Math.max(u.poison||0,z.spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};});
         }else if(z.spec.effect==="slow"){
-          affected.forEach(u=>{u.slow=Math.max(u.slow,1);});
-        }else if(z.spec.effect==="heal_allies"||z.spec.effect==="heal_over_time"){
+          affected.forEach(u=>{u.slow=Math.max(u.slow,z.spec.duration||2);});
+        }else if(z.spec.effect==="heal_allies"){
           affected.forEach(u=>{u.h=Math.min(u.mh||u.h,u.h+(z.spec.magnitude||10));});
+        }else if(z.spec.effect==="heal_over_time"){
+          affected.forEach(u=>{u.regen=Math.max(u.regen||0,z.spec.duration||3);u.regenAmt=Math.max(u.regenAmt||0,z.spec.magnitude||10);u.regenTick=0;});
         }else if(z.spec.effect==="shield_allies"){
-          affected.forEach(u=>{u.shieldActive=Math.max(u.shieldActive,1);});
+          affected.forEach(u=>{u.shieldActive=Math.max(u.shieldActive,z.spec.duration||2);});
         }else if(z.spec.effect==="stun"){
-          affected.forEach(u=>{u.stun=Math.max(u.stun,1);});
+          affected.forEach(u=>{u.stun=Math.max(u.stun,z.spec.duration||1);});
         }else if(z.spec.effect==="buff_dmg"){
           // Use Math.max to prevent stacking: only apply if unit hasn't been buffed yet.
-          affected.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(z.spec.magnitude||20)/100);u.d=Math.round(u.baseD*u._buffDmgApplied);});
+          affected.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(z.spec.magnitude||20)/100);u.d=Math.round((u.baseD||u.d)*u._buffDmgApplied);});
         }else if(z.spec.effect==="buff_speed"){
           // Use Math.max to prevent stacking: only apply the highest buff.
           affected.forEach(u=>{u.moveSpeedMod=Math.max(u.moveSpeedMod||100,100+(z.spec.magnitude||20));});
@@ -4777,6 +4993,7 @@ const Spell={
             minion.x=z.x+Q(-20,20);
             minion.y=z.y+Q(-20,20);
             minion.ttl=8;
+            minion.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};
             battle.units.push(battle.initRuntime(minion));
             BattleFX.onSpawn(minion);
           }
@@ -4812,6 +5029,26 @@ const Battle={
   last:0,
   canvasH:550,       // Phase 10: for hold_midpoint movement (CSS pixels)
   canvasW:400,       // CSS pixel width for clamping (not raw canvas.width which includes DPR)
+  // Game coordinate space — units are positioned in this virtual space.
+  // The canvas fills the full viewport; this transform maps game space to screen.
+  GAME_W:400,
+  GAME_H:550,
+  // Compute the "contain" transform: fit game space within viewport, center.
+  // The background fills the full screen; game content is letterboxed/pillarboxed.
+  // Returns {scale, offsetX, offsetY} in CSS pixels.
+  _gameTransform(){
+    const vw=this.canvasW||innerWidth, vh=this.canvasH||innerHeight;
+    const sx=vw/this.GAME_W, sy=vh/this.GAME_H;
+    const scale=Math.min(sx,sy); // contain: fit within viewport
+    const offsetX=(vw-this.GAME_W*scale)/2;
+    const offsetY=(vh-this.GAME_H*scale)/2;
+    return {scale,offsetX,offsetY};
+  },
+  // Convert screen (CSS pixel) coordinates to game-space coordinates (for click detection).
+  screenToGame(sx,sy){
+    const t=this._gameTransform();
+    return {x:(sx-t.offsetX)/t.scale, y:(sy-t.offsetY)/t.scale};
+  },
   onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
   autoTimer:null,
   speed:1,           // battle speed multiplier (1, 2, 4)
@@ -4915,6 +5152,9 @@ const Battle={
       ...units.map(u=>({...u,team:"player"})),
       ...enemies.map(u=>({...u,team:"enemy"}))
     ].map(u=>this.initRuntime(u));
+    // Track all units for cumulative draft (dead units are removed from this.units
+    // after death animation, but we need them for revival between rounds).
+    this._allUnits=this.units.map(u=>({...u}));
     // Apply team composition bonuses based on role diversity.
     this.applyCompositionBonuses();
     // Show composition bonuses on battle screen.
@@ -4962,12 +5202,21 @@ const Battle={
     this._bgParticles=[]; // clear ambient particles from previous battle
     this._appliedSpeedBoost=false; // reset arena speed boost for new battle
     this._mechanicT=0; // reset arena mechanic timer for new battle
+    // Apply speed_boost arena mechanic immediately at battle start (not delayed by 1s throttle).
+    if(arena&&arena.mechanic==="speed_boost"){
+      for(const u of this.units){
+        u.s=Math.round(u.s*1.2);
+      }
+      this._appliedSpeedBoost=true;
+    }
     const cv=$("cv");
     if(!cv){this.stop();return;}
     // E3: devicePixelRatio handling for crisp rendering on retina displays.
+    // Canvas fills the mobile portrait container (max 420px wide, full height).
     const dpr=window.devicePixelRatio||1;
-    const dispW=Math.min(400,innerWidth-20);
-    const dispH=550;
+    const battleEl=document.getElementById("battle");
+    const dispW=battleEl?battleEl.clientWidth:Math.min(420,innerWidth);
+    const dispH=battleEl?battleEl.clientHeight:innerHeight;
     cv.style.width=dispW+"px";
     cv.style.height=dispH+"px";
     cv.width=dispW*dpr;
@@ -4976,11 +5225,24 @@ const Battle={
     this.canvasW=dispW;
     this.ctx=cv.getContext("2d");
     this.ctx.scale(dpr,dpr);
+    // Handle canvas context loss (GPU reset, tab backgrounding, etc.)
+    cv.addEventListener("webglcontextlost",(e)=>{
+      e.preventDefault();
+      this.ctx=null;
+    },false);
+    cv.addEventListener("webglcontextrestored",()=>{
+      this.ctx=cv.getContext("2d");
+      this.ctx.scale(dpr,dpr);
+    },false);
     // Unit inspection: click on a unit to see its stats.
     cv.onclick=(e)=>{
       const rect=cv.getBoundingClientRect();
-      const x=(e.clientX-rect.left);
-      const y=(e.clientY-rect.top);
+      const sx=(e.clientX-rect.left);
+      const sy=(e.clientY-rect.top);
+      // Convert screen coords to game-space coords.
+      const gt=this._gameTransform();
+      const x=(sx-gt.offsetX)/gt.scale;
+      const y=(sy-gt.offsetY)/gt.scale;
       // Find the closest unit within click radius.
       let closest=null,closestDist=Infinity;
       for(const u of this.units){
@@ -5091,8 +5353,6 @@ const Battle={
       this._renderBattleStats();
       this._renderKillFeed();
     }
-    // Arena mechanics: apply arena-specific effects to all units.
-    this._applyArenaMechanics(dt);
     this.checkEnd();
   },
 
@@ -5102,6 +5362,9 @@ const Battle={
     // Phase 23: spell trigger checks + zone ticking.
     Spell.checkTriggers(this,dt);
     Spell.tickZones(this,dt);
+    // Arena mechanics: apply arena-specific effects to all units.
+    // (Moved from loop() so mechanics work in tick/auto/skip modes too.)
+    this._applyArenaMechanics(dt);
     // Tick player spell cooldowns.
     if(this.playerSpells){
       for(const ps of this.playerSpells){
@@ -5120,7 +5383,7 @@ const Battle={
       if(u.poison>0){
         u.poison-=dt;
         u.poisonTick-=dt;
-        if(u.poisonTick<=0&&u.h>0){u.h-=u.poisonDmg||3;u.poisonTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");}
+        if(u.poisonTick<=0&&u.h>0){u.h-=u.poisonDmg||3;if(u.h<0)u.h=0;u.poisonTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");}
         if(u.h<=0){u.poison=0;}
       }
       if(u.regen>0){
@@ -5189,7 +5452,13 @@ const Battle={
       u.x=clamp(u.x,u.z,cw-u.z);
       u.y=clamp(u.y,u.z,ch-u.z);
     }
-    // 6. death cleanup: remove units with deathT >= 0.5
+    // 6. death cleanup: remove units with deathT >= 0.5 from active units.
+    // Keep them in _allUnits for cumulative draft revival.
+    const removed=this.units.filter(u=>u.deathT!==undefined&&u.deathT>=0.5);
+    for(const r of removed){
+      const idx=this._allUnits.findIndex(a=>a.id===r.id);
+      if(idx>=0)this._allUnits[idx]={...r};
+    }
     this.units=this.units.filter(u=>u.deathT===undefined||u.deathT<0.5);
     // HUD
     setText("battleHP",players.length);
@@ -5264,17 +5533,24 @@ const Battle={
     let targetEnemies=enemies;
     const taunter=enemies.find(e=>e.h>0&&e.ability==="taunt");
     if(taunter)targetEnemies=enemies.filter(e=>e===taunter);
-    const target=TARGETING[u.targeting](u,targetEnemies,allies);
+    const targetFn=TARGETING[u.targeting];
+    const target=targetFn?targetFn(u,targetEnemies,allies):null;
     u.target=target; // Phase 24f: store target for eye tracking
-    MOVEMENT[u.movement](u,target,dt);
-    if(ATTACK_CONDITIONS[u.attackCondition](u,target)&&u.cool<=0&&target&&target.h>0&&dist(u,target)<=u.r){
+    const moveFn=MOVEMENT[u.movement];
+    if(moveFn)moveFn(u,target,dt);
+    // D5: soft avoidance — push away from nearby allies to prevent clumping.
+    const av=avoidanceOffset(u,allies);
+    u.x+=av.x; u.y+=av.y;
+    const atkCondFn=ATTACK_CONDITIONS[u.attackCondition];
+    if(target&&target.h>0&&atkCondFn&&atkCondFn(u,target)&&u.cool<=0&&dist(u,target)<=u.r){
       if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+dist(u,target).toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
       this.attack(u,target,enemies);
       u.cool=(1/u.a)*(u.frenzyT>0?0.5:1); // cooldown = 1 / attacks_per_second (frenzy halves)
       u.attackedThisFrame=true; // Phase 11: trigger attack animation
       u.attackT=0;              // Phase 11: start attack anim timer
     }
-    if(ABILITY_TRIGGERS[u.abilityTrigger](u,allies,enemies)){
+    const triggerFn=ABILITY_TRIGGERS[u.abilityTrigger];
+    if(triggerFn&&triggerFn(u,allies,enemies)){
       this.triggerAbility(u,allies,enemies);
       if(u.abilityTrigger==="on_spawn")u.spawnTriggered=true;
     }
@@ -5286,8 +5562,25 @@ const Battle={
     BattleFX.fireRecipeFx(attacker,target); // Phase 17: weapon-based recipe FX
     GameAudio.sfx(attacker.r>RANGED_THRESHOLD?"attack_ranged":"attack_melee",{pitch:fxTypeFreq(attacker.fxType),weaponType:attacker.weaponType}); // Phase 30 + I3
     if(attacker.r>RANGED_THRESHOLD){
+      // D5: spawn projectiles from the weapon hand (gripOffset), with a small
+      // nudge toward the target, instead of the unit center.
+      // GripOffset is in unscaled sprite space; apply the sprite scale factor
+      // so the spawn point matches the rendered weapon position.
+      let wx=attacker.x,wy=attacker.y;
+      const weaponShape=attacker.recipe?.shapes?.find(s=>s.parentJoint);
+      const spriteScale=(attacker.z||10)/10*1.8;
+      if(weaponShape?.gripOffset){
+        const side=attacker.team==="player"?1:-1;
+        wx=attacker.x+side*weaponShape.gripOffset.x*spriteScale;
+        wy=attacker.y+weaponShape.gripOffset.y*spriteScale;
+      }
+      const forward=4*spriteScale;
+      const dx=target.x-attacker.x,dy=target.y-attacker.y;
+      const d=Math.hypot(dx,dy)||1;
+      const sx=wx+(dx/d)*forward;
+      const sy=wy+(dy/d)*forward;
       this.projectiles.push({
-        x:attacker.x,y:attacker.y,
+        x:sx,y:sy,
         tx:target.x,ty:target.y,
         targetId:target.id,
         d:attacker.d,team:attacker.team,owner:attacker.id,
@@ -5320,6 +5613,7 @@ const Battle={
     if(crit){dmg*=2;vibrate(25);}
     const hpBefore=target.h;
     target.h-=dmg;
+    if(target.h<0)target.h=0;
     // Track damage dealt by attacker for MVP calculation.
     if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=dmg;
     // Track battle stats for real-time overlay.
@@ -5363,17 +5657,17 @@ const Battle={
     // lifesteal: heal attacker for 50% of damage dealt
     if(attacker.ability==="lifesteal")attacker.h=Math.min(attacker.mh,attacker.h+dmg*0.5);
     // slow: debuff target for 1s (refreshes, doesn't stack)
-    if(attacker.ability==="slow")target.slow=1.0;
+    if(attacker.ability==="slow")target.slow=Math.max(target.slow,1.0);
     // splash: AoE damage to enemies near target (50% damage)
     if(attacker.ability==="splash"){
       for(let e of enemies){
-        if(e!==target&&e.h>0&&dist(target,e)<40){e.h-=dmg*0.5;e.lastAttacker=attacker;}
+        if(e!==target&&e.h>0&&dist(target,e)<40){const splashDmg=dmg*0.5;e.h-=splashDmg;if(e.h<0)e.h=0;e.lastAttacker=attacker;if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=splashDmg;}
       }
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
-    if(attacker.ability==="poison"){target.poison=3.0;target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
+    if(attacker.ability==="poison"){target.poison=Math.max(target.poison,3.0);target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
     // thorns: reflect 30% of damage back to attacker
-    if(target.ability==="thorns"&&attacker.h>0){attacker.h-=dmg*0.3;attacker.lastAttacker=target;this.log(target.n+" thorns "+attacker.n);}
+    if(target.ability==="thorns"&&attacker.h>0){const reflectDmg=dmg*0.3;attacker.h-=reflectDmg;if(attacker.h<0)attacker.h=0;attacker.lastAttacker=target;if(target.dmgDealt!==undefined)target.dmgDealt+=reflectDmg;this.log(target.n+" thorns "+attacker.n);}
     // Phase 20: track last attacker for ramp-on-kill and kill feed.
     target.lastAttacker=attacker;
     if(attacker.ability==="ramp")target.lastAttacker=attacker;
@@ -5426,7 +5720,7 @@ const Battle={
         break;
       }
       case "shield":{
-        u.shieldActive=2.0;
+        u.shieldActive=Math.max(u.shieldActive||0,2.0);
         u.abCool=8.0;
         if(u.abilityTrigger==="on_first_hit")u.firstHitUsed=true;
         this.log(u.n+" raises shield");
@@ -5651,7 +5945,8 @@ const Battle={
             checked.add(pairKey);
             const ddx=b.x-a.x, ddy=b.y-a.y;
             const d=Math.hypot(ddx,ddy);
-            const minD=Math.max(a.z,b.z);
+            // D5: keep units at least 1.8× their radius apart so they don't visually overlap.
+            const minD=Math.max(a.z,b.z)*1.8;
             if(d<minD){
               let nx,ny;
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
@@ -5835,9 +6130,14 @@ const Battle={
     // canvasH/canvasW are set in CSS pixels at init/resize time. Do NOT sync from
     // c.canvas.height (which is raw pixels including DPR) — that would overwrite
     // the CSS value and break clamping.
-    // Themed background (gradient + ground line + ambient particles).
+    // Themed background (gradient + ground line + ambient particles) — fills viewport.
     this.drawBackground(c);
-    // Phase 17: apply screen shake transform.
+    // Apply game-space transform: map 400x550 game coords to fill the viewport (cover).
+    const gt=this._gameTransform();
+    c.save();
+    c.translate(gt.offsetX,gt.offsetY);
+    c.scale(gt.scale,gt.scale);
+    // Phase 17: apply screen shake transform (in game space).
     const shake=this.shakeAmount||0;
     if(shake>0){
       c.save();
@@ -5897,12 +6197,14 @@ const Battle={
         c.globalAlpha=1;
       }
       // name + HP bar (smooth animated HP bar).
+      // D5: adjusted for sprite scale — sprite top is at u.y - 24*1.8*(z/10).
+      const spriteTop=u.y-(u.z||10)/10*1.8*26;
       c.fillStyle="#fff";c.font="9px sans-serif";c.textAlign="center";
-      c.fillText(u.n,u.x,u.y-16);
+      c.fillText(u.n,u.x,spriteTop-2);
       // Role indicator: small colored dot above name.
       if(u.role){
         c.fillStyle=ROLE_COLORS[u.role]||"#fff";
-        c.beginPath();c.arc(u.x-20,u.y-14,2,0,Math.PI*2);c.fill();
+        c.beginPath();c.arc(u.x-20,spriteTop,2,0,Math.PI*2);c.fill();
       }
       // Low-HP warning: pulsing red glow when HP < 25%.
       if(u.h>0&&u.h<u.mh*0.25){
@@ -5917,13 +6219,13 @@ const Battle={
         c.globalAlpha=1;
       }
       c.fillStyle="#222";
-      c.fillRect(u.x-18,u.y-12,36,5);
+      c.fillRect(u.x-18,spriteTop+8,36,5);
       // Smooth HP bar: lerp displayed HP toward actual HP.
       if(u.dispH===undefined)u.dispH=u.h;
       u.dispH+=(u.h-u.dispH)*Math.min(1,(this._lastDt||0.05)*8);
       const hpRatio=Math.max(0,u.dispH/u.mh);
       c.fillStyle=hpRatio>0.5?"#34d399":hpRatio>0.25?"#fbbf24":"#fb7185";
-      c.fillRect(u.x-18,u.y-12,36*hpRatio,5);
+      c.fillRect(u.x-18,spriteTop+8,36*hpRatio,5);
     }
     // projectiles
     for(let p of this.projectiles){
@@ -5955,7 +6257,9 @@ const Battle={
     this.drawDmgNums(c);
     // Phase 17: restore shake transform.
     }finally{if(shake>0)c.restore();}
-    // Phase 17: draw round-end flash (after shake restore, full canvas).
+    // Restore game-space transform.
+    c.restore();
+    // Phase 17: draw round-end flash (in screen space, full canvas).
     BattleFX.drawRoundFlash(c);
   },
 
@@ -6029,6 +6333,8 @@ const Battle={
         }
         BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
         BattleFX.shake(4);
+        this._finalUnits=this.units.map(u=>({...u})); // snapshot before stop() clears units
+        this._finalSpells=(this.spells||[]).map(s=>({...s})); // snapshot spells for stats
         this.stop();
         if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle end handler failed: "+(e&&e.message||e));}
       }
@@ -6044,6 +6350,8 @@ const Battle={
     // Phase 17: round-end flash + screen shake.
     BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
     BattleFX.shake(4);
+    this._finalUnits=this.units.map(u=>({...u})); // snapshot before stop() clears units
+    this._finalSpells=(this.spells||[]).map(s=>({...s})); // snapshot spells for stats
     this.stop();
     if(this.onEnd)try{this.onEnd(this.winner);}catch(e){console.error("[Battle.checkEnd] onEnd failed:",e);showError("Battle end handler failed: "+(e&&e.message||e));}
   },
@@ -6055,11 +6363,25 @@ const Battle={
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
     // Stop battle music in all code paths (error, timeout, disconnect).
     GameAudio.stopMusic();
-    // Clean up visual state so it doesn't leak into the next battle.
+    // Clean up canvas click handler to prevent memory leak.
+    const cv=$("cv");
+    if(cv)cv.onclick=null;
+    // Reset auto-play button state when battle ends.
+    const autoBtn=$("autoBtn");if(autoBtn)autoBtn.classList.remove("primary");
+    // Clean up all battle state.
+    this.units=[];
+    this.projectiles=[];
     this.particles=[];
     this.damageNums=[];
     this.shakeAmount=0;
     this.roundFlash=null;
+    this.spells=[];
+    this.zones=[];
+    this.playerSpells=[];
+    this.time=0;
+    // NOTE: do NOT reset this.winner here — checkEnd() calls stop() before
+    // invoking onEnd(this.winner), so resetting would pass null to the callback.
+    // winner is reset in start() instead.
     // Hide spell bar.
     const bar=$("spellBar");
     if(bar)bar.style.display="none";
@@ -6277,7 +6599,7 @@ const Battle={
       this.update(0.05*(this.speed||1));
       this.checkEnd();
     }
-    if(safety<=0){this.winner="draw";this.stop();}
+    if(safety<=0){this.winner="draw";this._finalUnits=this.units.map(u=>({...u}));this._finalSpells=(this.spells||[]).map(s=>({...s}));this.stop();if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip safety end failed: "+(e&&e.message||e));}}
   },
 
   // Toggle pause.
@@ -6415,8 +6737,9 @@ const Battle={
     if(!cv)return;
     if(!this.ctx){
       const dpr=window.devicePixelRatio||1;
-      const dispW=Math.min(400,innerWidth-20);
-      const dispH=550;
+      const battleEl=document.getElementById("battle");
+      const dispW=battleEl?battleEl.clientWidth:Math.min(420,innerWidth);
+      const dispH=battleEl?battleEl.clientHeight:innerHeight;
       cv.style.width=dispW+"px";
       cv.style.height=dispH+"px";
       cv.width=dispW*dpr;
@@ -6443,21 +6766,22 @@ const QUEST_POOL=[
 ];
 const STREAK_REWARDS={1:10,3:50,7:100,14:200,30:500};
 const Quests={
-  todayStr(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");},
+  todayStr(){const d=new Date();return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0")+"-"+String(d.getUTCDate()).padStart(2,"0");},
   yesterdayStr(){
     const d=new Date();d.setDate(d.getDate()-1);
-    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0")+"-"+String(d.getUTCDate()).padStart(2,"0");
   },
   checkStreak(){
     const q=G.save.quests;
+    if(!q.streak||typeof q.streak!=="object")q.streak={count:0,lastLogin:""};
     const today=this.todayStr();
     if(q.streak.lastLogin===today)return; // already checked today
-    if(q.streak.lastLogin===this.yesterdayStr())q.streak.count++;
+    if(q.streak.lastLogin===this.yesterdayStr())q.streak.count=(q.streak.count||0)+1;
     else q.streak.count=1;
     q.streak.lastLogin=today;
     saveData(G.save);
     // Streak reward.
-    const reward=STREAK_REWARDS[q.streak.count];
+    const reward=STREAK_REWARDS[q.streak.count||0];
     if(reward!=null){
       G.save.coins=(G.save.coins||0)+reward;
       saveDataDebounced(G.save);
@@ -6482,12 +6806,15 @@ const Quests={
   },
   track(event,data){
     const q=G.save.quests;
-    if(!q.list)return;
+    if(!q.list||!Array.isArray(q.list))return;
     for(const quest of q.list){
+      if(!quest||typeof quest!=="object")continue;
       if(quest.claimed)continue;
       if(quest.type===event){
         const inc=data!=null?data:1;
-        quest.progress=Math.min(quest.target,quest.progress+inc);
+        const target=quest.target||1;
+        const progress=quest.progress||0;
+        quest.progress=Math.min(target,progress+inc);
       }
     }
     saveDataDebounced(G.save);
@@ -7044,6 +7371,25 @@ const G={
     let target=$(id);
     if(!target)target=$("menu");
     if(target)target.classList.add("active");
+    // D5: reuse the single battle canvas (#cv) for both draft and battle screens.
+    // Reparent it into whichever screen is active so it shows in the right place.
+    const cv=$("cv");
+    if(cv){
+      if(id==="draft"){
+        const slot=$("draftCanvasSlot");
+        if(slot&&cv.parentElement!==slot)slot.appendChild(cv);
+      }else if(id==="battle"){
+        const battle=$("battle");
+        // Insert before the spell bar (which follows #cv in #battle).
+        if(battle&&cv.parentElement!==battle){
+          const spellBar=$("spellBar");
+          if(spellBar)battle.insertBefore(cv,spellBar);
+          else battle.appendChild(cv);
+        }
+      }
+    }
+    // Stop the draft battlefield animation loop when leaving the draft screen.
+    if(id!=="draft")this._stopDraftAnim();
     // Hide spell bar when not in battle.
     if(id!=="battle"){
       const bar=$("spellBar");
@@ -7057,7 +7403,7 @@ const G={
   },
   wins(){
     setText("wins",this.save.matchWins||0);
-    setText("aiUnits",this.save.ai.length);
+    setText("aiUnits",(this.save.ai||[]).length);
     setText("totalUnits",this.deckUnits().length);
     // Phase 6: progression HUD.
     setText("playerLevel",this.playerLevel());
@@ -7222,7 +7568,8 @@ const G={
   saveReplay(winner){
     try{
       const playerTeam=connected&&role==="guest"?"enemy":"player";
-      const mvp=Battle.units.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
+      const finalUnits=Battle._finalUnits||Battle.units||[];
+      const mvp=finalUnits.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
         .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0))[0];
       const replay={
         date:new Date().toISOString().slice(0,16).replace("T"," "),
@@ -7248,12 +7595,13 @@ const G={
     const r=replays[0];
     if(!r){toast("No match to share");return;}
     const win=r.winner==="player";
+    const draw=r.winner==="draw";
     const arenaName=this.arenas[r.arena]?.n||"Unknown";
-    const roundIcons=(r.roundHistory||[]).map(h=>h.winner==="player"?"✅":"❌").join("");
+    const roundIcons=(r.roundHistory||[]).map(h=>h.winner==="player"?"✅":h.winner==="enemy"?"❌":"➖").join("");
     const units=(r.units||[]).join(", ");
     const mvpText=r.mvp?` | MVP: ${r.mvp.name} (${r.mvp.dmg} dmg)`:"";
     const endlessText=r.endlessLevel>0?` Endless Lv${r.endlessLevel}`:"";
-    const text=`🎮 Prompt Showdown\n${win?"🏆 VICTORY":"💀 DEFEAT"}${endlessText}\n⚔️ ${arenaName} | ${roundIcons}${mvpText}\n📋 Army: ${units}\nPlay: https://tassiost.github.io/promptshowdown/`;
+    const text=`🎮 Prompt Showdown\n${draw?"🤝 DRAW":win?"🏆 VICTORY":"💀 DEFEAT"}${endlessText}\n⚔️ ${arenaName} | ${roundIcons}${mvpText}\n📋 Army: ${units}\nPlay: https://tassiost.github.io/promptshowdown/`;
     if(navigator.share){
       navigator.share({title:"Prompt Showdown Result",text}).catch(()=>{});
     }else if(navigator.clipboard){
@@ -7307,6 +7655,7 @@ const G={
       spell.radius=clamp(Number(spell.radius)||60,10,200);
       spell.duration=clamp(Number(spell.duration)||0,0,10);
       this.save.spellbook.push(spell);
+      if(this.save.spellbook.length>20)this.save.spellbook=this.save.spellbook.slice(-20);
       saveData(this.save);
       toast(t("spell_added_share"));
     }else{
@@ -7814,62 +8163,136 @@ const G={
   playerSurvivors:[],    // units that survived from previous round
   enemySurvivors:[],     // enemy units that survived from previous round
 
+  // Size the (shared) battle canvas for draft mode. Fills the mobile portrait container.
+  _sizeDraftCanvas(){
+    const cv=$("cv");
+    if(!cv)return;
+    const dpr=window.devicePixelRatio||1;
+    // Use the active screen container dimensions (mobile portrait, max 420px wide).
+    const screen=document.querySelector(".screen.active")||document.getElementById("draft");
+    const dispW=screen?screen.clientWidth:Math.min(420,innerWidth);
+    const dispH=screen?screen.clientHeight:innerHeight;
+    cv.style.width=dispW+"px";
+    cv.style.height=dispH+"px";
+    cv.width=Math.round(dispW*dpr);
+    cv.height=Math.round(dispH*dpr);
+    // D5: reset Battle's cached ctx so it picks up the new bitmap size.
+    Battle.ctx=null;
+  },
+
   renderDraftBattlefield(){
-    const cv=$("draftCanvas");
+    const cv=$("cv");
     if(!cv)return;
     const ctx=cv.getContext("2d");
     const w=cv.width,h=cv.height;
-    // Scale factor: draft canvas is 200px tall vs battle's 550px.
-    const sy=h/550,sx=w/400;
-    // Draw background gradient.
-    const g=ctx.createRadialGradient(w/2,h/2,0,w/2,h/2,w*0.7);
-    g.addColorStop(0,"#1a2540");
-    g.addColorStop(1,"#0d1526");
-    ctx.fillStyle=g;
+    const dpr=window.devicePixelRatio||1;
+    const W=Battle.GAME_W,H=Battle.GAME_H;
+    // Fill the full canvas with background (in bitmap pixel space).
+    const arena=this.arenas?.[this.save?.arena||0];
+    const bgTheme=Battle._bgThemes[arena?.bgTheme||"forest"]||Battle._bgThemes.forest;
+    // Contain transform: fit game space within canvas, center.
+    const sx=w/W, sy=h/H;
+    const scale=Math.min(sx,sy);
+    const offsetX=(w-W*scale)/2;
+    const offsetY=(h-H*scale)/2;
+    // Draw background in full canvas space (no game transform).
+    const grad=ctx.createLinearGradient(0,0,0,h);
+    grad.addColorStop(0,bgTheme.top);
+    grad.addColorStop(0.5,bgTheme.mid);
+    grad.addColorStop(1,bgTheme.bot);
+    ctx.fillStyle=grad;
     ctx.fillRect(0,0,w,h);
-    // Draw center line (battlefield divider).
-    ctx.strokeStyle="rgba(255,255,255,0.08)";
-    ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
-    // Draw all player units (survivors + current picks).
+    // Arena radial glow (full canvas).
+    if(arena){
+      const rg=ctx.createRadialGradient(w/2,h*0.45,0,w/2,h*0.45,Math.max(w,h)*0.6);
+      const ac=sanitizeHex(arena.c);
+      rg.addColorStop(0,ac+"10");
+      rg.addColorStop(1,"rgba(0,0,0,0)");
+      ctx.fillStyle=rg;
+      ctx.fillRect(0,0,w,h);
+    }
+    // Apply game-space transform for all game content.
+    ctx.save();
+    ctx.translate(offsetX,offsetY);
+    ctx.scale(scale,scale);
+    // Ground band.
+    const groundY=H*0.72;
+    const gg=ctx.createLinearGradient(0,groundY-20,0,groundY+30);
+    gg.addColorStop(0,"rgba(0,0,0,0)");
+    gg.addColorStop(0.5,bgTheme.ground+"40");
+    gg.addColorStop(1,bgTheme.ground+"20");
+    ctx.fillStyle=gg;
+    ctx.fillRect(0,groundY-20,W,50);
+    ctx.strokeStyle=bgTheme.accent+"30";ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(0,groundY);ctx.lineTo(W,groundY);ctx.stroke();
+    // Lane formation bands (same as battle).
+    const laneBands=[
+      {yMin:30,yMax:80,color:"#ff4444"},
+      {yMin:80,yMax:200,color:"#ff8844"},
+      {yMin:350,yMax:540,color:"#4488ff"},
+    ];
+    for(const lane of laneBands){
+      const ly=(lane.yMin+lane.yMax)/2;
+      const lh=lane.yMax-lane.yMin;
+      const lg=ctx.createLinearGradient(0,ly-lh/2,0,ly+lh/2);
+      lg.addColorStop(0,lane.color+"08");
+      lg.addColorStop(0.5,lane.color+"0d");
+      lg.addColorStop(1,lane.color+"08");
+      ctx.fillStyle=lg;
+      ctx.fillRect(0,ly-lh/2,W,lh);
+      ctx.strokeStyle=lane.color+"15";ctx.lineWidth=1;
+      ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      ctx.moveTo(0,ly-lh/2);ctx.lineTo(W,ly-lh/2);
+      ctx.moveTo(0,ly+lh/2);ctx.lineTo(W,ly+lh/2);
+      ctx.stroke();ctx.setLineDash([]);
+    }
+    // Center divider.
+    ctx.strokeStyle="rgba(255,255,255,.06)";ctx.lineWidth=1;
+    ctx.setLineDash([8,8]);
+    ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+    ctx.setLineDash([]);
+    // --- Unit sprites ---
+    // Temporarily set Battle.time for idle animation interpolation.
+    const savedTime=Battle.time;
+    Battle.time=this._draftTime||0;
     const allPlayer=[...this.playerSurvivors,...this._draftPlayerUnits];
-    for(const u of allPlayer){
-      const x=u.x*sx,y=u.y*sy;
-      // Team-colored dot.
-      ctx.fillStyle=u._isSurvivor?"#4af":"#6af";
-      ctx.globalAlpha=u._isSurvivor?0.6:1;
-      ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
-      // Outline.
-      ctx.strokeStyle="#000";ctx.lineWidth=1;ctx.stroke();
-      // Name label (small).
-      ctx.globalAlpha=1;
-      ctx.fillStyle="#4af";
-      ctx.font="6px sans-serif";
-      ctx.textAlign="center";
-      ctx.fillText(u.n?.substring(0,8)||"?",x,y-6);
-    }
-    // Draw all enemy units (survivors + revealed picks).
     const allEnemy=[...this.enemySurvivors,...this._draftEnemyUnits];
-    for(const u of allEnemy){
-      const x=u.x*sx,y=u.y*sy;
-      ctx.fillStyle=u._isSurvivor?"#f44":"#f68";
-      ctx.globalAlpha=u._isSurvivor?0.6:1;
-      ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.fill();
-      ctx.strokeStyle="#000";ctx.lineWidth=1;ctx.stroke();
-      ctx.globalAlpha=1;
-      ctx.fillStyle="#f44";
-      ctx.font="6px sans-serif";
-      ctx.textAlign="center";
-      ctx.fillText(u.n?.substring(0,8)||"?",x,y-6);
-    }
+    // Draw enemy first (top), then player (bottom) — paint order matches battle.
+    for(const u of allEnemy){ctx.globalAlpha=u._isSurvivor?0.85:1;SpriteRenderer.draw(ctx,u);}
+    for(const u of allPlayer){ctx.globalAlpha=u._isSurvivor?0.85:1;SpriteRenderer.draw(ctx,u);}
+    ctx.globalAlpha=1;
+    Battle.time=savedTime;
+    // --- Team labels + counts ---
+    ctx.fillStyle="#4af";ctx.font="bold 11px sans-serif";ctx.textAlign="left";
+    ctx.fillText("▼ You: "+allPlayer.length,4,H-6);
+    ctx.fillStyle="#f44";ctx.textAlign="right";
+    ctx.fillText("Enemy: "+allEnemy.length+" ▲",W-4,14);
     ctx.textAlign="left";
-    // Unit count labels.
-    ctx.fillStyle="#4af";ctx.font="bold 10px sans-serif";
-    ctx.fillText("You: "+allPlayer.length,4,12);
-    ctx.fillStyle="#f44";
-    ctx.textAlign="right";
-    ctx.fillText("Enemy: "+allEnemy.length,w-4,12);
-    ctx.textAlign="left";
+    ctx.restore();
+  },
+
+  // Idle animation loop for the draft canvas — animates unit bob/breathe.
+  _draftAnimId:null,
+  _draftTime:0,
+  _startDraftAnim(){
+    if(this._draftAnimId)return;
+    let last=performance.now();
+    const tick=(now)=>{
+      const dt=Math.min(0.05,(now-last)/1000);last=now;
+      this._draftTime+=dt;
+      // Only redraw if the draft screen is active.
+      if(document.getElementById("draft")?.classList.contains("active")){
+        this.renderDraftBattlefield();
+        this._draftAnimId=requestAnimationFrame(tick);
+      }else{
+        this._draftAnimId=null;
+      }
+    };
+    this._draftAnimId=requestAnimationFrame(tick);
+  },
+  _stopDraftAnim(){
+    if(this._draftAnimId){cancelAnimationFrame(this._draftAnimId);this._draftAnimId=null;}
   },
 
   // Place a unit on the draft battlefield at its formation position.
@@ -7877,7 +8300,7 @@ const G={
     const [yMin,yMax]=this._formationY(u.role,isPlayer);
     const xSpread=Q(40,160);
     const xPos=isPlayer?xSpread:400-xSpread;
-    const placed={...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.h};
+    const placed={...u,x:xPos,y:Q(yMin,yMax),h:u.h,mh:u.mh||u.h,team:isPlayer?"player":"enemy",animState:"idle",attackT:-1};
     return placed;
   },
 
@@ -7900,12 +8323,21 @@ const G={
     if(!Bot.loadout.length)Bot.generateLoadout(this.arenas[this.save.arena||0]?.botPool||this.base.map(u=>u.n));
     const botComeback=Match.history.length>0&&Match.history[Match.history.length-1].winner==="player";
     this._draftBotPicks=Bot.draftRound(drawCount);
-    // Mark survivors for visual distinction.
-    this.playerSurvivors=this.playerSurvivors.map(u=>({...u,_isSurvivor:true}));
-    this.enemySurvivors=this.enemySurvivors.map(u=>({...u,_isSurvivor:true}));
+    // Mark survivors for visual distinction and re-position them in their
+    // assigned formation bands (they keep end-of-battle x/y otherwise).
+    this.playerSurvivors=this.playerSurvivors.map(u=>{
+      const p=this._placeDraftUnit(u,true);
+      return {...p,_isSurvivor:true};
+    });
+    this.enemySurvivors=this.enemySurvivors.map(u=>{
+      const p=this._placeDraftUnit(u,false);
+      return {...p,_isSurvivor:true};
+    });
     this.screen("draft");
     this.updateLivesHUD();
+    this._sizeDraftCanvas();
     this.renderDraftBattlefield();
+    this._startDraftAnim();
     this.drawOne();
   },
 
@@ -7957,6 +8389,8 @@ const G={
   drawOne(){
     const st=this.roundDraftState;
     if(!st)return;
+    // Clear any existing timer before starting a new one
+    this._clearDraftTimer();
     // Generate 3 cards for this draw (no dupes within this draw).
     const usedNames=new Set(st.picks.map(u=>u._isSpell?u.name:u.n));
     const offering=[];
@@ -7981,6 +8415,7 @@ const G={
   pickDraft(u){
     const st=this.roundDraftState;
     if(!st||!u||this._draftPicking)return;
+    if(st.picks.includes(u))return; // Prevent duplicate picks
     this._draftPicking=true;
     this._clearDraftTimer();
     st.picks.push(u);
@@ -8001,6 +8436,7 @@ const G={
     this.renderDraftBattlefield();
     if(st.drawIndex>=st.drawCount){
       this.selected=st.picks;
+      this.currentOffering=null; // Clear stale offering
       if(connected&&role==="guest"){
         transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
       }
@@ -8211,6 +8647,7 @@ const G={
     if(this.rerolls<=0){GameAudio.sfx("error");return;}
     this.rerolls--;
     GameAudio.sfx("reroll");
+    this._draftPicking=false; // Reset picking flag
     this._clearDraftTimer();
     this.drawOne(); // re-rolls the current offering
   },
@@ -8581,9 +9018,12 @@ const G={
   // Phase 8: Battle ended — delegate to Match for round/match logic.
   onBattleEnd(winner){
     this.stopSnapshots();
-    // Continuous draft: store surviving units for next round.
+    // Continuous draft: store ALL units for next round (killed units revive).
+    // Use _allUnits which tracks every unit (dead units are removed from Battle.units
+    // after death animation, but kept in _allUnits for revival).
     if(Match.active){
-      this.playerSurvivors=Battle.units.filter(u=>u.team==="player"&&u.h>0).map(u=>{
+      const allUnits=Battle._allUnits||Battle._finalUnits||Battle.units||[];
+      this.playerSurvivors=allUnits.filter(u=>u.team==="player").map(u=>{
         const clean={...u};
         delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
         delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
@@ -8597,7 +9037,7 @@ const G={
         delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
         return clean;
       });
-      this.enemySurvivors=Battle.units.filter(u=>u.team==="enemy"&&u.h>0).map(u=>{
+      this.enemySurvivors=allUnits.filter(u=>u.team==="enemy").map(u=>{
         const clean={...u};
         delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
         delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
@@ -8621,7 +9061,9 @@ const G={
     if(winner==="player"){
       // In P2P guest mode, the guest's units are team "enemy" in snapshots.
       const teamForRole=connected&&role==="guest"?"enemy":"player";
-      const survivors=Battle.units.filter(u=>u.team===teamForRole&&u.h>0);
+      // Use _finalUnits snapshot — Battle.units is cleared by stop() before onBattleEnd runs.
+      const finalUnits=Battle._finalUnits||Battle.units||[];
+      const survivors=finalUnits.filter(u=>u.team===teamForRole&&u.h>0);
       if(survivors.length>0){
         let lastRole=survivors[0].role;
         // Map assassin→counter and bruiser→frontline for Role Master achievement.
@@ -8635,7 +9077,9 @@ const G={
     // Phase 5: in multiplayer the host already broadcast the final winner;
     // guests reach here via the snapshot path with a translated winner.
     // P2P guest: host sends round_end/match_end messages that handle state
-    // updates (lives, history). Guest just shows the result screen.
+    // updates (lives, history). Guest must NOT call Match.onRoundEnd here —
+    // that would double-count history/lives (once here, once via round_end msg).
+    // Guest quest/achievement tracking happens via onMatchEnd (match_end msg).
     if(connected&&role==="guest"){
       return;
     }
@@ -8656,11 +9100,11 @@ const G={
     GameAudio.stopMusic(); // Phase 30: stop battle music
     const lr=$("livesResult");
     if(lr)lr.innerText=`You ${this.livesHearts(livesPlayer,DEFAULT_LIVES)} | Enemy ${this.livesHearts(livesEnemy,DEFAULT_LIVES)}`;
-    // Show survivor count (continuous draft model).
+    // Show army count (continuous draft — all units revive and carry over).
     const sr=$("survivorInfo");
     if(sr){
       const ps=this.playerSurvivors.length,es=this.enemySurvivors.length;
-      sr.innerText=`Survivors — You: ${ps} | Enemy: ${es}`;
+      sr.innerText=`Army — You: ${ps} | Enemy: ${es}`;
       sr.style.display=ps>0||es>0?"block":"none";
     }
     // Hide match rewards (awarded on match end, not round end).
@@ -8730,7 +9174,8 @@ const G={
     // Accumulate damage + kills from all player units this match.
     const playerTeam=connected&&role==="guest"?"enemy":"player";
     if(!this.save.unitMastery)this.save.unitMastery={};
-    for(const u of Battle.units){
+    const finalUnits=Battle._finalUnits||Battle.units||[];
+    for(const u of finalUnits){
       if(u.team===playerTeam){
         this.save.stats.totalDmg=(this.save.stats.totalDmg||0)+Math.round(u.dmgDealt||0);
         this.save.stats.totalKills=(this.save.stats.totalKills||0)+(u.kills||0);
@@ -8744,7 +9189,8 @@ const G={
       }
     }
     // Track spells cast.
-    if(Battle.spells)this.save.stats.totalSpells=(this.save.stats.totalSpells||0)+Battle.spells.filter(s=>s.fired).length;
+    const finalSpells=Battle._finalSpells||Battle.spells||[];
+    if(finalSpells.length)this.save.stats.totalSpells=(this.save.stats.totalSpells||0)+finalSpells.filter(s=>s.fired).length;
     // Phase 36: update Elo rating.
     const r=this.save.ranked;
     if(r){
@@ -8803,7 +9249,6 @@ const G={
         }
       }
       saveData(this.save);
-      this.checkAchievements();
     }else if(draw){
       // Draw: award partial rewards, don't reset win streak.
       this.save._lastMatchWon=false;
@@ -8820,6 +9265,9 @@ const G={
         saveData(this.save);
       }
     }
+    // Check achievements on every match end (not just wins) — cumulative stats
+    // like totalDmg/totalKills/totalSpells increase on losses and draws too.
+    this.checkAchievements();
     // Show match result screen.
     this.screen("result");
     const titleEl=$("resultTitle");
@@ -8864,7 +9312,8 @@ const G={
     const dmgEl=$("matchDmgChart");
     if(dmgEl){
       const playerTeam=connected&&role==="guest"?"enemy":"player";
-      const units=Battle.units.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
+      const _finalUnits=Battle._finalUnits||Battle.units||[];
+      const units=_finalUnits.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
         .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0));
       if(units.length>0){
         const maxDmg=Math.max(...units.map(u=>u.dmgDealt||0));
@@ -8902,8 +9351,9 @@ const G={
     const survEl=$("matchSurvivors");
     if(survEl){
       const playerTeam=connected&&role==="guest"?"enemy":"player";
-      const survivors=Battle.units.filter(u=>u.team===playerTeam&&u.h>0);
-      const total=Battle.units.filter(u=>u.team===playerTeam).length;
+      const _finalUnits=Battle._finalUnits||Battle.units||[];
+      const survivors=_finalUnits.filter(u=>u.team===playerTeam&&u.h>0);
+      const total=_finalUnits.filter(u=>u.team===playerTeam).length;
       if(total>0){
         survEl.style.display="block";
         const survNames=survivors.map(u=>`<span style="color:${u.c}">${u.n}</span>`).join(", ");
@@ -8927,7 +9377,8 @@ const G={
     const mvpEl=$("matchMVP");
     if(mvpEl){
       const playerTeam=connected&&role==="guest"?"enemy":"player";
-      const contenders=Battle.units.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
+      const _finalUnits=Battle._finalUnits||Battle.units||[];
+      const contenders=_finalUnits.filter(u=>u.team===playerTeam&&(u.dmgDealt||0)>0)
         .sort((a,b)=>(b.dmgDealt||0)-(a.dmgDealt||0));
       if(contenders.length>0){
         const mvp=contenders[0];
@@ -8993,8 +9444,9 @@ const G={
     const el=$("matchAnalysis");
     if(!el)return;
     const playerTeam=connected&&role==="guest"?"enemy":"player";
-    const playerUnits=Battle.units.filter(u=>u.team===playerTeam);
-    const enemyUnits=Battle.units.filter(u=>u.team!==playerTeam);
+    const _finalUnits=Battle._finalUnits||Battle.units||[];
+    const playerUnits=_finalUnits.filter(u=>u.team===playerTeam);
+    const enemyUnits=_finalUnits.filter(u=>u.team!==playerTeam);
     if(playerUnits.length===0){el.style.display="none";return;}
     el.style.display="block";
     // Calculate stats.
@@ -9066,7 +9518,8 @@ const G={
     const el=$("matchHighlights");
     if(!el)return;
     const playerTeam=connected&&role==="guest"?"enemy":"player";
-    const playerUnits=Battle.units.filter(u=>u.team===playerTeam);
+    const _finalUnits=Battle._finalUnits||Battle.units||[];
+    const playerUnits=_finalUnits.filter(u=>u.team===playerTeam);
     if(playerUnits.length===0){el.style.display="none";return;}
     el.style.display="block";
     let html="<div style='font-weight:700;font-size:.85rem;margin-bottom:8px;text-align:center;'>🌟 Battle Highlights</div>";
@@ -9123,7 +9576,8 @@ const G={
     const el=$("matchPerformance");
     if(!el)return;
     const playerTeam=connected&&role==="guest"?"enemy":"player";
-    const playerUnits=Battle.units.filter(u=>u.team===playerTeam);
+    const _finalUnits=Battle._finalUnits||Battle.units||[];
+    const playerUnits=_finalUnits.filter(u=>u.team===playerTeam);
     if(playerUnits.length===0){el.style.display="none";return;}
     el.style.display="block";
     // Score each unit: damage + kills*50 + survival bonus.
@@ -9222,14 +9676,15 @@ const G={
       Match.livesPlayer>0&&Match.livesEnemy<=0;
   },
   checkAchievements(){
-    const a=this.save.achievements;
+    const a=this.save.achievements||{};
+    const achDefs=this.achievements||{};
     let unlocked=false;
-    for(const key in this.achievements){
+    for(const key in achDefs){
       if(!a[key]){
         try{
-          if(this.achievements[key].check(this)){
+          if(achDefs[key]&&typeof achDefs[key].check==="function"&&achDefs[key].check(this)){
             a[key]=true;
-            toast("🏆 "+this.achievements[key].name+" unlocked!");
+            toast("🏆 "+achDefs[key].name+" unlocked!");
             unlocked=true;
           }
         }catch(e){/* ignore single achievement check failure */}
@@ -9246,8 +9701,25 @@ const G={
     Battle.tick();
   },
   auto(){
-    if(connected&&role==="guest"){transmit("cmd",{cmd:"auto"});return;}
-    Battle.auto();
+    // Toggle auto-play button state (for both host/solo and guest).
+    const btn=$("autoBtn");
+    if(Battle.autoTimer||this._guestAutoActive){
+      // Stop auto-play.
+      if(Battle.autoTimer){clearInterval(Battle.autoTimer);Battle.autoTimer=null;}
+      this._guestAutoActive=false;
+      if(btn)btn.classList.remove("primary");
+      if(connected&&role==="guest"){transmit("cmd",{cmd:"auto_stop"});return;}
+    }else{
+      // Start auto-play.
+      if(connected&&role==="guest"){
+        this._guestAutoActive=true;
+        if(btn)btn.classList.add("primary");
+        transmit("cmd",{cmd:"auto"});
+        return;
+      }
+      Battle.auto();
+      if(btn)btn.classList.add("primary");
+    }
   },
   skip(){
     if(connected&&role==="guest"){transmit("cmd",{cmd:"skip"});return;}
@@ -9346,7 +9818,12 @@ const G={
     this.forgeMode=mode;
     setText("forgeModeLabel",mode==="spell"?t("spell"):t("custom_unit"));
     const promptEl=$("forgePrompt");
-    if(promptEl)promptEl.placeholder=mode==="spell"?"e.g. fireball, heal rain, frost nova...":"e.g. ice mage, fire dragon, ninja...";
+    if(promptEl){
+      promptEl.placeholder=mode==="spell"?"e.g. fireball, heal rain, frost nova...":"e.g. ice mage, fire dragon, ninja...";
+      promptEl.setAttribute("aria-label",mode==="spell"?"Enter a concept for your custom spell":"Enter a concept for your custom unit");
+    }
+    const genBtn=$("forgeGenBtn");
+    if(genBtn)genBtn.setAttribute("aria-label",mode==="spell"?"Watch an ad to generate a custom spell":"Watch an ad to generate a custom unit");
     const uBtn=$("forgeModeUnit"),sBtn=$("forgeModeSpell");
     if(uBtn){uBtn.style.opacity=mode==="unit"?"1":"0.5";uBtn.style.borderColor=mode==="unit"?"var(--accent)":"var(--border)";uBtn.style.boxShadow=mode==="unit"?"0 0 8px rgba(124,58,237,.4)":"none";}
     if(sBtn){sBtn.style.opacity=mode==="spell"?"1":"0.5";sBtn.style.borderColor=mode==="spell"?"var(--accent)":"var(--border)";sBtn.style.boxShadow=mode==="spell"?"0 0 8px rgba(124,58,237,.4)":"none";}
@@ -9377,6 +9854,7 @@ const G={
   },
   // Core forge logic — runs ad (if watchAd) + generation in parallel.
   // Phase 23: supports spell forge mode.
+  // Upgraded: LLM preloaded at app start, ad is 1s, skip uses template, heavy debug logging.
   async _doForge(prompt,watchAd){
     if(this._forgeRunning)return;
     // Daily forge cap: max 10 forges per day.
@@ -9394,26 +9872,32 @@ const G={
     const preview=$("forgePreview");
     if(preview)preview.innerHTML='<div class="detail">Generating...</div>';
     const arenaIdx=this.save.arena||0;
+    const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
+    debugForge("_doForge start",{prompt,watchAd,forgeMode:this.forgeMode,canUseLLM,llmReady,llmLoading});
     // Phase 23: spell forge path.
     if(this.forgeMode==="spell"){
       try{
-        const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
-        const adPromise=watchAd?new Promise(res=>AdSDK.showRewarded(15000,res)):Promise.resolve();
+        const adPromise=watchAd?new Promise(res=>AdSDK.showRewarded(FORGE_AD_MS,res)):Promise.resolve();
         let genPromise;
-        if(canUseLLM){
+        if(watchAd && canUseLLM){
           if(llmLoading&&!llmReady)this._showModelProgress();
           genPromise=generateSpell(prompt,arenaIdx);
         }else{
+          debugForge("spell using template fallback",{watchAd,canUseLLM});
           genPromise=Promise.resolve({...templateSpellFallback(prompt),_isSpell:true});
         }
         await adPromise;
         let spell;
-        try{spell=await genPromise;}catch(e){spell={...templateSpellFallback(prompt),_isSpell:true};}
+        try{spell=await genPromise;}catch(e){
+          debugForge("spell generation threw, using template:",e.message);
+          spell={...templateSpellFallback(prompt),_isSpell:true};
+        }
         if(!spell)spell={...templateSpellFallback(prompt),_isSpell:true};
         this._hideModelProgress();
         this.pendingForgeSpell=spell;
         this.showSpellForgePreview(spell);
         GameAudio.sfx("forge_reveal");
+        debugForge("_doForge result",{spell,forgeMode:this.forgeMode});
       }catch(e){
         console.error("Spell forge failed:",e);
         this._hideModelProgress();
@@ -9423,27 +9907,26 @@ const G={
       }
       return;
     }
-    // Phase 12: model cache check — if LLM not ready and no WebGPU, skip LLM.
+    // Phase 12: unit forge path.
     try{
-      const canUseLLM=navigator.gpu&&W&&(W.CreateMLCEngine||W.CreateWebWorkerMLCEngine);
-      // Start ad + generation in parallel (if watching ad).
-      const adPromise=watchAd?new Promise(res=>AdSDK.showRewarded(15000,res)):Promise.resolve();
+      const adPromise=watchAd?new Promise(res=>AdSDK.showRewarded(FORGE_AD_MS,res)):Promise.resolve();
       let genPromise;
-      if(canUseLLM){
+      if(watchAd && canUseLLM){
         // Phase 12: if LLM is still loading, show model download progress + Cancel.
         if(llmLoading&&!llmReady){
           this._showModelProgress();
         }
         genPromise=generateUnit(prompt,arenaIdx);
       }else{
-        // No LLM available — use template fallback directly.
+        // No LLM / skip ad — use template fallback directly.
+        debugForge("unit using template fallback",{watchAd,canUseLLM});
         genPromise=Promise.resolve(attrsToUnit(templateFallback(prompt),arenaIdx));
       }
       await adPromise;
       let unit;
       try{unit=await genPromise;}
       catch(e){
-        console.warn("Generation failed, using template:",e.message);
+        debugForge("unit generation threw, using template:",e.message);
         unit=attrsToUnit(templateFallback(prompt),arenaIdx);
       }
       if(!unit){
@@ -9453,6 +9936,7 @@ const G={
       this.pendingForgeUnit=unit;
       this.showForgePreview(unit);
       GameAudio.sfx("forge_reveal"); // Phase 30
+      debugForge("_doForge result",{unit,forgeMode:this.forgeMode});
     }catch(e){
       console.error("Forge failed:",e);
       this._hideModelProgress();
@@ -9494,6 +9978,8 @@ const G={
     spell.radius=clamp(Number(spell.radius)||60,10,200);
     spell.duration=clamp(Number(spell.duration)||0,0,10);
     this.save.spellbook.push(spell);
+    // Cap spellbook at 20 to prevent save bloat.
+    if(this.save.spellbook.length>20)this.save.spellbook=this.save.spellbook.slice(-20);
     saveData(this.save);
     toast(t("spell_added_book"));
     this.pendingForgeSpell=null;
@@ -9613,7 +10099,13 @@ const G={
     // Phase 13: forged units go to collection.
     if(!this.save.collection)this.save.collection=[];
     this.save.collection.push(u);
-    if(this.save.collection.length>50)this.save.collection.shift();
+    // Cap collection at 50 — but never remove units that are in the current loadout.
+    while(this.save.collection.length>50){
+      const loadout=new Set(this.save.loadout||[]);
+      const idx=this.save.collection.findIndex(u=>!loadout.has(u.n));
+      if(idx<0)break; // all units are in loadout — keep extra
+      this.save.collection.splice(idx,1);
+    }
     // Also keep ai for backward compat with network forge sharing.
     this.save.ai.push(u);
     if(this.save.ai.length>50)this.save.ai.shift();
@@ -9695,7 +10187,9 @@ const G={
     for(let i=0;i<keys.length;i++){
       const name=keys[i];
       const safeName=String(name).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
-      const loadout=presets[name];
+      const raw=presets[name];
+      // Handle both old format ({name,loadout}) and current format (array).
+      const loadout=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.loadout)?raw.loadout:[]);
       const units=loadout.map(n=>this.collectionUnits().find(u=>u.n===n)).filter(Boolean);
       const names=units.map(u=>`<span style="color:${u.c}">${u.n}</span>`).join(", ");
       html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;margin:3px 0;background:var(--bg);border-radius:var(--radius-sm);">`+
@@ -9710,7 +10204,10 @@ const G={
     const keys=Object.keys(presets);
     const name=keys[idx];
     if(name===undefined||!presets[name])return;
-    this.save.loadout=presets[name].slice();
+    // Handle both old format ({name,loadout}) and current format (array).
+    const raw=presets[name];
+    const loadout=Array.isArray(raw)?raw:(raw&&Array.isArray(raw.loadout)?raw.loadout:[]);
+    this.save.loadout=loadout.slice();
     saveData(this.save);
     GameAudio.sfx("ui_click");
     toast("📂 Loaded preset '"+String(name).replace(/</g,"").replace(/>/g,"")+"'");
@@ -10182,6 +10679,10 @@ const G={
       btn.disabled=this.save.coins<cost;
       btn.innerHTML=`🎲 Buy Random Unit (${cost} coins)`;
     }
+    const rerollBtn=$("rerollShopBtn");
+    if(rerollBtn){
+      rerollBtn.disabled=(this.save.coins||0)<10;
+    }
   },
   buyShopUnit(){
     const cost=this.shopCost();
@@ -10193,7 +10694,13 @@ const G={
     if(!this.save.collection)this.save.collection=[];
     if(!this.save.collection.some(c=>c.n===u.n)){
       this.save.collection.push({...u});
-      if(this.save.collection.length>50)this.save.collection.shift();
+      // Cap collection at 50 — but never remove units in the current loadout.
+      while(this.save.collection.length>50){
+        const loadout=new Set(this.save.loadout||[]);
+        const idx=this.save.collection.findIndex(c=>!loadout.has(c.n));
+        if(idx<0)break;
+        this.save.collection.splice(idx,1);
+      }
       this.save.coins-=cost;
       saveData(this.save);
       this.wins();
@@ -10402,9 +10909,10 @@ const G={
       const recent=replays.slice(0,10).reverse();
       html+="<div style='display:flex;gap:3px;justify-content:center;flex-wrap:wrap;'>";
       for(const r of recent){
+        const draw=r.winner==="draw";
         const win=r.winner==="player";
-        const icon=win?"W":"L";
-        const color=win?"var(--ok)":"var(--warn)";
+        const icon=draw?"D":win?"W":"L";
+        const color=draw?"var(--muted)":win?"var(--ok)":"var(--warn)";
         html+=`<div style="width:24px;height:24px;display:flex;align-items:center;justify-content:center;background:${color};color:#fff;border-radius:4px;font-size:.7rem;font-weight:700;">${icon}</div>`;
       }
       html+="</div>";
@@ -10480,8 +10988,9 @@ const G={
     for(let i=0;i<replays.length;i++){
       const r=replays[i];
       const win=r.winner==="player";
-      const resultColor=win?"var(--ok)":"var(--warn)";
-      const resultIcon=win?"🏆":"💀";
+      const draw=r.winner==="draw";
+      const resultColor=draw?"var(--muted)":win?"var(--ok)":"var(--warn)";
+      const resultIcon=draw?"🤝":win?"🏆":"💀";
       const arenaName=this.arenas[r.arena]?.n||"Unknown";
       // Round history icons.
       let roundIcons="";
@@ -10498,7 +11007,7 @@ const G={
       html+=`<div style="background:var(--card);border:1px solid ${resultColor};border-radius:var(--radius);padding:10px;margin:6px 0;">`+
         `<div style="display:flex;justify-content:space-between;align-items:center;">`+
         `<span style="font-size:1.2rem;">${resultIcon}</span>`+
-        `<span style="color:${resultColor};font-weight:700;font-size:.85rem;">${win?"VICTORY":"DEFEAT"}</span>`+
+        `<span style="color:${resultColor};font-weight:700;font-size:.85rem;">${draw?"DRAW":win?"VICTORY":"DEFEAT"}</span>`+
         `<span style="font-size:.7rem;color:var(--muted);">${r.date}</span></div>`+
         `<div style="font-size:.75rem;margin:4px 0;">${badges}${arenaName} · ${r.rounds} rounds</div>`+
         `${roundIcons?`<div style="font-size:.8rem;margin:2px 0;">${roundIcons}</div>`:""}`+
@@ -10675,8 +11184,32 @@ const G={
     localStorage.removeItem(SAVE_KEY);
     localStorage.removeItem(SAVE_BACKUP_KEY);
     // Also clear IndexedDB fallback so loadDataAsync doesn't restore it.
-    try{const db=idb();if(db&&db.result){db.result.transaction("kv","readwrite").objectStore("kv").clear();}}catch(e){}
-    location.reload();
+    // The cached _idbDB request may already be "done" (onsuccess already fired),
+    // so we can't rely on setting onsuccess again. Instead, open a fresh
+    // connection and wait for the clear transaction to complete before reload.
+    let cleared=false;
+    const doReload=()=>{if(cleared)return;cleared=true;location.reload();};
+    try{
+      const req=indexedDB.open("promptshowdown",1);
+      req.onupgradeneeded=e=>{e.target.result.createObjectStore("kv");};
+      req.onsuccess=()=>{
+        try{
+          const db=req.result;
+          if(db.objectStoreNames.contains("kv")){
+            const tx=db.transaction("kv","readwrite");
+            tx.objectStore("kv").clear();
+            tx.oncomplete=()=>{db.close();doReload();};
+            tx.onerror=()=>{db.close();doReload();};
+            tx.onabort=()=>{db.close();doReload();};
+            setTimeout(()=>{db.close();doReload();},2000);
+          }else{
+            db.close();doReload();
+          }
+        }catch(e){try{req.result.close();}catch(_){}doReload();}
+      };
+      req.onerror=doReload;
+    }catch(e){doReload();}
+    setTimeout(doReload,3000);
   });},
 
   // Export save data as base64-encoded string.
@@ -10704,12 +11237,19 @@ const G={
       const b64=code.slice(5);
       const json=decodeURIComponent(escape(atob(b64)));
       const data=JSON.parse(json);
-      if(!data.version){toast("Invalid save data");return;}
+      if(!data||typeof data!=="object"||Array.isArray(data)){toast("Invalid save data: not an object");return;}
+      if(typeof data.version!=="number"||isNaN(data.version)){toast("Invalid save data: missing or invalid version");return;}
       showConfirm("Import will overwrite current progress. Continue?",()=>{
-        this.save=migrateSave(data);
-        saveData(this.save);
-        toast("Save imported successfully!");
-        this.menu();
+        try{
+          const migrated=migrateSave(data);
+          if(!migrated){toast("Import failed: migration error");return;}
+          this.save=migrated;
+          saveData(this.save);
+          toast("Save imported successfully!");
+          this.menu();
+        }catch(e){
+          toast("Import failed: migration error - "+(e.message||e));
+        }
       });
     }catch(e){toast("Import failed: "+(e.message||e));}
   }
@@ -10988,13 +11528,13 @@ document.addEventListener("keydown",e=>{
       try{G.togglePause();}catch(err){}
     }else if(e.key==="1"){
       e.preventDefault();
-      if(Battle.speed!==1){Battle.speed=1;const b=$("speedBtn");if(b)b.textContent="1×";if(Battle.autoTimer)Battle.auto();}
+      if(Battle.speed!==1){Battle.speed=1;Battle._manualSpeed=true;G.save.defaultSpeed=1;saveData(G.save);const b=$("speedBtn");if(b)b.textContent="1×";if(Battle.autoTimer)Battle.auto();}
     }else if(e.key==="2"){
       e.preventDefault();
-      if(Battle.speed!==2){Battle.speed=2;const b=$("speedBtn");if(b)b.textContent="2×";if(Battle.autoTimer)Battle.auto();}
+      if(Battle.speed!==2){Battle.speed=2;Battle._manualSpeed=true;G.save.defaultSpeed=2;saveData(G.save);const b=$("speedBtn");if(b)b.textContent="2×";if(Battle.autoTimer)Battle.auto();}
     }else if(e.key==="3"){
       e.preventDefault();
-      if(Battle.speed!==4){Battle.speed=4;const b=$("speedBtn");if(b)b.textContent="4×";if(Battle.autoTimer)Battle.auto();}
+      if(Battle.speed!==4){Battle.speed=4;Battle._manualSpeed=true;G.save.defaultSpeed=4;saveData(G.save);const b=$("speedBtn");if(b)b.textContent="4×";if(Battle.autoTimer)Battle.auto();}
     }else if(e.key==="s"||e.key==="S"){
       e.preventDefault();
       try{G.skip();}catch(err){}
@@ -11044,18 +11584,24 @@ document.addEventListener("click",e=>{
 // H3: Canvas responds to orientation change and resize.
 function resizeCanvas(){
   const cv=$("cv");
-  if(!cv||!Battle.ctx)return;
+  if(!cv)return;
   const dpr=window.devicePixelRatio||1;
-  const dispW=Math.min(400,innerWidth-20);
-  const dispH=550;
+  // Use the active screen container dimensions (mobile portrait).
+  const screen=document.querySelector(".screen.active");
+  const dispW=screen?screen.clientWidth:Math.min(420,innerWidth);
+  const dispH=screen?screen.clientHeight:innerHeight;
   cv.style.width=dispW+"px";
   cv.style.height=dispH+"px";
   cv.width=dispW*dpr;
   cv.height=dispH*dpr;
   Battle.canvasH=dispH;
   Battle.canvasW=dispW;
-  Battle.ctx.setTransform(1,0,0,1,0,0);
-  Battle.ctx.scale(dpr,dpr);
+  if(Battle.ctx){
+    Battle.ctx.setTransform(1,0,0,1,0,0);
+    Battle.ctx.scale(dpr,dpr);
+  }
+  // Keep the draft canvas sized correctly on resize/orientation change.
+  if(typeof G!=="undefined"&&G._sizeDraftCanvas)G._sizeDraftCanvas();
 }
 window.addEventListener("resize",resizeCanvas);
 window.addEventListener("orientationchange",()=>setTimeout(resizeCanvas,100));

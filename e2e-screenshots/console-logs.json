@@ -1,0 +1,69 @@
+{
+  "logs": [
+    {
+      "type": "warning",
+      "text": "AI init failed, using procedural forge: Error: Unable to find a compatible GPU. This issue might be because your computer doesn't have a GPU, or your system settings are not configured properly. Please check if your device has a GPU properly set up and if your your browser supports WebGPU. You can also consult your browser's compatibility chart to see if it supports WebGPU. For more information about WebGPU support in your browser, visit https://webgpureport.org/"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] _doForge start {prompt: ice dragon, watchAd: false, forgeMode: unit, canUseLLM: , llmReady: false}"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] unit using template fallback {watchAd: false, canUseLLM: }"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] templateFallback start ice dragon"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] templateFallback result {match: null, attrs: Object}"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] attrsToUnit input {attrs: Object, arenaIndex: 0}"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] _doForge result {unit: Object, forgeMode: unit}"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] _doForge start {prompt: fire mage, watchAd: true, forgeMode: unit, canUseLLM: , llmReady: false}"
+    },
+    {
+      "type": "log",
+      "text": "[Ad] stub start 1000ms"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] generateUnit start {rawPrompt: fire mage, prompt: fire mage, arenaIndex: 0}"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] generateUnit cache miss"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] templateFallback start fire mage"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] templateFallback result {match: null, attrs: Object}"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] attrsToUnit input {attrs: Object, arenaIndex: 0}"
+    },
+    {
+      "type": "log",
+      "text": "[Ad] stub complete"
+    },
+    {
+      "type": "log",
+      "text": "[Forge] _doForge result {unit: Object, forgeMode: unit}"
+    }
+  ],
+  "errors": []
+}
