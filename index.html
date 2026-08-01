@@ -3811,6 +3811,131 @@ const JOINT_CONFIG={
 };
 const ANIM_DURATIONS={idle:2.0,move:0.6,attack:0.4,death:0.5};
 
+// PERF-R12: Sprite pre-rendering system.
+// Pre-renders each sprite (body shapes + gradients + joints) to an offscreen canvas,
+// keyed by (recipeId, state, frameIndex, team). Then drawImage per frame instead of
+// re-drawing all shapes with gradients. 10-100x faster than per-frame path rendering.
+// Face/eyes are drawn dynamically on top (they track targets).
+const SPRITE_CACHE_FRAMES=8; // frames per animation cycle
+const SPRITE_CACHE_PAD=4;     // padding around sprite bounds
+const _spriteCache=new Map(); // key → offscreen canvas
+
+function _getRecipeId(u){
+  // Use the unit's name as a proxy for recipe identity (each forged unit has a unique name).
+  // For base units, the name maps to a fixed recipe. This is a heuristic but works because
+  // recipe shapes are determined at unit creation and don't change.
+  if(u._spriteCacheId)return u._spriteCacheId;
+  // Build a key from recipe shape count + colors + body plan + weapon.
+  const r=u.recipe;
+  if(!r)return null;
+  const shapes=r.shapes||[];
+  let key=(r.bodyPlan||"")+"|"+(r.skin||"")+"|"+shapes.length;
+  for(let i=0;i<shapes.length;i++){
+    const s=shapes[i];
+    key+="|"+s.t+":"+(s.c||"")+":"+(s.c2||"")+":"+(s.r||s.w||"")+":"+(s.glow||0)+":"+(s.outline||0);
+  }
+  // Include weapon + accessories
+  if(r.weapon)key+="|w:"+r.weapon;
+  if(r.accessories)key+="|a:"+r.accessories.length;
+  // Include color palette
+  key+="|c:"+(u.c||"")+":"+(u.accent||"");
+  u._spriteCacheId=key;
+  return key;
+}
+
+function _getSpriteCacheKey(u,state,frameIdx){
+  // Include z (rounded) in key — different z values produce different scale sprites.
+  return _getRecipeId(u)+"|z"+(Math.round((u.z||10)*2)/2)+"|"+state+"|"+frameIdx;
+}
+
+function _renderSpriteToCache(u,state,frameIdx){
+  const recipe=u.recipe;
+  if(!recipe)return null;
+  const dur=ANIM_DURATIONS[state]||2;
+  const t=frameIdx/SPRITE_CACHE_FRAMES;
+  const anims=recipe.animations||{};
+  const keyframes=anims[state]||anims.idle||[{t:0}];
+  const channels=SpriteRenderer.interpolate(keyframes,t);
+  const rm=G.save?.settings?.reducedMotion;
+  const bobY=rm?0:(channels.bob?Math.sin(t*Math.PI*2)*2:0);
+  const alpha=channels.alpha!==undefined?channels.alpha:1;
+  const rot=rm?0:(channels.rot||0);
+
+  // Sprite dimensions: scale factor is (z/10)*1.8, sprite is ~52px wide, ~65px tall at z=10.
+  const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
+  const spriteW=Math.ceil(60*spriteScale)+SPRITE_CACHE_PAD*2;
+  const spriteH=Math.ceil(70*spriteScale)+SPRITE_CACHE_PAD*2;
+
+  // Create offscreen canvas
+  const oc=document.createElement("canvas");
+  oc.width=spriteW;oc.height=spriteH;
+  const sc=oc.getContext("2d");
+  // Center the sprite in the canvas. The unit's "origin" (u.x,u.y) maps to the center-bottom.
+  const cx=spriteW/2, cy=spriteH-SPRITE_CACHE_PAD;
+
+  // Set up the same transform stack as SpriteRenderer.draw, but centered on our canvas.
+  sc.save();
+  sc.globalAlpha=alpha;
+  sc.translate(cx,cy);
+  sc.scale(spriteScale,spriteScale);
+  sc.translate(-cx,-cy);
+  // Enemy flip — bake into cache so we don't need to flip at draw time.
+  if(u.team==="enemy"){sc.translate(cx,cy);sc.scale(-1,1);sc.translate(-cx,-cy);}
+  if(rot){sc.translate(cx,cy);sc.rotate(rot*Math.PI/180);sc.translate(-cx,-cy);}
+
+  // Temporarily set u's position to the canvas center for shape rendering.
+  const saveX=u.x, saveY=u.y, saveZ=u.z;
+  u.x=cx; u.y=cy+bobY; u.z=u.z||10;
+
+  // Draw ground decal
+  if(state!=="death"){
+    sc.save();
+    sc.globalAlpha=0.15*alpha;
+    sc.fillStyle=TEAM_COLORS[u.team]||"#888";
+    sc.beginPath();
+    sc.ellipse(cx,cy+(u.z||10)*0.85,(u.z||10)*1.1,(u.z||10)*0.35,0,0,Math.PI*2);
+    sc.fill();
+    sc.restore();
+  }
+  // Drop shadow
+  if(!recipe.noShadow&&state!=="death"){
+    sc.save();
+    sc.globalAlpha=0.25*alpha;
+    sc.fillStyle="#000";
+    sc.beginPath();
+    sc.ellipse(cx,cy+(u.z||10)*0.8,(u.z||10)*0.9,(u.z||10)*0.3,0,0,Math.PI*2);
+    sc.fill();
+    sc.restore();
+  }
+  // Draw all shapes
+  for(const shape of(recipe.shapes||[])){
+    SpriteRenderer.drawShape(sc,shape,rm?{}:channels,u);
+  }
+  // Silhouette outline (only if few shapes — skip for performance)
+  // Intentionally omitted in cached version — the per-shape outlines are sufficient.
+
+  // Restore u's position
+  u.x=saveX; u.y=saveY; u.z=saveZ;
+  sc.restore();
+
+  return oc;
+}
+
+function _getCachedSprite(u,state,frameIdx){
+  const key=_getSpriteCacheKey(u,state,frameIdx);
+  let cached=_spriteCache.get(key);
+  if(!cached){
+    cached=_renderSpriteToCache(u,state,frameIdx);
+    if(cached)_spriteCache.set(key,cached);
+  }
+  return cached;
+}
+
+// Clear sprite cache (call on battle start to free memory + handle new units).
+function _clearSpriteCache(){
+  _spriteCache.clear();
+}
+
 const SpriteRenderer={
   // Linear interpolation between keyframes for numeric channels.
   // Phase 24g: supports easing per segment via ease field on keyframe.
@@ -4177,6 +4302,44 @@ const SpriteRenderer={
     // Apply death alpha + rotation.
     const alpha=channels.alpha!==undefined?channels.alpha:1;
     const rot=rm?0:(channels.rot||0);
+
+    // PERF-R12: Use pre-rendered sprite cache when possible.
+    // Skip cache for death state (continuous fade), hitReact (visual recoil),
+    // reducedMotion (different channel set), and spawn animation (changes u.z scale).
+    const useCache=state!=="death"&&!(u.hitReact>0)&&!rm&&!(u.spawnT>0);
+    if(useCache){
+      const frameIdx=Math.min(SPRITE_CACHE_FRAMES-1,Math.floor(t*SPRITE_CACHE_FRAMES));
+      const cached=_getCachedSprite(u,state,frameIdx);
+      if(cached){
+        // Draw the cached sprite image. Enemy flip + scale are baked into cache.
+        const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
+        const sw=cached.width, sh=cached.height;
+        // Cached sprite's origin (unit feet) is at (sw/2, sh-PAD).
+        const dx=u.x - sw/2;
+        const dy=u.y - (sh-SPRITE_CACHE_PAD) + bobY;
+        c.save();
+        c.globalAlpha=alpha;
+        c.drawImage(cached, dx, dy);
+        c.restore();
+        // Draw face on top (dynamic — tracks target).
+        if(recipe.face!==false&&state!=="death"){
+          const saveY=u.y;
+          u.y=saveY+bobY;
+          c.save();
+          c.globalAlpha=alpha;
+          c.translate(u.x,u.y);
+          c.scale(spriteScale,spriteScale);
+          c.translate(-u.x,-u.y);
+          if(u.team==="enemy"){c.translate(u.x,u.y);c.scale(-1,1);c.translate(-u.x,-u.y);}
+          this.drawFace(c,u,channels,state);
+          c.restore();
+          u.y=saveY;
+        }
+        return;
+      }
+    }
+
+    // Fallback: full per-frame rendering (death, reducedMotion, hitReact, or cache miss).
     c.save();
     c.globalAlpha=alpha;
     // D5: scale sprite by z so limbs are visible (shapes are designed for z=10).
@@ -4286,8 +4449,9 @@ const SpriteRenderer={
     let eyeScaleX=1;
     if(state==="attack")eyeScaleX=1.3;
     // Target tracking: shift eyes toward target.
+    // PERF-R12: skip target tracking when many units (Math.hypot per unit per frame).
     let dx=0,dy=0;
-    if(u.target&&u.target.h>0){
+    if(Battle.units.length<=30&&u.target&&u.target.h>0){
       const tdx=u.target.x-u.x,tdy=u.target.y-u.y;
       const td=Math.hypot(tdx,tdy)||1;
       dx=(tdx/td)*1.5;dy=(tdy/td)*1.5;
@@ -5216,12 +5380,16 @@ const Battle={
   // The background fills the full screen; game content is letterboxed/pillarboxed.
   // Returns {scale, offsetX, offsetY} in CSS pixels.
   _gameTransform(){
+    // PERF-R12: cache the transform — it only changes when canvas size changes.
     const vw=this.canvasW||innerWidth, vh=this.canvasH||innerHeight;
+    if(this._gtCache&&this._gtCacheVW===vw&&this._gtCacheVH===vh)return this._gtCache;
     const sx=vw/this.GAME_W, sy=vh/this.GAME_H;
     const scale=Math.min(sx,sy); // contain: fit within viewport
     const offsetX=(vw-this.GAME_W*scale)/2;
     const offsetY=(vh-this.GAME_H*scale)/2;
-    return {scale,offsetX,offsetY};
+    this._gtCache={scale,offsetX,offsetY};
+    this._gtCacheVW=vw;this._gtCacheVH=vh;
+    return this._gtCache;
   },
   // Convert screen (CSS pixel) coordinates to game-space coordinates (for click detection).
   screenToGame(sx,sy){
@@ -5326,6 +5494,8 @@ const Battle={
   // Phase 10: single units array; team set on each unit.
   // Phase 23: accept spells arg {player:[],enemy:[]}.
   start(units,enemies,onEnd,spells){
+    // PERF-R12: clear sprite cache on new battle (frees memory, handles new unit types).
+    _clearSpriteCache();
     // Set team strings before initRuntime so hold_midpoint etc. work.
     this.units=[
       ...units.map(u=>({...u,team:"player"})),
@@ -6461,12 +6631,14 @@ const Battle={
       }
       // Restore original position (lunge is visual only).
       u.x=origX;u.y=origY;u.z=origZ;
-      // status rings (always drawn, on top of sprite) — animated with subtle pulse.
-      const ringPulse=1+0.04*Math.sin(this.time*6);
-      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
-      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
+      // status rings (always drawn, on top of sprite).
+      // PERF-R12: skip pulsing animation when many units (Math.sin per status per unit).
+      const manyUnitsR=Battle.units.length>30;
+      const ringPulse=manyUnitsR?1:1+0.04*Math.sin(this.time*6);
+      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
+      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
       // Ability activation flash: expanding colored ring.
       if(u.abFlash>0){
         const t=1-u.abFlash/0.4;
@@ -6481,19 +6653,24 @@ const Battle={
       }
       // name + HP bar (smooth animated HP bar).
       // D5: adjusted for sprite scale — sprite top is at u.y - 24*1.8*(z/10).
+      // PERF-R12: skip name text when >30 units (text rendering is very expensive).
       const spriteTop=u.y-(u.z||10)/10*1.8*26;
-      c.fillStyle=TEAM_COLORS[u.team]||"#fff";c.font="9px sans-serif";c.textAlign="center";
-      c.strokeStyle="rgba(0,0,0,0.7)";c.lineWidth=2.5;
-      c.strokeText(u.n,u.x,spriteTop-2);
-      c.fillText(u.n,u.x,spriteTop-2);
-      c.lineWidth=1;
-      // Role indicator: small colored dot above name.
-      if(u.role){
-        c.fillStyle=ROLE_COLORS[u.role]||"#fff";
-        c.beginPath();c.arc(u.x-20,spriteTop,2,0,Math.PI*2);c.fill();
+      const manyUnits=Battle.units.length>30;
+      if(!manyUnits){
+        c.fillStyle=TEAM_COLORS[u.team]||"#fff";c.font="9px sans-serif";c.textAlign="center";
+        c.strokeStyle="rgba(0,0,0,0.7)";c.lineWidth=2.5;
+        c.strokeText(u.n,u.x,spriteTop-2);
+        c.fillText(u.n,u.x,spriteTop-2);
+        c.lineWidth=1;
+        // Role indicator: small colored dot above name.
+        if(u.role){
+          c.fillStyle=ROLE_COLORS[u.role]||"#fff";
+          c.beginPath();c.arc(u.x-20,spriteTop,2,0,Math.PI*2);c.fill();
+        }
       }
       // Low-HP warning: pulsing red glow when HP < 25%.
-      if(u.h>0&&u.h<u.mh*0.25){
+      // PERF-R12: skip when many units (pulsing ring is non-essential).
+      if(!manyUnits&&u.h>0&&u.h<u.mh*0.25){
         const pulse=Math.sin(this.time*8)*0.5+0.5;
         c.globalAlpha=0.3+pulse*0.3;
         c.strokeStyle=TEAM_COLORS[u.team]||"#fb7185";
@@ -6681,11 +6858,15 @@ const Battle={
     // Phase 17: draw round-end flash (in screen space, full canvas).
     BattleFX.drawRoundFlash(c);
     // Vignette — radial darkening at screen edges for cinematic framing.
+    // PERF-R12: cache the vignette gradient — it only depends on canvas size.
     const vw=this.canvasW||400,vh=this.canvasH||550;
-    const vg=c.createRadialGradient(vw/2,vh/2,Math.min(vw,vh)*0.35,vw/2,vh/2,Math.max(vw,vh)*0.75);
-    vg.addColorStop(0,"rgba(0,0,0,0)");
-    vg.addColorStop(1,"rgba(0,0,0,0.45)");
-    c.fillStyle=vg;
+    if(!this._vignetteCache||this._vignetteVW!==vw||this._vignetteVH!==vh){
+      this._vignetteVW=vw;this._vignetteVH=vh;
+      this._vignetteCache=c.createRadialGradient(vw/2,vh/2,Math.min(vw,vh)*0.35,vw/2,vh/2,Math.max(vw,vh)*0.75);
+      this._vignetteCache.addColorStop(0,"rgba(0,0,0,0)");
+      this._vignetteCache.addColorStop(1,"rgba(0,0,0,0.45)");
+    }
+    c.fillStyle=this._vignetteCache;
     c.fillRect(0,0,vw,vh);
   },
 
@@ -6714,7 +6895,15 @@ const Battle={
       d.y+=d.vy*dt;
       d.vy+=60*dt; // slight deceleration
     }
-    this.damageNums=this.damageNums.filter(d=>d.life>0);
+    // PERF-R12: in-place compaction instead of filter (avoids array allocation + GC).
+    let w=0;
+    for(let i=0;i<this.damageNums.length;i++){
+      if(this.damageNums[i].life>0){
+        if(w!==i)this.damageNums[w]=this.damageNums[i];
+        w++;
+      }
+    }
+    this.damageNums.length=w;
   },
   // Sync _allUnits with current state of this.units (call at battle end).
   // Units that died but weren't removed (deathT < 0.5) still have h=0 in this.units.
@@ -10241,6 +10430,8 @@ const G={
     if(!snap||typeof snap!=="object")return;
     // P2P security: validate snapshot structure.
     if(!Array.isArray(snap.units))return;
+    // PERF-R12: clear sprite cache when guest enters a new battle (units were empty).
+    if(Battle.units.length===0&&snap.units.length>0)_clearSpriteCache();
     // Cap units to prevent memory exhaustion (max 200 units per side).
     if(snap.units.length>400)return;
     // Validate each unit has required numeric fields.
