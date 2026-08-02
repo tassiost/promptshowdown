@@ -5555,7 +5555,6 @@ const Spell={
         const zr2=z.radius*z.radius;
         const tgt=z.spec.target||"enemy";
         const allyZone=tgt.startsWith("ally");
-        const affected=[];
         // PERF-R12: reuse array (avoid per-tick allocation).
         if(!this._zoneAffected)this._zoneAffected=[];
         const aff=this._zoneAffected;
