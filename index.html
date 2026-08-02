@@ -7290,10 +7290,11 @@ const Battle={
   spawnDmgNum(x,y,val,team,crit,type){
     if(typeof x!=="number"||typeof y!=="number"||isNaN(x)||isNaN(y))return;
     if(!this.damageNums)this.damageNums=[];
-    // PERF-R12: precompute display text at spawn (avoids ternary chain per draw call).
+    // PERF-R12: precompute display text + isHeal flag at spawn (avoids per-draw checks).
     const t=type||"normal";
+    const isHeal=typeof val==="string"&&val.charAt(0)==="+";
     const txt=t==="ability"?"*"+val:t==="spell"?"~"+val:t==="poison"?"p"+val:""+val;
-    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,txt,team,crit:!!crit,type:t,vy:-40});
+    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,txt,team,crit:!!crit,type:t,vy:-40,isHeal});
     if(this.damageNums.length>40)this.damageNums.shift();
   },
 
@@ -7347,9 +7348,7 @@ const Battle={
     // Group A: player damage (blue).
     c.fillStyle=TEAM_COLORS.player;
     for(const d of this.damageNums){
-      if(d.crit)continue;
-      if(d.team!=="player")continue;
-      if(typeof d.val==="string"&&d.val.charAt(0)==="+")continue;
+      if(d.crit||d.isHeal||d.team!=="player")continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
@@ -7359,9 +7358,7 @@ const Battle={
     // Group B: enemy damage (red).
     c.fillStyle=TEAM_COLORS.enemy;
     for(const d of this.damageNums){
-      if(d.crit)continue;
-      if(d.team==="player")continue;
-      if(typeof d.val==="string"&&d.val.charAt(0)==="+")continue;
+      if(d.crit||d.isHeal||d.team==="player")continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
@@ -7371,8 +7368,7 @@ const Battle={
     // Group C: heals (green).
     c.fillStyle="#34d399";
     for(const d of this.damageNums){
-      if(d.crit)continue;
-      if(!(typeof d.val==="string"&&d.val.charAt(0)==="+"))continue;
+      if(d.crit||!d.isHeal)continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
@@ -7383,9 +7379,7 @@ const Battle={
     c.font="bold 14px sans-serif";
     c.fillStyle="#fbbf24";
     for(const d of this.damageNums){
-      if(!d.crit)continue;
-      // PERF-R12: critical heals don't exist in current code, but guard for safety.
-      if(typeof d.val==="string"&&d.val.charAt(0)==="+")continue;
+      if(!d.crit||d.isHeal)continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
