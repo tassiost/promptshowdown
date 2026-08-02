@@ -69,36 +69,36 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | GPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
-| 5v5 (10 units) | 60.2 | 16.67ms | 0.55ms | 0.60ms | 1.15ms | 15.52ms | 15.6MB | 2 |
-| 20v20 (40 units) | 60.3 | 16.67ms | 0.90ms | 0.62ms | 1.52ms | 15.14ms | 15.6MB | 9 |
-| 50v50 (100 units) | 60.3 | 16.67ms | 1.49ms | 0.72ms | 2.21ms | 14.45ms | 16.6MB | 16 |
-| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.33ms | 0.00ms | 0.00ms | 21.3MB | 0 |
+| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.67ms | 0.32ms | 0.42ms | 0.74ms | 15.92ms | 15.3MB | 2 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.76ms | 0.54ms | 1.30ms | 15.37ms | 15.2MB | 9 |
+| 50v50 (100 units) | 60.2 | 16.67ms | 1.46ms | 0.69ms | 2.15ms | 14.53ms | 16.8MB | 16 |
+| MP Guest (50v50) | 60.4 | 16.67ms | 0.00ms | 0.30ms | 0.00ms | 0.00ms | 19.7MB | 0 |
 
 **All scenarios hit 60+ FPS with 0 slow frames (>20ms).**
-50v50 CPU avg 2.21ms — only 13% of 16.67ms budget (87% headroom).
+50v50 CPU avg 2.15ms — only 13% of 16.67ms budget (87% headroom).
 GPU time (frameInterval - CPU) is ~15ms — dominated by vsync wait, not actual GPU work.
 On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0030ms/call (117ms total, 39K calls) — **sprite cache + drawImage**
+- spriteDraw: 0.0029ms/call (111ms total, 39K calls) — **sprite cache + drawImage**
 - drawShapeRaw: 0.0037ms/call (14ms total, 3.9K calls) — **cache miss path only (death/spawn)**
-- act: 0.0113ms/call (434ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- act: 0.0105ms/call (407ms total, 39K calls) — **spatial grid avoidance + squared dist + targeting cache**
 - drawFace: 0.0030ms/call (1.4ms total, 465 calls) — **99% fewer calls** (skip when >30 units)
-- drawBackground: 0.0362ms/call (14ms total, 389 calls) — **offscreen canvas cache**
-- separate: 0.0522ms/call (20ms total, 389 calls) — **flat array grid + non-empty cell keys**
-- drawDmgNums: 0.0573ms/call (22ms total, 389 calls) — **4-pass color batch + pooled objects**
-- updateProjectiles: 0.0591ms/call (23ms total, 389 calls) — **Map lookup + pooled projectiles + flat trail**
+- drawBackground: 0.0337ms/call (13ms total, 392 calls) — **offscreen canvas cache**
+- separate: 0.1270ms/call (50ms total, 392 calls) — **flat array grid + non-empty cell keys**
+- drawDmgNums: 0.0536ms/call (21ms total, 392 calls) — **4-pass color batch + pooled objects**
+- updateProjectiles: 0.0579ms/call (23ms total, 392 calls) — **Map lookup + pooled projectiles + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.21ms | **70% faster** |
-| Render avg | 4.65ms | 0.72ms | **85% faster** |
-| Update avg | 2.75ms | 1.49ms | **46% faster** |
-| spriteDraw/call | 0.0349ms | 0.0030ms | **11.6x faster** |
-| act/call | 0.0300ms | 0.0113ms | **2.7x faster** |
+| CPU avg | 7.40ms | 2.15ms | **71% faster** |
+| Render avg | 4.65ms | 0.69ms | **85% faster** |
+| Update avg | 2.75ms | 1.46ms | **47% faster** |
+| spriteDraw/call | 0.0349ms | 0.0029ms | **12x faster** |
+| act/call | 0.0300ms | 0.0105ms | **2.9x faster** |
 | drawFace calls | 38K | 465 | **99% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 4.2K | **98% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
@@ -534,6 +534,32 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
   V8's dictionary lookups (TARGETING[u.targeting]) are already well-optimized
   by inline caches — don't try to "fix" them by adding properties to objects.
 
+### 82. Batch status rings by type when manyUnitsR (reduce canvas state changes)
+- Status rings (shield/stun/poison/slow) set strokeStyle/lineWidth/globalAlpha per unit
+- When >30 units, alpha is constant per status type → batch into 4 passes
+- Reduces ~400 state changes (100 units × 4 statuses) to ~12 (4 types × 3 states)
+- Research: fillStyle/strokeStyle changes cost ~100 units each (web.dev)
+- Low unit count still uses per-unit pulsing alpha (visual quality preserved)
+
+### 83. Flatten _sepOffsets array (avoid nested array indexing)
+- Same pattern as optimization 80 (_avoidOffsetsFlat)
+- separate() called once per frame, iterates offsets per non-empty cell
+- Was: offsets[oi][0]/offsets[oi][1] (two property lookups per iteration)
+- Now: _sepOffsetsFlat[oi]/_sepOffsetsFlat[oi+1] (single array, stride 2)
+
+### 84. Convert remaining for...of loops to index loops in hot paths
+- Death cleanup loop in update(): for...of → index loop
+- BattleFX.update particle loop: for...of → index loop
+- playerSpells cooldown loop: for...of → index loop
+- MP snapshot processing: 4 for...of loops → index loops
+- MP interpolation render: 2 for...of loops → index loops
+- for...of allocates an iterator object per call; index loops don't
+
+### 85. Remove leftover unused affected[] array in tickZones
+- Leftover from refactoring: const affected=[] was declared but never used
+- The actual array used is this._zoneAffected (reused across ticks)
+- Removed to avoid per-tick allocation of empty array
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -542,12 +568,12 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): ~2.21ms avg on my Mac (measured at 60+ FPS)
+- 50v50 CPU (with combat): ~2.15ms avg on my Mac (measured at 60+ FPS)
 - **All scenarios confirmed 60+ FPS with 0 slow frames**
 - On a 7x slower machine: ~15ms — still within 16.67ms budget
 - On a 5x slower machine: ~11ms — comfortable headroom
-- On a 3x slower machine: ~6.6ms — plenty of headroom
-- MP Guest (50v50): 0.33ms render only — trivially 60fps on any hardware
+- On a 3x slower machine: ~6.5ms — plenty of headroom
+- MP Guest (50v50): 0.30ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
 ## Single/Multiplayer Unification
@@ -556,6 +582,9 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 - Multiplayer guest: `_interpRender()` interpolates unit positions from snapshots, then calls `render()`
 - No duplicated render code — all rendering (sprites, HP bars, projectiles, damage numbers, background) is shared
 - Update path is necessarily different (single-player is authoritative, guest just interpolates)
+- MP snapshot processing (`applySnapshot`) shares the same FX triggers (onSpawn/onHit/onDeath) as single-player
+- MP interpolation reuses the same units array (mutated in place, no per-frame allocation)
+- Both paths share: sprite cache, damage number pool, particle pool, projectile pool, background cache
 
 ## Bugs Found and Fixed
 1. **Splash damage friendly fire**: Projectile foes array included all units, not just enemies. Fixed by building separate foes arrays per team.
