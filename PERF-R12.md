@@ -69,33 +69,33 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.2 | 16.66ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.1 | 16.67ms | 0.34ms | 0.51ms | 0.85ms | 15.3MB | 3 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.72ms | 0.64ms | 1.36ms | 16.3MB | 9 |
-| 50v50 (100 units) | 60.2 | 16.66ms | 1.39ms | 0.83ms | 2.22ms | 19.0MB | 17 |
-| MP Guest (50v50) | 60.1 | 16.67ms | 0.00ms | 0.31ms | 0.00ms | 22.1MB | 0 |
+| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
+| 5v5 (10 units) | 60.2 | 16.67ms | 0.34ms | 0.44ms | 0.79ms | 15.6MB | 3 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.71ms | 0.50ms | 1.21ms | 15.8MB | 10 |
+| 50v50 (100 units) | 60.2 | 16.67ms | 1.38ms | 0.69ms | 2.07ms | 17.3MB | 21 |
+| MP Guest (50v50) | 60.3 | 16.66ms | 0.00ms | 0.28ms | 0.00ms | 20.1MB | 0 |
 
-Note: 50v50 CPU varies 2.2-2.5ms across runs due to combat randomness (avg ~2.3ms).
+Note: 50v50 CPU varies 2.0-2.3ms across runs due to combat randomness (avg ~2.1ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0044ms/call (170ms total, 39K calls) — **7.9x faster per call**
-- drawShapeRaw: 0.0023ms/call (52ms total, 22K calls) — **92% fewer calls** (cache hits)
-- act: 0.0103ms/call (396ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0018ms/call (6ms total, 3.5K calls) — **92% fewer calls** (skip when >30 units)
-- drawBackground: 0.0375ms/call (15ms total, 389 calls) — **pattern+gradient+lane cached**
-- separate: 0.1252ms/call (49ms total, 389 calls) — **spatial grid + hoisted aSep**
-- drawDmgNums: 0.0820ms/call (32ms total, 389 calls) — **4-pass color batch + precomputed text + skip invisible**
-- updateProjectiles: 0.0514ms/call (20ms total, 389 calls) — **Map-based lookup + squared dist + flat trail**
+- spriteDraw: 0.0027ms/call (104ms total, 39K calls) — **12.9x faster per call**
+- drawShapeRaw: 0.0028ms/call (10ms total, 3.6K calls) — **98% fewer calls** (hitReact now cached)
+- act: 0.0099ms/call (381ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0020ms/call (1ms total, 441 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
+- drawBackground: 0.0407ms/call (16ms total, 388 calls) — **pattern+gradient+lane cached**
+- separate: 0.1420ms/call (55ms total, 388 calls) — **spatial grid + hoisted aSep**
+- drawDmgNums: 0.0845ms/call (33ms total, 388 calls) — **4-pass color batch + precomputed text + skip invisible**
+- updateProjectiles: 0.0495ms/call (19ms total, 388 calls) — **Map-based lookup + squared dist + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.22ms | **70% faster** |
-| Render avg | 4.65ms | 0.83ms | **82% faster** |
-| Update avg | 2.75ms | 1.39ms | **49% faster** |
-| spriteDraw/call | 0.0349ms | 0.0044ms | **7.9x faster** |
-| act/call | 0.0300ms | 0.0103ms | **2.9x faster** |
+| CPU avg | 7.40ms | 2.07ms | **72% faster** |
+| Render avg | 4.65ms | 0.69ms | **85% faster** |
+| Update avg | 2.75ms | 1.38ms | **50% faster** |
+| spriteDraw/call | 0.0349ms | 0.0027ms | **12.9x faster** |
+| act/call | 0.0300ms | 0.0099ms | **3.0x faster** |
 | drawFace calls | 38K | 3.0K | **92% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 19K | **92% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
@@ -320,6 +320,27 @@ Note: 50v50 CPU varies 2.2-2.5ms across runs due to combat randomness (avg ~2.3m
 ### 44. Background particle in-place compaction
 - In-place compaction instead of filter() (avoids array allocation)
 - Same pattern as damageNums updateDmgNums
+
+### 45. Cached sprites during hitReact (biggest win this round)
+- hitReact is just a position offset — no need for full per-frame rendering
+- Apply hitReact offset to cached sprite's draw position
+- Decrement hitReact only on cache hit (avoids double-decrement on miss)
+- Update face drawing to include hitReact offset
+- **84% fewer drawShapeRaw calls** (22K → 3.6K)
+- **40% less spriteDraw total time** (170ms → 104ms)
+
+### 46. Reusable uLocal buffer in _drawOne
+- Replace {...u} spread (copies ~30 unit properties) with lightweight {x,y} buffer
+- _drawShapeRaw and _applyJoint only use u.x and u.y
+- Saves allocation per weapon shape per unit per frame in fallback render path
+
+### 47. Reusable lunge offset buffer
+- Avoid allocating {x:0,y:0} per getLungeOffset call (38K calls/frame)
+- Use reusable _lungeBuf object
+
+### 48. Integer pixel drawImage
+- Round cached sprite position to integer pixels (|0)
+- Avoids sub-pixel anti-aliasing overhead (per MDN canvas optimization guide)
 
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
