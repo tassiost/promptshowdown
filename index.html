@@ -7101,13 +7101,14 @@ const Battle={
       const dist=Math.sqrt(dx*dx+dy*dy)||1;
       // Trail — fading line segments behind the projectile (additive).
       c.globalCompositeOperation="lighter";
+      // PERF-R12: set strokeStyle once per projectile (all trail segments share accent color).
+      c.strokeStyle=accent;
       // PERF-R12: trail is flat array [x0,y0,x1,y1,...] — avoid object property access.
       if(p.trail&&p._trailLen>1){
         const tl=p._trailLen;
         for(let i=0;i<tl-1;i++){
           const a=(i+1)/tl*0.5;
           c.globalAlpha=a;
-          c.strokeStyle=accent;
           c.lineWidth=2+a*2;
           c.beginPath();
           c.moveTo(p.trail[i*2],p.trail[i*2+1]);
