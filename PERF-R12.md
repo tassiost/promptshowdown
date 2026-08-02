@@ -69,36 +69,36 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | GPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.32ms | 0.42ms | 0.74ms | 15.92ms | 15.3MB | 2 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.76ms | 0.54ms | 1.30ms | 15.37ms | 15.2MB | 9 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.46ms | 0.69ms | 2.15ms | 14.53ms | 16.8MB | 16 |
-| MP Guest (50v50) | 60.4 | 16.67ms | 0.00ms | 0.30ms | 0.00ms | 0.00ms | 19.7MB | 0 |
+| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
+| 5v5 (10 units) | 60.2 | 16.67ms | 0.32ms | 0.42ms | 0.74ms | 15.93ms | 15.8MB | 2 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.61ms | 0.42ms | 1.03ms | 15.64ms | 15.7MB | 9 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.42ms | 0.70ms | 2.12ms | 14.55ms | 17.4MB | 16 |
+| MP Guest (50v50) | 60.2 | 16.67ms | 0.00ms | 0.30ms | 0.00ms | 0.00ms | 20.4MB | 0 |
 
 **All scenarios hit 60+ FPS with 0 slow frames (>20ms).**
-50v50 CPU avg 2.15ms — only 13% of 16.67ms budget (87% headroom).
+50v50 CPU avg 2.12ms — only 13% of 16.67ms budget (87% headroom).
 GPU time (frameInterval - CPU) is ~15ms — dominated by vsync wait, not actual GPU work.
 On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0029ms/call (111ms total, 39K calls) — **sprite cache + drawImage**
+- spriteDraw: 0.0029ms/call (113ms total, 39K calls) — **sprite cache + drawImage**
 - drawShapeRaw: 0.0037ms/call (14ms total, 3.9K calls) — **cache miss path only (death/spawn)**
-- act: 0.0105ms/call (407ms total, 39K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- act: 0.0104ms/call (399ms total, 39K calls) — **spatial grid avoidance + squared dist + targeting cache**
 - drawFace: 0.0030ms/call (1.4ms total, 465 calls) — **99% fewer calls** (skip when >30 units)
-- drawBackground: 0.0337ms/call (13ms total, 392 calls) — **offscreen canvas cache**
-- separate: 0.1270ms/call (50ms total, 392 calls) — **flat array grid + non-empty cell keys**
-- drawDmgNums: 0.0536ms/call (21ms total, 392 calls) — **4-pass color batch + pooled objects**
-- updateProjectiles: 0.0579ms/call (23ms total, 392 calls) — **Map lookup + pooled projectiles + flat trail**
+- drawBackground: 0.0386ms/call (15ms total, 391 calls) — **offscreen canvas cache**
+- separate: 0.1164ms/call (46ms total, 391 calls) — **flat array grid + non-empty cell keys**
+- drawDmgNums: 0.0573ms/call (22ms total, 391 calls) — **4-pass color batch + pooled objects**
+- updateProjectiles: 0.0512ms/call (20ms total, 391 calls) — **Map lookup + pooled projectiles + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.15ms | **71% faster** |
-| Render avg | 4.65ms | 0.69ms | **85% faster** |
-| Update avg | 2.75ms | 1.46ms | **47% faster** |
+| CPU avg | 7.40ms | 2.12ms | **71% faster** |
+| Render avg | 4.65ms | 0.70ms | **85% faster** |
+| Update avg | 2.75ms | 1.42ms | **48% faster** |
 | spriteDraw/call | 0.0349ms | 0.0029ms | **12x faster** |
-| act/call | 0.0300ms | 0.0105ms | **2.9x faster** |
+| act/call | 0.0300ms | 0.0104ms | **2.9x faster** |
 | drawFace calls | 38K | 465 | **99% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 4.2K | **98% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
@@ -560,6 +560,36 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 - The actual array used is this._zoneAffected (reused across ticks)
 - Removed to avoid per-tick allocation of empty array
 
+### 86. Eliminate per-frame filter allocations in targeting functions
+- lowest_ally: allies.filter(a=>a!==u) → lowestBy with Infinity self-exclusion
+- highest_hp_ally: allies.filter(a=>a!==u&&a.h>0) → highestBy with -Infinity
+- random_ally: allies.filter() → inline alive counting + random pick (2-pass)
+- random: enemies.filter(e=>e.h>0) → inline alive counting + random pick (2-pass)
+- lowestBy/highestBy already skip dead units internally — filter was redundant
+- Eliminates 4 array allocations per unit per frame for units with these targeting types
+
+### 87. Eliminate per-trigger filter allocations in abilities
+- heal: allies.filter(a=>a!==u&&a.h>0) → lowestBy with Infinity self-exclusion
+- blink_strike: enemies.filter(e=>e.h>0) → lowestBy (already skips dead)
+- Eliminates 2 array allocations per ability trigger
+
+### 88. Reuse hitReactDir object (avoid per-hit allocation)
+- takeDamage created new {x,y} object per hit for hitReactDir
+- Now reuses existing object if present (just updates x,y)
+- First hit creates object, subsequent hits mutate in place
+- Better for V8 hidden classes (consistent object shape)
+
+### Research: Techniques NOT pursued (with rationale)
+- **OffscreenCanvas in Web Worker**: Would move rendering to separate thread.
+  Not needed — CPU is only 12% of budget, GPU/vsync is the bottleneck.
+  Major architectural change for minimal benefit.
+- **Typed Arrays (Float32Array) for unit positions**: V8 converts Float32→Float64
+  on every read/write (JS numbers are 64-bit doubles). ~5% SLOWER than Float64Array
+  in pure JS. Only beneficial in WASM where f32 is processed directly on FPU.
+- **ECS (Structure of Arrays) architecture**: 1.58x-24.9x faster for 15K entities,
+  but we only have 100. Complete rewrite for minimal benefit at our scale.
+- **willReadFrequently**: Not needed — no getImageData usage.
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -568,11 +598,11 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): ~2.15ms avg on my Mac (measured at 60+ FPS)
+- 50v50 CPU (with combat): ~2.12ms avg on my Mac (measured at 60+ FPS, 3 runs)
 - **All scenarios confirmed 60+ FPS with 0 slow frames**
 - On a 7x slower machine: ~15ms — still within 16.67ms budget
 - On a 5x slower machine: ~11ms — comfortable headroom
-- On a 3x slower machine: ~6.5ms — plenty of headroom
+- On a 3x slower machine: ~6.4ms — plenty of headroom
 - MP Guest (50v50): 0.30ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
