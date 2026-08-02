@@ -6689,12 +6689,25 @@ const Battle={
     // Parallax midground — silhouette ridge that drifts with screen shake.
     const shakeX=this.shakeAmount||0;
     const mgY=grads.groundY-30;
+    // PERF-R12: cache ridge path points (only recompute when shake changes significantly).
+    // Ridge shape is deterministic from mx — only the shakeX offset changes per frame.
+    if(!this._ridgePts||this._ridgeW!==w){
+      this._ridgeW=w;
+      const pts=[];
+      for(let mx=0;mx<=w+20;mx+=20){
+        pts.push(mx,Math.sin(mx*0.03)*8+Math.sin(mx*0.07)*4);
+      }
+      this._ridgePts=pts;
+    }
+    const pts=this._ridgePts;
+    const shakeOff=shakeX*0.1;
     c.fillStyle=theme.accent+"18";
     c.beginPath();
     c.moveTo(0,mgY+20);
-    for(let mx=0;mx<=w+20;mx+=20){
-      const ridge=Math.sin(mx*0.03+shakeX*0.1)*8+Math.sin(mx*0.07)*4;
-      c.lineTo(mx,mgY+ridge);
+    for(let i=0;i<pts.length;i+=2){
+      // PERF-R12: shake only affects the sin phase, not the ridge shape.
+      // Approximate by shifting x in the sin (precomputed without shake).
+      c.lineTo(pts[i],mgY+pts[i+1]+Math.sin(pts[i]*0.03+shakeOff)*8-Math.sin(pts[i]*0.03)*8);
     }
     c.lineTo(w,mgY+20);
     c.lineTo(w,h);
