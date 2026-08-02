@@ -3447,34 +3447,50 @@ function effSpeed(u){
 // PERF-R12: write to reusable buffer to avoid {x,y} allocation per call (100× per frame).
 const _avoidBuf={x:0,y:0};
 const _zeroDir={x:0,y:0};
-// PERF-R12: spatial grid for avoidance (avoids O(n²) ally scan).
-const _avoidGrid=new Map();
+// PERF-R12: flat array grid for avoidance (avoids Map overhead).
+// Field 400×550, cellSize=30 → grid 14×19, +1 margin each side → 16×21=336 cells.
+const _avoidGridW=16,_avoidGridH=21;
+const _avoidFlatGen=new Int32Array(_avoidGridW*_avoidGridH);
+const _avoidFlatUnits=new Array(_avoidGridW*_avoidGridH);
+for(let _i=0;_i<_avoidGridW*_avoidGridH;_i++)_avoidFlatUnits[_i]=[];
+let _avoidGen=0;
 const _avoidOffsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
 function _buildAvoidGrid(units){
-  _avoidGrid.clear();
-  const cellSize=30; // slightly larger than avoidance radius (28)
+  // PERF-R12: increment generation by 2 (one per team).
+  _avoidGen+=2;
+  const gen=_avoidGen;
   for(let i=0;i<units.length;i++){
     const u=units[i];
     if(u.h<=0)continue;
-    const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
-    let cell=_avoidGrid.get(k);
-    if(!cell){cell=[];_avoidGrid.set(k,cell);}
-    cell.push(u);
+    const cx=Math.floor(u.x/30)+1; // +1 offset for negative coords
+    const cy=Math.floor(u.y/30)+1;
+    if(cx<0||cx>=_avoidGridW||cy<0||cy>=_avoidGridH)continue;
+    const idx=cy*_avoidGridW+cx;
+    if(_avoidFlatGen[idx]!==gen){
+      _avoidFlatGen[idx]=gen;
+      _avoidFlatUnits[idx].length=0;
+      _avoidFlatUnits[idx].push(u);
+    }else{
+      _avoidFlatUnits[idx].push(u);
+    }
   }
-  return cellSize;
 }
 function avoidanceOffset(u,allies,radius){
   radius=radius||28;
   const r2=radius*radius;
   let ax=0,ay=0;
-  // PERF-R12: use spatial grid to check only nearby allies.
-  if(_avoidGrid.size>0){
-    const cellSize=30;
-    const cx=Math.floor(u.x/cellSize), cy=Math.floor(u.y/cellSize);
+  // PERF-R12: use flat array grid (avoids Map.get hash lookup).
+  const gen=_avoidGen;
+  if(gen>0){
+    const cx=Math.floor(u.x/30)+1;
+    const cy=Math.floor(u.y/30)+1;
     for(let oi=0;oi<9;oi++){
-      const nk=((cx+_avoidOffsets[oi][0])<<16)|(cy+_avoidOffsets[oi][1]);
-      const cell=_avoidGrid.get(nk);
-      if(!cell)continue;
+      const off=_avoidOffsets[oi];
+      const ncx=cx+off[0],ncy=cy+off[1];
+      if(ncx<0||ncx>=_avoidGridW||ncy<0||ncy>=_avoidGridH)continue;
+      const idx=ncy*_avoidGridW+ncx;
+      if(_avoidFlatGen[idx]!==gen)continue;
+      const cell=_avoidFlatUnits[idx];
       for(let i=0;i<cell.length;i++){
         const a=cell[i];
         if(a===u)continue;
