@@ -3446,20 +3446,59 @@ function effSpeed(u){
 // within `radius` (default 28px). Falloff is linear: full push at distance 0, none at radius.
 // PERF-R12: write to reusable buffer to avoid {x,y} allocation per call (100× per frame).
 const _avoidBuf={x:0,y:0};
+// PERF-R12: spatial grid for avoidance (avoids O(n²) ally scan).
+const _avoidGrid=new Map();
+const _avoidOffsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+function _buildAvoidGrid(units){
+  _avoidGrid.clear();
+  const cellSize=30; // slightly larger than avoidance radius (28)
+  for(let i=0;i<units.length;i++){
+    const u=units[i];
+    if(u.h<=0)continue;
+    const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
+    let cell=_avoidGrid.get(k);
+    if(!cell){cell=[];_avoidGrid.set(k,cell);}
+    cell.push(u);
+  }
+  return cellSize;
+}
 function avoidanceOffset(u,allies,radius){
   radius=radius||28;
   const r2=radius*radius;
   let ax=0,ay=0;
-  for(const a of allies){
-    if(a===u||a.h<=0)continue;
-    const dx=u.x-a.x, dy=u.y-a.y;
-    const d2=dx*dx+dy*dy;
-    if(d2<r2){
-      const d=Math.sqrt(d2);
-      // Strength falls off with distance; normalize direction.
-      const strength=(radius-d)/radius;
-      if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
-      else{const ang=Math.random()*Math.PI*2; ax+=Math.cos(ang)*strength; ay+=Math.sin(ang)*strength;}
+  // PERF-R12: use spatial grid to check only nearby allies.
+  if(_avoidGrid.size>0){
+    const cellSize=30;
+    const cx=Math.floor(u.x/cellSize), cy=Math.floor(u.y/cellSize);
+    for(let oi=0;oi<9;oi++){
+      const nk=((cx+_avoidOffsets[oi][0])<<16)|(cy+_avoidOffsets[oi][1]);
+      const cell=_avoidGrid.get(nk);
+      if(!cell)continue;
+      for(let i=0;i<cell.length;i++){
+        const a=cell[i];
+        if(a===u)continue;
+        const dx=u.x-a.x, dy=u.y-a.y;
+        const d2=dx*dx+dy*dy;
+        if(d2<r2){
+          const d=Math.sqrt(d2);
+          const strength=(radius-d)/radius;
+          if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
+          else{const ang=Math.random()*Math.PI*2; ax+=Math.cos(ang)*strength; ay+=Math.sin(ang)*strength;}
+        }
+      }
+    }
+  }else{
+    // Fallback: scan all allies (no grid built).
+    for(const a of allies){
+      if(a===u||a.h<=0)continue;
+      const dx=u.x-a.x, dy=u.y-a.y;
+      const d2=dx*dx+dy*dy;
+      if(d2<r2){
+        const d=Math.sqrt(d2);
+        const strength=(radius-d)/radius;
+        if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
+        else{const ang=Math.random()*Math.PI*2; ax+=Math.cos(ang)*strength; ay+=Math.sin(ang)*strength;}
+      }
     }
   }
   // Scale the accumulated push by u's effective speed so fast units separate faster.
@@ -5812,6 +5851,10 @@ const Battle={
     // Update floating damage numbers.
     this.updateDmgNums(dt);
     // 1. status ticks + death animation + minion TTL
+    // PERF-R12: hoist quality/reducedMotion checks outside loop (avoids 100× per frame).
+    const _qTier=G.qualityTier?.()||"high";
+    const _reducedMotion=G.save?.settings?.reducedMotion;
+    const _auraEnabled=_qTier!=="low"&&_qTier!=="minimal"&&!_reducedMotion;
     for(let u of this.units){
       if(u.h<=0){
         if(u.deathT!==undefined)u.deathT+=dt;
@@ -5852,7 +5895,7 @@ const Battle={
       if(u.abFlash>0)u.abFlash-=dt;
       if(u.spawnT>0)u.spawnT+=dt/0.15; // 150ms spawn anim
       // Phase 24e: persistent unit aura.
-      this.fxAura(u,dt);
+      if(_auraEnabled)this.fxAura(u,dt);
     }
     // 2. detect newly dead units → onUnitDeath
     // 3. build alive arrays (split by team) + reset animation flags.
@@ -5873,13 +5916,20 @@ const Battle={
     // PERF-R11: cache taunters per frame (avoids O(n) find per unit).
     const playerTaunter=players.find(e=>e.ability==="taunt");
     const enemyTaunter=enemies.find(e=>e.ability==="taunt");
-    for(let u of this.units){
-      if(u.h<=0)continue;
-      const allies=u.team==="player"?players:enemies;
-      const targets=u.team==="player"?enemies:players;
-      const taunter=u.team==="player"?enemyTaunter:playerTaunter;
-      this.act(u,targets,allies,dt,taunter);
-      // Phase 11: detect movement for animation state.
+    // PERF-R12: build spatial grid for avoidance (avoids O(n²) ally scan).
+    // Grid is rebuilt per team — each team's units only avoid their own allies.
+    // PERF-R12: iterate over alive arrays (players/enemies) instead of this.units.
+    _buildAvoidGrid(players);
+    for(let i=0;i<players.length;i++){
+      const u=players[i];
+      this.act(u,enemies,players,dt,enemyTaunter);
+      if(Math.abs(u.x-u.prevX)>0.5||Math.abs(u.y-u.prevY)>0.5)u.movedThisFrame=true;
+      u.prevX=u.x;u.prevY=u.y;
+    }
+    _buildAvoidGrid(enemies);
+    for(let i=0;i<enemies.length;i++){
+      const u=enemies[i];
+      this.act(u,players,enemies,dt,playerTaunter);
       if(Math.abs(u.x-u.prevX)>0.5||Math.abs(u.y-u.prevY)>0.5)u.movedThisFrame=true;
       u.prevX=u.x;u.prevY=u.y;
     }
@@ -5889,17 +5939,20 @@ const Battle={
     this.separate(this.units);
     // Phase 17: update FX (particles, shake, round flash).
     BattleFX.update(dt);
-    // 6. clamp positions to canvas bounds (prevent flee/kite from flying off)
-    // Use CSS pixel dimensions (canvasW/canvasH), NOT canvas.width/height which include DPR scaling.
-    // The sprite extends above u.y by (z/10)*1.8*26 (sprite scale factor * unscaled half-height).
-    // The name text and HP bar also sit above the sprite. Reserve that space so the
-    // sprite isn't cut off at the top of the screen.
+    // 6. clamp positions to canvas bounds (prevent flee/kite from flying off).
+    // PERF-R12: iterate over alive arrays (already built) instead of this.units.
     const cw=this.canvasW||400, ch=this.canvasH;
-    for(let u of this.units){
-      if(u.h<=0)continue;
-      const spriteH=(u.z||10)/10*1.8*26; // sprite height above u.y
+    for(let i=0;i<players.length;i++){
+      const u=players[i];
+      const spriteH=(u.z||10)/10*1.8*26;
       u.x=clamp(u.x,u.z,cw-u.z);
-      u.y=clamp(u.y,spriteH+12,ch-u.z); // +12 for name text above sprite
+      u.y=clamp(u.y,spriteH+12,ch-u.z);
+    }
+    for(let i=0;i<enemies.length;i++){
+      const u=enemies[i];
+      const spriteH=(u.z||10)/10*1.8*26;
+      u.x=clamp(u.x,u.z,cw-u.z);
+      u.y=clamp(u.y,spriteH+12,ch-u.z);
     }
     // 6. death cleanup: remove units with deathT >= 0.5 from active units.
     // Keep them in _allUnits for cumulative draft revival.
