@@ -3712,35 +3712,49 @@ function _getCachedTarget(team,targetingKey,enemies,allies){
     case "enemy_carry":result=enemies.find(e=>e.h>0&&e.role==="carry")||closestEnemy({x:0,y:0},enemies);break;
     case "enemy_support":result=enemies.find(e=>e.h>0&&e.role==="support")||closestEnemy({x:0,y:0},enemies);break;
     case "enemy_backline":{
-      const alive=enemies.filter(e=>e.h>0);
-      if(!alive.length)break;
-      const backY=alive[0].team==="player"?Math.max(...alive.map(e=>e.y)):Math.min(...alive.map(e=>e.y));
-      result=alive.reduce((b,e)=>Math.abs(e.y-backY)<Math.abs(b.y-backY)?e:b,alive[0]);
+      // PERF-R12: single-pass loop (avoid filter + map + spread + reduce).
+      let best=null,backY=0;
+      for(let ei=0;ei<enemies.length;ei++){
+        const e=enemies[ei];
+        if(e.h<=0)continue;
+        if(!best){best=e;backY=e.y;}
+        else if(e.team==="player"?e.y>backY:e.y<backY){backY=e.y;best=e;}
+      }
+      result=best;
       break;
     }
     case "enemy_frontline":{
-      const alive=enemies.filter(e=>e.h>0);
-      if(!alive.length)break;
-      const frontY=alive[0].team==="player"?Math.min(...alive.map(e=>e.y)):Math.max(...alive.map(e=>e.y));
-      result=alive.reduce((b,e)=>Math.abs(e.y-frontY)<Math.abs(b.y-frontY)?e:b,alive[0]);
+      // PERF-R12: single-pass loop (avoid filter + map + spread + reduce).
+      let best=null,frontY=0;
+      for(let ei=0;ei<enemies.length;ei++){
+        const e=enemies[ei];
+        if(e.h<=0)continue;
+        if(!best){best=e;frontY=e.y;}
+        else if(e.team==="player"?e.y<frontY:e.y>frontY){frontY=e.y;best=e;}
+      }
+      result=best;
       break;
     }
     case "enemy_cluster":{
       const alive=enemies.filter(e=>e.h>0);
       if(!alive.length)break;
-      const cellSize=80,grid=new Map();
-      for(const e of alive){
-        const k2=Math.floor(e.x/cellSize)+","+Math.floor(e.y/cellSize);
-        if(!grid.has(k2))grid.set(k2,0);
-        grid.set(k2,grid.get(k2)+1);
+      // PERF-R12: flat array grid (avoid Map + string concat overhead).
+      const cellSize=80;
+      const gw=8,gh=8;
+      const counts=new Int32Array(gw*gh);
+      for(let ei=0;ei<alive.length;ei++){
+        const e=alive[ei];
+        const cx=Math.floor(e.x/cellSize),cy=Math.floor(e.y/cellSize);
+        if(cx>=0&&cx<gw&&cy>=0&&cy<gh)counts[cy*gw+cx]++;
       }
       let best=alive[0],bestCount=0;
-      for(const e of alive){
+      for(let ei=0;ei<alive.length;ei++){
+        const e=alive[ei];
         const cx=Math.floor(e.x/cellSize),cy=Math.floor(e.y/cellSize);
         let count=0;
         for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
-          const c=grid.get((cx+dx)+","+(cy+dy));
-          if(c)count+=c;
+          const ncx=cx+dx,ncy=cy+dy;
+          if(ncx>=0&&ncx<gw&&ncy>=0&&ncy<gh)count+=counts[ncy*gw+ncx];
         }
         if(count>bestCount){bestCount=count;best=e;}
       }
