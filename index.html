@@ -6541,7 +6541,7 @@ const Battle={
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
               else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
               const minD=aSep>bSep?aSep:bSep;
-              const push=(minD-Math.max(d,0.001))/2;
+              const push=(minD-(d>0.001?d:0.001))/2;
               a.x-=nx*push;a.y-=ny*push;
               b.x+=nx*push;b.y+=ny*push;
             }
@@ -7276,9 +7276,11 @@ const Battle={
 
   checkEnd(){
     // PERF-R12: use pre-built alive arrays (avoids 2× this.units.some() per frame).
+    // Guard: alive arrays are built in update(); skip if not yet initialized.
     const players=this._alivePlayers, enemies=this._aliveEnemies;
-    const playerAlive=players&&players.length>0;
-    const enemyAlive=enemies&&enemies.length>0;
+    if(!players||!enemies)return;
+    const playerAlive=players.length>0;
+    const enemyAlive=enemies.length>0;
     if(playerAlive&&enemyAlive){
       // Battle timeout: if battle runs > 90s, end as draw (prevents kite stalemates).
       if(this.time>90){
