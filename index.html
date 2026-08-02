@@ -5738,6 +5738,8 @@ const Battle={
     // Phase 17: trigger spawn FX for all units.
     for(const u of this.units)BattleFX.onSpawn(u);
     this.projectiles=[];
+    // PERF-R12: clear projectile pool on battle start (avoid stale projectiles).
+    if(this._projPool)this._projPool.length=0;
     this.particles=[];     // Phase 17: clear particles
     this.shakeAmount=0;    // Phase 17: reset shake
     this.roundFlash=null;  // Phase 17: reset round flash
@@ -6221,19 +6223,20 @@ const Battle={
       const d=Math.sqrt(dx*dx+dy*dy)||1;
       const sx=wx+(dx/d)*forward;
       const sy=wy+(dy/d)*forward;
-      this.projectiles.push({
-        x:sx,y:sy,
-        tx:target.x,ty:target.y,
-        targetId:target.id,
-        d:attacker.d,team:attacker.team,owner:attacker.id,
-        n:attacker.n,baseD:attacker.baseD,
-        c:attacker.c,ability:attacker.ability,crit:attacker.crit,
-        role:attacker.role,moveSpeedMod:100,
-        life:2,dead:false,trail:[],
-        weaponType:attacker.weaponType||"none",
-        fxType:attacker.fxType||deriveFxType(attacker),
-        accent:attacker.recipe?.accentHex||WEAPON_COLOR[attacker.weaponType]||attacker.c
-      });
+      // PERF-R12: pool projectiles (avoid per-attack object allocation + GC).
+      const p=this._projPool&&this._projPool.length?this._projPool.pop():{trail:[0,0,0,0,0,0,0,0],_trailLen:0,dead:false};
+      p.x=sx;p.y=sy;
+      p.tx=target.x;p.ty=target.y;
+      p.targetId=target.id;
+      p.d=attacker.d;p.team=attacker.team;p.owner=attacker.id;
+      p.n=attacker.n;p.baseD=attacker.baseD;
+      p.c=attacker.c;p.ability=attacker.ability;p.crit=attacker.crit;
+      p.role=attacker.role;p.moveSpeedMod=100;
+      p.life=2;p.dead=false;p._trailLen=0;
+      p.weaponType=attacker.weaponType||"none";
+      p.fxType=attacker.fxType||deriveFxType(attacker);
+      p.accent=attacker.recipe?.accentHex||WEAPON_COLOR[attacker.weaponType]||attacker.c;
+      this.projectiles.push(p);
     }
     else{
       this.takeDamage(attacker,target,enemies);
@@ -6604,11 +6607,17 @@ const Battle={
       if(p.life<=0)p.dead=true;
     }
     // PERF-R12: in-place compaction instead of filter (avoids array allocation + GC).
+    // PERF-R12: return dead projectiles to pool (reuse objects, avoid GC).
+    if(!this._projPool)this._projPool=[];
+    const pool=this._projPool;
     let w=0;
     for(let i=0;i<this.projectiles.length;i++){
-      if(!this.projectiles[i].dead){
-        if(w!==i)this.projectiles[w]=this.projectiles[i];
+      const p=this.projectiles[i];
+      if(!p.dead){
+        if(w!==i)this.projectiles[w]=p;
         w++;
+      }else{
+        pool.push(p);
       }
     }
     this.projectiles.length=w;
