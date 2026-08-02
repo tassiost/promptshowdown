@@ -69,33 +69,33 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.3 | 16.66ms | 0.37ms | 0.56ms | 0.93ms | 15.5MB | 2 |
-| 20v20 (40 units) | 60.3 | 16.66ms | 0.74ms | 0.66ms | 1.40ms | 17.1MB | 9 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.40ms | 0.84ms | 2.24ms | 17.2MB | 18 |
-| MP Guest (50v50) | 60.2 | 16.67ms | 0.00ms | 0.32ms | 0.00ms | 20.8MB | 0 |
+| Empty (0 units) | 60.2 | 16.66ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
+| 5v5 (10 units) | 60.1 | 16.67ms | 0.34ms | 0.51ms | 0.85ms | 15.3MB | 3 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.72ms | 0.64ms | 1.36ms | 16.3MB | 9 |
+| 50v50 (100 units) | 60.2 | 16.66ms | 1.39ms | 0.83ms | 2.22ms | 19.0MB | 17 |
+| MP Guest (50v50) | 60.1 | 16.67ms | 0.00ms | 0.31ms | 0.00ms | 22.1MB | 0 |
 
-Note: 50v50 CPU varies 2.2-2.7ms across runs due to combat randomness (avg ~2.3ms).
+Note: 50v50 CPU varies 2.2-2.5ms across runs due to combat randomness (avg ~2.3ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0043ms/call (166ms total, 39K calls) — **8.1x faster per call**
-- drawShapeRaw: 0.0023ms/call (46ms total, 20K calls) — **92% fewer calls** (cache hits)
-- act: 0.0102ms/call (397ms total, 39K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0018ms/call (6ms total, 3.2K calls) — **92% fewer calls** (skip when >30 units)
-- drawBackground: 0.0418ms/call (16ms total, 392 calls) — **pattern+gradient+lane cached**
-- separate: 0.1288ms/call (51ms total, 392 calls) — **spatial grid + hoisted aSep**
-- drawDmgNums: 0.0765ms/call (30ms total, 392 calls) — **4-pass color batch + precomputed text + skip invisible**
-- updateProjectiles: 0.0477ms/call (19ms total, 392 calls) — **Map-based lookup + squared dist**
+- spriteDraw: 0.0044ms/call (170ms total, 39K calls) — **7.9x faster per call**
+- drawShapeRaw: 0.0023ms/call (52ms total, 22K calls) — **92% fewer calls** (cache hits)
+- act: 0.0103ms/call (396ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0018ms/call (6ms total, 3.5K calls) — **92% fewer calls** (skip when >30 units)
+- drawBackground: 0.0375ms/call (15ms total, 389 calls) — **pattern+gradient+lane cached**
+- separate: 0.1252ms/call (49ms total, 389 calls) — **spatial grid + hoisted aSep**
+- drawDmgNums: 0.0820ms/call (32ms total, 389 calls) — **4-pass color batch + precomputed text + skip invisible**
+- updateProjectiles: 0.0514ms/call (20ms total, 389 calls) — **Map-based lookup + squared dist + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.24ms | **70% faster** |
-| Render avg | 4.65ms | 0.84ms | **82% faster** |
-| Update avg | 2.75ms | 1.40ms | **49% faster** |
-| spriteDraw/call | 0.0349ms | 0.0043ms | **8.1x faster** |
-| act/call | 0.0300ms | 0.0102ms | **2.9x faster** |
+| CPU avg | 7.40ms | 2.22ms | **70% faster** |
+| Render avg | 4.65ms | 0.83ms | **82% faster** |
+| Update avg | 2.75ms | 1.39ms | **49% faster** |
+| spriteDraw/call | 0.0349ms | 0.0044ms | **7.9x faster** |
+| act/call | 0.0300ms | 0.0103ms | **2.9x faster** |
 | drawFace calls | 38K | 3.0K | **92% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 19K | **92% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
@@ -300,6 +300,26 @@ Note: 50v50 CPU varies 2.2-2.7ms across runs due to combat randomness (avg ~2.3m
 ### 40. separate inner loop optimization
 - Hoist `a.z*1.8` + squared comparison outside inner loop
 - Use `Math.max` → ternary for `push` calculation (avoids function call)
+
+### 41. Shadow batching + integer pixel drawImage
+- Draw all shadows in a pre-pass (fillStyle="#000" set once)
+- Avoids 100 fillStyle changes per frame
+- Round cached sprite position to integer pixels (|0) — avoids sub-pixel anti-aliasing
+- Reuse lunge offset buffer (avoids 38K object allocations/frame)
+
+### 42. HP bar border batching by team
+- Split strokeRect loop into 2 team-batched loops
+- Reduces strokeStyle changes from 100 to 2 per frame
+
+### 43. Flat array projectile trails
+- Replace array of {x,y} objects with flat [x0,y0,x1,y1,...] array
+- Avoids per-projectile per-frame object allocation (20 projectiles × 4 points)
+- Avoids array.shift() (O(n) copy) — use manual index copy
+- Bug fix: shift before write to avoid out-of-bounds access
+
+### 44. Background particle in-place compaction
+- In-place compaction instead of filter() (avoids array allocation)
+- Same pattern as damageNums updateDmgNums
 
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
