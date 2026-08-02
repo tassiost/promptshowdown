@@ -4997,7 +4997,16 @@ const BattleFX={
         p.vy*=0.95;
         p.life-=dt;
       }
-      Battle.particles=Battle.particles.filter(p=>p.life>0&&!isNaN(p.x)&&!isNaN(p.y));
+      // PERF-R12: in-place compaction instead of filter (avoids array allocation + GC).
+      let wp=0;
+      for(let pi=0;pi<Battle.particles.length;pi++){
+        const p=Battle.particles[pi];
+        if(p.life>0&&!isNaN(p.x)&&!isNaN(p.y)){
+          if(wp!==pi)Battle.particles[wp]=p;
+          wp++;
+        }
+      }
+      Battle.particles.length=wp;
     }
     // Update screen shake decay.
     if(Battle.shakeAmount>0){
@@ -5897,9 +5906,16 @@ const Battle={
     if(u.h<=0||u.stun>0)return;
     // taunt: if enemy team has a taunt unit, force target it
     // PERF-R11: use cached taunter from update() instead of find() per unit.
+    // PERF-R12: avoid enemies.filter() allocation — use single-element array.
+    // PERF-R12: check if cached taunter is still alive (may have died this frame).
     let targetEnemies=enemies;
-    const taunter=cachedTaunter!==undefined?cachedTaunter:enemies.find(e=>e.h>0&&e.ability==="taunt");
-    if(taunter)targetEnemies=enemies.filter(e=>e===taunter);
+    const taunter=cachedTaunter!==undefined&&cachedTaunter&&cachedTaunter.h>0?cachedTaunter:enemies.find(e=>e.h>0&&e.ability==="taunt");
+    if(taunter){
+      // Reuse a single-element array instead of filtering (avoids allocation).
+      if(!this._tauntArr)this._tauntArr=[taunter];
+      else this._tauntArr[0]=taunter;
+      targetEnemies=this._tauntArr;
+    }
     const targetFn=TARGETING[u.targeting];
     const target=targetFn?targetFn(u,targetEnemies,allies):null;
     u.target=target; // Phase 24f: store target for eye tracking
@@ -6020,8 +6036,15 @@ const Battle={
       // Phase 17: track crits for P2P snapshot sync.
       if(!this.recentCrits)this.recentCrits=[];
       this.recentCrits.push({id:target.id,t:this.time});
-      // Keep only recent crits (last 2 seconds).
-      this.recentCrits=this.recentCrits.filter(rc=>this.time-rc.t<2);
+      // PERF-R12: in-place compaction instead of filter (avoids array allocation).
+      let wc=0;
+      for(let rcI=0;rcI<this.recentCrits.length;rcI++){
+        if(this.time-this.recentCrits[rcI].t<2){
+          if(wc!==rcI)this.recentCrits[wc]=this.recentCrits[rcI];
+          wc++;
+        }
+      }
+      this.recentCrits.length=wc;
     }
     else {BattleFX.onHit(target);GameAudio.sfx("hit");} // Phase 30
     // Only log crits to kill feed (regular hits are too noisy).
@@ -6236,6 +6259,31 @@ const Battle={
 
   updateProjectiles(dt){
     if(!this.projectiles.length)return;
+    // PERF-R12: build unit lookup Map once per frame (avoids O(n) find per projectile).
+    if(!this._unitIdMap)this._unitIdMap=new Map();
+    const idMap=this._unitIdMap;
+    idMap.clear();
+    for(const u of this.units)idMap.set(u.id,u);
+    // PERF-R12: lazily build foes arrays per team only when a projectile hits.
+    // Need separate arrays per team for splash damage (which iterates enemies array).
+    let playerFoes=null,enemyFoes=null;
+    function getFoes(team){
+      if(team==="player"){
+        if(!playerFoes){
+          playerFoes=this._projPlayerFoes||(this._projPlayerFoes=[]);
+          playerFoes.length=0;
+          for(const u of this.units){if(u.h>0&&u.team==="enemy")playerFoes.push(u);}
+        }
+        return playerFoes;
+      }else{
+        if(!enemyFoes){
+          enemyFoes=this._projEnemyFoes||(this._projEnemyFoes=[]);
+          enemyFoes.length=0;
+          for(const u of this.units){if(u.h>0&&u.team==="player")enemyFoes.push(u);}
+        }
+        return enemyFoes;
+      }
+    }
     for(let p of this.projectiles){
       if(p.dead)continue;
       // Record trail position for rendering (keep last 4 points).
@@ -6244,43 +6292,35 @@ const Battle={
       if(p.trail.length>4)p.trail.shift();
       // Homing: track target unit if still alive, update target position.
       if(p.targetId!=null){
-        const tgt=this.units.find(u=>u.id===p.targetId&&u.h>0);
-        if(tgt){p.tx=tgt.x;p.ty=tgt.y;}
+        const tgt=idMap.get(p.targetId);
+        if(tgt&&tgt.h>0){p.tx=tgt.x;p.ty=tgt.y;}
       }
       const dx=p.tx-p.x, dy=p.ty-p.y, dd=Math.hypot(dx,dy);
       const sp=320*dt;
       if(dd<=sp){
-        const foes=this.units.filter(u=>u.team!==p.team&&u.h>0);
+        // PERF-R12: build foes array lazily per team (only when a projectile hits).
+        const foes=getFoes.call(this,p.team);
         let hit=false;
-        let hitUnit=null;
         for(let f of foes){
           if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22+f.z){
             // Synthetic attacker carrying projectile properties.
             const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
               c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD,dmgDealt:0};
             // For lifesteal on ranged units, heal the real owner instead of synth.
-            const owner=this.units.find(u=>u.id===p.owner&&u.h>0);
-            if(owner){synth.h=owner.h;synth.mh=owner.mh;synth.d=owner.d;synth.baseD=owner.baseD;}
-            const hpBefore=f.h;
+            const owner=idMap.get(p.owner);
+            if(owner&&owner.h>0){synth.h=owner.h;synth.mh=owner.mh;synth.d=owner.d;synth.baseD=owner.baseD;}
             this.takeDamage(synth,f,foes);
             if(owner){
               if(synth.h>owner.h)owner.h=synth.h; // lifesteal
               if(synth.d>owner.d)owner.d=synth.d; // ramp
               if(owner.dmgDealt!==undefined)owner.dmgDealt+=synth.dmgDealt||0; // MVP tracking
             }
-            hit=true;hitUnit=f;
-            if(this.debug)console.log("[HIT] t="+this.time.toFixed(2)+" "+p.n+" proj→"+f.n+"["+f.team+"] d="+p.d+" hp:"+hpBefore.toFixed(0)+"→"+f.h.toFixed(0)+" dist="+Math.hypot(f.x-p.tx,f.y-p.ty).toFixed(0));
+            hit=true;
+            if(this.debug)console.log("[HIT] t="+this.time.toFixed(2)+" "+p.n+" proj→"+f.n+"["+f.team+"] d="+p.d);
             break;
           }
         }
         p.dead=true;
-        if(!hit){
-          if(this.debug){
-            const tgt=this.units.find(u=>u.id===p.targetId);
-            const tgtPos=tgt?"("+tgt.x.toFixed(0)+","+tgt.y.toFixed(0)+")hp="+tgt.h.toFixed(0):"dead/gone";
-            console.log("[MISS] t="+this.time.toFixed(2)+" "+p.n+" proj missed at ("+p.tx.toFixed(0)+","+p.ty.toFixed(0)+") target="+tgtPos);
-          }
-        }
       }
       else{
         p.x+=(dx/dd)*sp;
@@ -6289,12 +6329,22 @@ const Battle={
       p.life-=dt;
       if(p.life<=0)p.dead=true;
     }
-    this.projectiles=this.projectiles.filter(p=>!p.dead);
+    // PERF-R12: in-place compaction instead of filter (avoids array allocation + GC).
+    let w=0;
+    for(let i=0;i<this.projectiles.length;i++){
+      if(!this.projectiles[i].dead){
+        if(w!==i)this.projectiles[w]=this.projectiles[i];
+        w++;
+      }
+    }
+    this.projectiles.length=w;
   },
 
   // Push overlapping units apart so they don't stack on one pixel.
   // J2: Spatial partitioning via uniform grid hash — O(n) instead of O(n²).
   // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
+  // PERF-R12: hoist offsets array outside function (avoid per-frame allocation).
+  _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
   separate(all){
     const cellSize=60;
     const grid=this._sepGrid||(this._sepGrid=new Map());
@@ -6308,10 +6358,10 @@ const Battle={
       cell.push(u);
     }
     // Check collisions within same + adjacent cells.
+    const offsets=this._sepOffsets;
     for(const [k,cell] of grid){
       const cx=k>>>16, cy=k&0xFFFF;
       // Check this cell + 4 adjacent (right, down, down-right, up-right) to avoid double-checks.
-      const offsets=[[0,0],[1,0],[0,1],[1,1],[1,-1]];
       for(let oi=0;oi<5;oi++){
         const dx=offsets[oi][0],dy=offsets[oi][1];
         const nk=((cx+dx)<<16)|(cy+dy);
@@ -6909,27 +6959,47 @@ const Battle={
   // Units that died but weren't removed (deathT < 0.5) still have h=0 in this.units.
   _syncAllUnits(){
     if(!this._allUnits)return;
-    for(const u of this.units){
-      const idx=this._allUnits.findIndex(a=>a.id===u.id);
-      if(idx>=0)this._allUnits[idx]={...u};
+    // PERF-R12: use Map for O(n) instead of O(n²) findIndex.
+    if(!this._syncMap)this._syncMap=new Map();
+    const m=this._syncMap;
+    m.clear();
+    for(const u of this.units)m.set(u.id,u);
+    for(let i=0;i<this._allUnits.length;i++){
+      const synced=m.get(this._allUnits[i].id);
+      if(synced){
+        // Copy properties in place instead of creating new object via spread.
+        Object.assign(this._allUnits[i],synced);
+      }
     }
   },
   drawDmgNums(c){
     if(!this.damageNums||!this.damageNums.length)return;
+    // PERF-R12: batch by font size (crit=14px, normal=10px) to avoid per-item font changes.
+    // Remove emojis (💥✨🔮☠️) — emoji rendering in canvas is extremely expensive
+    // (requires font fallback + complex glyph shaping, 10-50x slower than ASCII text).
+    c.textAlign="center";
+    c.strokeStyle="rgba(0,0,0,0.8)";
+    c.lineWidth=3;
+    // Pass 1: non-crit (10px font)
+    c.font="bold 10px sans-serif";
     for(const d of this.damageNums){
+      if(d.crit)continue;
       const alpha=Math.min(1,d.life/0.3);
       c.globalAlpha=alpha;
-      c.font=`bold ${d.crit?"14px":"10px"} sans-serif`;
-      c.textAlign="center";
       const isHeal=typeof d.val==="string"&&d.val.startsWith("+");
-      const color=d.crit?"#fbbf24":isHeal?"#34d399":TEAM_COLORS[d.team]||"#fff";
-      c.fillStyle=color;
-      c.strokeStyle="rgba(0,0,0,0.8)";
-      c.lineWidth=3;
-      let prefix=d.crit?"💥":"";
-      if(d.type==="ability")prefix+="✨";
-      else if(d.type==="spell")prefix+="🔮";
-      else if(d.type==="poison")prefix+="☠️";
+      c.fillStyle=isHeal?"#34d399":TEAM_COLORS[d.team]||"#fff";
+      const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
+      c.strokeText(txt,d.x,d.y);
+      c.fillText(txt,d.x,d.y);
+    }
+    // Pass 2: crit (14px font, gold color)
+    c.font="bold 14px sans-serif";
+    for(const d of this.damageNums){
+      if(!d.crit)continue;
+      const alpha=Math.min(1,d.life/0.3);
+      c.globalAlpha=alpha;
+      c.fillStyle="#fbbf24";
+      const prefix=d.type==="ability"?"*":d.type==="spell"?"~":d.type==="poison"?"p":"";
       const txt=prefix+d.val;
       c.strokeText(txt,d.x,d.y);
       c.fillText(txt,d.x,d.y);
@@ -7283,7 +7353,11 @@ const Battle={
     if(s.projectiles)this.projectiles=s.projectiles;
     // Phase 17: state-derived FX from snapshot deltas.
     if(prev&&prev.units){
-      const prevMap=new Map(prev.units.map(u=>[u.id,u]));
+      // PERF-R12: reuse Map + Set (avoid allocation per snapshot).
+      if(!this._prevSnapMap)this._prevSnapMap=new Map();
+      const prevMap=this._prevSnapMap;
+      prevMap.clear();
+      for(const u of prev.units)prevMap.set(u.id,u);
       for(const u of this.units){
         const pu=prevMap.get(u.id);
         if(!pu){
@@ -7295,9 +7369,11 @@ const Battle={
         }
       }
       // Units that disappeared → death FX.
-      const curIds=new Set(this.units.map(u=>u.id));
+      if(!this._curSnapIds)this._curSnapIds=new Set();
+      this._curSnapIds.clear();
+      for(const u of this.units)this._curSnapIds.add(u.id);
       for(const pu of prev.units){
-        if(!curIds.has(pu.id)&&pu.h>0){
+        if(!this._curSnapIds.has(pu.id)&&pu.h>0){
           BattleFX.onDeath(pu);
         }
       }
@@ -7343,18 +7419,33 @@ const Battle={
     const now=performance.now();
     const elapsed=(now-this._interpStart)/1000;
     const alpha=Math.min(1,elapsed/this._interpDur);
-    // Lerp unit positions/HP between from and to.
-    const fromMap=new Map(this._interpFrom.units.filter(u=>u&&u.id).map(u=>[u.id,u]));
-    const toMap=new Map(this._interpTo.units.filter(u=>u&&u.id).map(u=>[u.id,u]));
-    this.units=this._interpTo.units.filter(u=>u&&u.id).map(tu=>{
+    // PERF-R12: cache from/to Maps (only rebuild when snapshot changes, not every frame).
+    if(this._interpFromUnits!==this._interpFrom.units){
+      this._interpFromUnits=this._interpFrom.units;
+      if(!this._interpFromMap)this._interpFromMap=new Map();
+      this._interpFromMap.clear();
+      for(const u of this._interpFrom.units){if(u&&u.id)this._interpFromMap.set(u.id,u);}
+    }
+    const fromMap=this._interpFromMap;
+    // PERF-R12: reuse the same units array (avoid filter+map allocation every frame).
+    const toUnits=this._interpTo.units;
+    if(!this._interpUnits||(this._interpUnitsBase!==toUnits)){
+      this._interpUnitsBase=toUnits;
+      this._interpUnits=toUnits.filter(u=>u&&u.id);
+      // Store original "to" positions for interpolation (avoid losing them when mutating).
+      for(const u of this._interpUnits){u._origTx=u.x;u._origTy=u.y;u._origTh=u.h;}
+    }
+    // PERF-R12: mutate unit objects in place (avoids N object allocations per frame).
+    for(let i=0;i<this._interpUnits.length;i++){
+      const tu=this._interpUnits[i];
       const fu=fromMap.get(tu.id);
-      if(!fu||tu.x===undefined||fu.x===undefined)return tu;
-      return {...tu,
-        x:fu.x+(tu.x-fu.x)*alpha,
-        y:fu.y+(tu.y-fu.y)*alpha,
-        h:fu.h+(tu.h-fu.h)*alpha
-      };
-    });
+      if(fu&&tu._origTx!==undefined&&fu.x!==undefined){
+        tu.x=fu.x+(tu._origTx-fu.x)*alpha;
+        tu.y=fu.y+(tu._origTy-fu.y)*alpha;
+        tu.h=fu.h+(tu._origTh-fu.h)*alpha;
+      }
+    }
+    this.units=this._interpUnits;
     this.time=(this._interpFrom.time||0)+((this._interpTo.time||0)-(this._interpFrom.time||0))*alpha;
     this.render();
   },

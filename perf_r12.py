@@ -131,20 +131,29 @@ def setup_canvas(page):
     }""")
 
 def make_units(page, count_per_side, hp=100, high_hp=False):
-    """Create a battle with count_per_side units on each team."""
+    """Create a battle with count_per_side units on each team.
+    Mix of ranged (r>80, spawn projectiles) and melee units.
+    High HP so the battle lasts the full profiling window."""
     js = """
         const abs=['heal','spawn','explode','poison','ramp','rage','lifesteal','thorns','regen','counter','dodge','splash','slow','shield','blink_strike','frenzy','cleanse','chain_lightning','taunt','executioner'];
         const roles=['frontline','carry','support'];
-        const movs=['chase','kite','flee','hold','patrol'];
         const targs=['closest','lowest_hp','enemy_cluster','enemy_frontline','enemy_backline'];
         const units=[];
         const n=__N__;
         const hp=__HP__;
         for(let i=0;i<n*2;i++){
-            const u=unit({n:'U'+i,h:hp+Math.floor(Math.random()*40),d:5+Math.floor(Math.random()*10),r:50+Math.floor(Math.random()*120),s:50+Math.floor(Math.random()*30),a:0.5+Math.random()*0.5,ability:abs[i%abs.length],abilityTrigger:'on_cooldown',targeting:targs[i%targs.length],movement:movs[i%movs.length],attackCondition:'always',role:roles[i%3],moveSpeedMod:100});
+            // 60% ranged (r=120-180, spawns projectiles), 40% melee (r=40-70)
+            const isRanged=(i%5)<3;
+            const r=isRanged?120+Math.floor(Math.random()*60):40+Math.floor(Math.random()*30);
+            // Ranged units kite, melee units chase — ensures continuous combat
+            const mov=isRanged?'kite':'chase';
+            const u=unit({n:'U'+i,h:hp+Math.floor(Math.random()*100),d:8+Math.floor(Math.random()*8),r:r,s:60+Math.floor(Math.random()*20),a:0.8+Math.random()*0.4,ability:abs[i%abs.length],abilityTrigger:'on_cooldown',targeting:targs[i%targs.length],movement:mov,attackCondition:'always',role:roles[i%3],moveSpeedMod:100});
             u.team=i<n?'player':'enemy';
-            u.x=u.team==='player'?30+(i%n)*8:370-(i%n)*8;
-            u.y=50+(i%(Math.floor(n/2)+1))*45;
+            // Spread units across the battlefield. Player on left, enemy on right.
+            const col=i%n;
+            const row=Math.floor(i/n);
+            u.x=u.team==='player'?40+col*7+row*3:360-col*7-row*3;
+            u.y=60+col*12+row*40;
             units.push(Battle.initRuntime(u));
         }
         Battle.units=units;Battle._allUnits=[...units];
@@ -180,18 +189,26 @@ def reset_perf(page):
         window._perf.heapSamples = [];
         window._perf.objCounts = [];
         window._perf.subFunc = {};
+        window._perf.maxProj = 0;
+        window._perf.maxPart = 0;
+        window._perf.maxDmg = 0;
     }""")
 
 def collect(page, label):
-    # Sample memory mid-run
+    # Sample memory + object counts mid-run
     for _ in range(5):
         page.evaluate("""() => {
-            if (window._perf.enabled && performance.memory) {
-                window._perf.heapSamples.push({
-                    used: performance.memory.usedJSHeapSize,
-                    total: performance.memory.totalJSHeapSize,
-                    limit: performance.memory.jsHeapSizeLimit,
-                });
+            if (window._perf.enabled) {
+                if (performance.memory) {
+                    window._perf.heapSamples.push({
+                        used: performance.memory.usedJSHeapSize,
+                        total: performance.memory.totalJSHeapSize,
+                        limit: performance.memory.jsHeapSizeLimit,
+                    });
+                }
+                window._perf.maxProj = Math.max(window._perf.maxProj, Battle.projectiles.length);
+                window._perf.maxPart = Math.max(window._perf.maxPart, Battle.particles.length);
+                window._perf.maxDmg = Math.max(window._perf.maxDmg, Battle.damageNums.length);
             }
         }""")
         time.sleep(DURATION / 5)
@@ -244,6 +261,9 @@ def collect(page, label):
                 zones: Battle.zones.length,
                 damageNums: Battle.damageNums.length,
             },
+            maxProj: p.maxProj,
+            maxPart: p.maxPart,
+            maxDmg: p.maxDmg,
         };
     }""")
 
@@ -269,6 +289,7 @@ def collect(page, label):
         print(f"  Memory: used={h['usedAvg']/1048576:.1f}MB max={h['usedMax']/1048576:.1f}MB total={h['totalAvg']/1048576:.1f}MB")
     oc = data['objCounts']
     print(f"  Objects: units={oc['units']} proj={oc['projectiles']} particles={oc['particles']} zones={oc['zones']} dmg={oc['damageNums']}")
+    print(f"  Max:     proj={data.get('maxProj',0)} particles={data.get('maxPart',0)} dmg={data.get('maxDmg',0)}")
     sf = data['subFunc']
     if sf:
         print(f"  Sub-functions:")
@@ -295,25 +316,76 @@ def main():
         results['empty'] = collect(page, "EMPTY SCREEN")
 
         # Scenario 2: 5v5
-        print("\n--- Scenario 2: 5v5 (10 units) ---")
-        make_units(page, 5)
+        print("\n--- Scenario 2: 5v5 (10 units, mixed ranged+melee) ---")
+        make_units(page, 5, hp=300)
         time.sleep(1)
         reset_perf(page)
         results['5v5'] = collect(page, "5v5 (10 units)")
 
         # Scenario 3: 20v20
-        print("\n--- Scenario 3: 20v20 (40 units) ---")
-        make_units(page, 20)
+        print("\n--- Scenario 3: 20v20 (40 units, mixed ranged+melee) ---")
+        make_units(page, 20, hp=500)
         time.sleep(1)
         reset_perf(page)
         results['20v20'] = collect(page, "20v20 (40 units)")
 
         # Scenario 4: 50v50
-        print("\n--- Scenario 4: 50v50 (100 units) ---")
-        make_units(page, 50, hp=200, high_hp=True)
+        print("\n--- Scenario 4: 50v50 (100 units, mixed ranged+melee) ---")
+        make_units(page, 50, hp=800, high_hp=True)
         time.sleep(1)
         reset_perf(page)
         results['50v50'] = collect(page, "50v50 (100 units)")
+
+        # Scenario 5: Multiplayer guest (snapshot interpolation)
+        print("\n--- Scenario 5: Multiplayer guest (50v50, snapshot interpolation) ---")
+        make_units(page, 50, hp=800, high_hp=True)
+        time.sleep(0.5)
+        # Simulate guest receiving snapshots every 100ms (10fps from host).
+        # The guest interpolates between snapshots at 60fps via _interpRender.
+        page.evaluate("""(() => {
+            window._guestSnapshots = [];
+            window._guestSnapIdx = 0;
+            // Generate 100 snapshots with slightly moved units.
+            for(let s=0;s<100;s++){
+                const snap = {
+                    time: s*0.1,
+                    units: Battle.units.map(u=>({
+                        id:u.id, n:u.n, x:u.x+(Math.random()-0.5)*4,
+                        y:u.y+(Math.random()-0.5)*4, h:u.h, mh:u.mh,
+                        t:u.team, s:u.animState||'idle', c:u.c, z:u.z, r:u.r,
+                        prevH:u.h, deathT:undefined
+                    })),
+                    projectiles: [],
+                    recentCrits: []
+                };
+                window._guestSnapshots.push(snap);
+            }
+            // Start guest mode: stop normal loop, use interpolation.
+            Battle.running = true;
+            cancelAnimationFrame(Battle.frame);
+            // Feed first snapshot.
+            const snap0 = window._guestSnapshots[0];
+            Battle._interpFrom = {units: Battle.units.map(u=>({id:u.id,x:u.x,y:u.y,h:u.h})), time:0};
+            Battle._interpTo = snap0;
+            Battle._interpStart = performance.now();
+            Battle._interpDur = 0.1;
+            Battle.applySnapshot(snap0);
+            Battle.renderOnly();
+            Battle._startInterpLoop();
+            // Feed subsequent snapshots every 100ms.
+            window._guestFeedInterval = setInterval(()=>{
+                window._guestSnapIdx++;
+                if(window._guestSnapIdx >= window._guestSnapshots.length){
+                    clearInterval(window._guestFeedInterval);
+                    return;
+                }
+                const snap = window._guestSnapshots[window._guestSnapIdx];
+                Battle.applyRemoteSnapshot(snap);
+            }, 100);
+        })()""")
+        time.sleep(1)
+        reset_perf(page)
+        results['mp_guest'] = collect(page, "MP GUEST (50v50 interpolation)")
 
         browser.close()
 

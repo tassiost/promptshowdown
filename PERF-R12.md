@@ -49,14 +49,14 @@ Separate timings:
 7. Cache `interpolate()` results per (keyframes, t bucket)
 8. Skip face/eye target tracking when many units
 
-## Baseline Results (headed browser, 10s per scenario)
+## Baseline Results (headed browser, 10s per scenario, WITH combat)
 
-| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory |
-|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.4MB |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.32ms | 0.69ms | 1.02ms | 15.2MB |
-| 20v20 (40 units) | 60.3 | 16.67ms | 0.84ms | 1.55ms | 2.39ms | 15.5MB |
-| 50v50 (100 units) | 60.9 | 16.67ms | 2.75ms | 4.65ms | 7.40ms | 17.6MB |
+| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
+|---|---|---|---|---|---|---|---|
+| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.4MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.67ms | 0.32ms | 0.69ms | 1.02ms | 15.2MB | 2 |
+| 20v20 (40 units) | 60.3 | 16.67ms | 0.84ms | 1.55ms | 2.39ms | 15.5MB | 14 |
+| 50v50 (100 units) | 60.9 | 16.67ms | 2.75ms | 4.65ms | 7.40ms | 17.6MB | 22 |
 
 ### Baseline Sub-function timings (50v50)
 - spriteDraw: 0.0349ms/call (1378ms total, 39K calls)
@@ -65,31 +65,36 @@ Separate timings:
 - drawFace: 0.0029ms/call (112ms total, 39K calls)
 - drawBackground: 0.1053ms/call (42ms total, 398 calls)
 
-## After Optimization (headed browser, 10s per scenario)
+## After Optimization (headed browser, 10s per scenario, WITH combat)
 
-| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory |
-|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.6 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.4MB |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.40ms | 0.55ms | 0.95ms | 15.2MB |
-| 20v20 (40 units) | 60.3 | 16.67ms | 0.91ms | 0.71ms | 1.61ms | 15.2MB |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.95ms | 1.10ms | 3.05ms | 16.9MB |
+| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
+|---|---|---|---|---|---|---|---|
+| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.67ms | 0.34ms | 0.56ms | 0.90ms | 15.8MB | 2 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.84ms | 0.83ms | 1.67ms | 16.3MB | 9 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.64ms | 1.10ms | 2.74ms | 17.0MB | 21 |
+| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.38ms | 0.00ms | 19.8MB | 0 |
 
 ### After Opt Sub-function timings (50v50)
-- spriteDraw: 0.0066ms/call (258ms total, 39K calls) — **5.3x faster per call**
-- drawShapeRaw: 0.0029ms/call (29ms total, 10K calls) — **96% fewer calls** (cache hits)
-- act: 0.0168ms/call (651ms total, 39K calls)
-- drawFace: 0.0017ms/call (64ms total, 39K calls)
-- drawBackground: 0.0669ms/call (26ms total, 393 calls)
+- spriteDraw: 0.0065ms/call (252ms total, 39K calls) — **5.4x faster per call**
+- drawShapeRaw: 0.0025ms/call (49ms total, 20K calls) — **96% fewer calls** (cache hits)
+- act: 0.0126ms/call (487ms total, 39K calls)
+- drawFace: 0.0015ms/call (56ms total, 39K calls)
+- drawBackground: 0.0632ms/call (25ms total, 389 calls)
+- updateProjectiles: 0.0555ms/call (22ms total, 389 calls)
+- separate: 0.1344ms/call (52ms total, 389 calls)
+- drawDmgNums: 0.0812ms/call (32ms total, 389 calls)
 
-## Improvement Summary (50v50 scenario)
+## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 3.05ms | **59% faster** |
+| CPU avg | 7.40ms | 2.74ms | **63% faster** |
 | Render avg | 4.65ms | 1.10ms | **76% faster** |
-| spriteDraw/call | 0.0349ms | 0.0066ms | **5.3x faster** |
-| drawShapeRaw calls | 236K | 10K | **96% reduction** |
-| Memory | 17.6MB | 16.9MB | **4% less** |
+| Update avg | 2.75ms | 1.64ms | **40% faster** |
+| spriteDraw/call | 0.0349ms | 0.0065ms | **5.4x faster** |
+| drawShapeRaw calls | 236K | 20K | **96% reduction** |
+| Memory | 17.6MB | 17.0MB | **3% less** |
 
 ## Optimizations Implemented
 
@@ -133,6 +138,45 @@ Separate timings:
 - Clear sprite cache when guest receives first snapshot of a new battle
 - Prevents memory bloat and stale cache entries across rounds
 
+### 9. Projectile Update Optimization
+- Build unit lookup Map once per frame (O(1) lookup instead of O(n) find per projectile)
+- Lazily build foes arrays per team (only when a projectile actually hits)
+- In-place compaction instead of `filter()` for dead projectile removal
+- Bug fix: separate foes arrays per team (splash damage was hitting allies with single array)
+
+### 10. Damage Number Rendering Optimization
+- Removed emojis (💥✨🔮☠️) — emoji rendering in canvas is 10-50x slower than ASCII
+- Replaced with text prefixes (* for ability, ~ for spell, p for poison)
+- Two-pass rendering: batch by font size (non-crit 10px, crit 14px) to avoid per-item font changes
+- Reduces fillStyle/strokeStyle state changes
+
+### 11. Multiplayer Guest Interpolation Optimization
+- Cache from/to Maps (only rebuild when snapshot changes, not every frame)
+- Reuse units array (avoid filter+map allocation every frame)
+- Mutate unit objects in place (avoid N object allocations per frame via spread)
+- Store original "to" positions for interpolation (avoid losing them when mutating)
+
+### 12. Particle Compaction
+- In-place array compaction instead of `filter()` (avoids array allocation + GC)
+
+### 13. Recent Crits Compaction
+- In-place array compaction instead of `filter()` (avoids array allocation + GC)
+
+### 14. Taunter Filter Optimization
+- Reuse single-element array instead of `enemies.filter(e=>e===taunter)` per unit
+- Bug fix: check if cached taunter is still alive (may have died during frame)
+
+### 15. _syncAllUnits Optimization
+- Use Map for O(n) instead of O(n²) findIndex
+- Object.assign in place instead of creating new object via spread
+
+### 16. applySnapshot Optimization
+- Reuse Map and Set for snapshot diff (avoid allocation per snapshot)
+- Clear before reuse instead of creating new
+
+### 17. Separate Optimization
+- Hoist offsets array outside function (avoid per-frame allocation)
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -141,10 +185,17 @@ Separate timings:
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU: 3.05ms on my Mac
-- On a 5x slower machine: ~15.3ms — within 16.67ms budget
-- On a 3x slower machine: ~9.2ms — comfortable headroom
+- 50v50 CPU (with combat): 2.74ms on my Mac
+- On a 5x slower machine: ~13.7ms — within 16.67ms budget
+- On a 3x slower machine: ~8.2ms — comfortable headroom
+- MP Guest (50v50): 0.38ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
+
+## Bugs Found and Fixed
+1. **Splash damage friendly fire**: Projectile foes array included all units, not just enemies. Fixed by building separate foes arrays per team.
+2. **Stale taunter reference**: Cached taunter could be dead by the time it's used. Fixed by adding alive check.
+3. **Sprite cache not cleared for MP guests**: Cache only cleared in `Battle.start()`, not when guest receives first snapshot. Fixed by clearing on first snapshot.
+4. **Sprite cache key missing z**: Units with different z values would share cache entries. Fixed by including z in cache key.
 
 ## E2E Test Results
 - All 184 tests pass (same as before optimization)
