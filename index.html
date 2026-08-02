@@ -3463,7 +3463,8 @@ function avoidanceOffset(u,allies,radius){
     }
   }
   // Scale the accumulated push by u's effective speed so fast units separate faster.
-  const mag=Math.hypot(ax,ay);
+  // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+  const mag=Math.sqrt(ax*ax+ay*ay);
   if(mag<0.001){_avoidBuf.x=0;_avoidBuf.y=0;return _avoidBuf;}
   // Cap the push to a fraction of unit speed per tick (avoids jitter when stationary).
   const maxPush=effSpeed(u)*0.4;
@@ -4380,12 +4381,14 @@ const SpriteRenderer={
         // Cached sprite's origin (unit feet) is at (sw/2, sh-PAD).
         const dx=u.x - sw/2;
         const dy=u.y - (sh-SPRITE_CACHE_PAD) + bobY;
-        c.save();
+        // PERF-R12: avoid save/restore — just swap globalAlpha (cheaper than stack push/pop).
+        const oldAlpha=c.globalAlpha;
         c.globalAlpha=alpha;
         c.drawImage(cached, dx, dy);
-        c.restore();
+        c.globalAlpha=oldAlpha;
         // Draw face on top (dynamic — tracks target).
-        if(recipe.face!==false&&state!=="death"){
+        // PERF-R12: skip face when >30 units (tiny visual detail, expensive transform).
+        if(recipe.face!==false&&state!=="death"&&Battle.units.length<=30){
           const saveY=u.y;
           u.y=saveY+bobY;
           c.save();
@@ -5838,14 +5841,16 @@ const Battle={
       this.fxAura(u,dt);
     }
     // 2. detect newly dead units → onUnitDeath
-    for(let u of this.units){
-      if(u.h<=0&&u.deathT===undefined)this.onUnitDeath(u);
-    }
-    // 3. movement + attacks + abilities (split by team)
-    // PERF-R11: build alive arrays once per frame (reused by all units).
+    // 3. build alive arrays (split by team) + reset animation flags.
+    // PERF-R12: merge 3 loops into 1 (death detect + alive arrays + flag reset).
     const players=[],enemies=[];
     for(const u of this.units){
-      if(u.h<=0)continue;
+      if(u.h<=0){
+        if(u.deathT===undefined)this.onUnitDeath(u);
+        continue;
+      }
+      u.movedThisFrame=false;
+      u.attackedThisFrame=false;
       if(u.team==="player")players.push(u);else enemies.push(u);
     }
     // PERF-R12: clear per-frame targeting cache (team-level targets).
@@ -5854,12 +5859,6 @@ const Battle={
     // PERF-R11: cache taunters per frame (avoids O(n) find per unit).
     const playerTaunter=players.find(e=>e.ability==="taunt");
     const enemyTaunter=enemies.find(e=>e.ability==="taunt");
-    // Phase 11: reset per-frame animation flags.
-    for(let u of this.units){
-      if(u.h<=0)continue;
-      u.movedThisFrame=false;
-      u.attackedThisFrame=false;
-    }
     for(let u of this.units){
       if(u.h<=0)continue;
       const allies=u.team==="player"?players:enemies;
@@ -6433,8 +6432,12 @@ const Battle={
     const grid=this._sepGrid||(this._sepGrid=new Map());
     grid.clear();
     // Bin units into cells with numeric keys (faster than string concat).
+    // PERF-R12: precompute z*1.8 and (z*1.8)² per unit to avoid per-pair multiplication.
     for(const u of all){
       if(u.h<=0)continue;
+      const sepD=u.z*1.8;
+      u._sepD=sepD;
+      u._sepD2=sepD*sepD;
       const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
       let cell=grid.get(k);
       if(!cell){cell=[];grid.set(k,cell);}
@@ -6453,18 +6456,23 @@ const Battle={
         const sameCell=(dx===0&&dy===0);
         for(let ai=0;ai<cell.length;ai++){
           const a=cell[ai];
+          const aSepD=a._sepD;
+          const aSepD2=a._sepD2;
           const bStart=sameCell?ai+1:0;
           for(let bi=bStart;bi<ncell.length;bi++){
             const b=ncell[bi];
             const ddx=b.x-a.x, ddy=b.y-a.y;
             const d2=ddx*ddx+ddy*ddy;
             // D5: keep units at least 1.8× their radius apart so they don't visually overlap.
-            const minD=Math.max(a.z,b.z)*1.8;
-            if(d2<minD*minD){
+            // PERF-R12: use precomputed (z*1.8)² — max of the two is the threshold.
+            const bSepD=b._sepD;
+            const minD2=aSepD>bSepD?aSepD2:b._sepD2;
+            if(d2<minD2){
               const d=Math.sqrt(d2);
               let nx,ny;
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
               else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
+              const minD=aSepD>bSepD?aSepD:bSepD;
               const push=(minD-Math.max(d,0.001))/2;
               a.x-=nx*push;a.y-=ny*push;
               b.x+=nx*push;b.y+=ny*push;
@@ -6734,6 +6742,10 @@ const Battle={
       c.translate((Math.random()-0.5)*shake*2,(Math.random()-0.5)*shake*2);
     }
     try{
+    // PERF-R12: hoist per-frame constants outside the unit loop (avoid 100× recompute).
+    const manyUnits=Battle.units.length>30;
+    const manyUnitsR=manyUnits;
+    const ringPulse=manyUnitsR?1:1+0.04*Math.sin(this.time*6);
     // units
     for(let u of this.units){
       if(!u||u.x===undefined)continue;
@@ -6781,8 +6793,6 @@ const Battle={
       u.x=origX;u.y=origY;u.z=origZ;
       // status rings (always drawn, on top of sprite).
       // PERF-R12: skip pulsing animation when many units (Math.sin per status per unit).
-      const manyUnitsR=Battle.units.length>30;
-      const ringPulse=manyUnitsR?1:1+0.04*Math.sin(this.time*6);
       if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
       if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
       if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
@@ -6803,7 +6813,6 @@ const Battle={
       // D5: adjusted for sprite scale — sprite top is at u.y - 24*1.8*(z/10).
       // PERF-R12: skip name text when >30 units (text rendering is very expensive).
       const spriteTop=u.y-(u.z||10)/10*1.8*26;
-      const manyUnits=Battle.units.length>30;
       if(!manyUnits){
         c.fillStyle=TEAM_COLORS[u.team]||"#fff";c.font="9px sans-serif";c.textAlign="center";
         c.strokeStyle="rgba(0,0,0,0.7)";c.lineWidth=2.5;
@@ -7083,6 +7092,8 @@ const Battle={
     for(const d of this.damageNums){
       if(d.crit)continue;
       const alpha=Math.min(1,d.life/0.3);
+      // PERF-R12: skip nearly-invisible damage numbers (saves text rendering).
+      if(alpha<0.05)continue;
       c.globalAlpha=alpha;
       const isHeal=typeof d.val==="string"&&d.val.startsWith("+");
       c.fillStyle=isHeal?"#34d399":TEAM_COLORS[d.team]||"#fff";
@@ -7095,6 +7106,7 @@ const Battle={
     for(const d of this.damageNums){
       if(!d.crit)continue;
       const alpha=Math.min(1,d.life/0.3);
+      if(alpha<0.05)continue;
       c.globalAlpha=alpha;
       c.fillStyle="#fbbf24";
       const prefix=d.type==="ability"?"*":d.type==="spell"?"~":d.type==="poison"?"p":"";

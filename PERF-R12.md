@@ -70,31 +70,34 @@ Separate timings:
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
 | Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.40ms | 0.63ms | 1.03ms | 15.8MB | 3 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.77ms | 0.77ms | 1.54ms | 16.4MB | 9 |
-| 50v50 (100 units) | 60.3 | 16.67ms | 1.83ms | 1.27ms | 3.10ms | 17.1MB | 23 |
-| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.39ms | 0.00ms | 20.0MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.67ms | 0.37ms | 0.57ms | 0.95ms | 15.7MB | 3 |
+| 20v20 (40 units) | 60.3 | 16.67ms | 1.03ms | 0.91ms | 1.95ms | 16.6MB | 10 |
+| 50v50 (100 units) | 60.2 | 16.67ms | 2.39ms | 1.29ms | 3.20ms | 17.4MB | 24 |
+| MP Guest (50v50) | 60.9 | 16.67ms | 0.00ms | 0.57ms | 0.00ms | 20.2MB | 0 |
 
-### After Opt Sub-function timings (50v50)
-- spriteDraw: 0.0078ms/call (310ms total, 40K calls) — **4.5x faster per call**
-- drawShapeRaw: 0.0027ms/call (59ms total, 21K calls) — **91% fewer calls** (cache hits)
-- act: 0.0140ms/call (553ms total, 40K calls) — **targeting cache saves 0.52ms/frame**
-- drawFace: 0.0017ms/call (65ms total, 40K calls)
-- drawBackground: 0.0522ms/call (21ms total, 400 calls) — **pattern+gradient cached**
-- updateProjectiles: 0.0590ms/call (24ms total, 400 calls) — **Map-based lookup**
-- separate: 0.1613ms/call (65ms total, 400 calls)
-- drawDmgNums: 0.0908ms/call (36ms total, 400 calls) — **emojis removed, two-pass batch**
+Note: 50v50 CPU varies 2.65-4.26ms across runs due to combat randomness (avg ~3.2ms).
+
+### After Opt Sub-function timings (50v50, representative run)
+- spriteDraw: 0.0047ms/call (179ms total, 38K calls) — **7.4x faster per call**
+- drawShapeRaw: 0.0022ms/call (48ms total, 22K calls) — **91% fewer calls** (cache hits)
+- act: 0.0132ms/call (500ms total, 38K calls) — **targeting cache + merged loops**
+- drawFace: 0.0020ms/call (7ms total, 3.5K calls) — **91% fewer calls** (skip when >30 units)
+- drawBackground: 0.0635ms/call (24ms total, 384 calls) — **pattern+gradient cached**
+- updateProjectiles: 0.0567ms/call (22ms total, 384 calls) — **Map-based lookup**
+- separate: 0.1492ms/call (57ms total, 384 calls)
+- drawDmgNums: 0.0919ms/call (35ms total, 384 calls) — **emojis removed, two-pass batch, skip invisible**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 3.10ms | **58% faster** |
-| Render avg | 4.65ms | 1.27ms | **73% faster** |
-| Update avg | 2.75ms | 1.83ms | **33% faster** |
-| spriteDraw/call | 0.0349ms | 0.0078ms | **4.5x faster** |
-| drawShapeRaw calls | 236K | 21K | **91% reduction** |
-| Memory | 17.6MB | 17.1MB | **3% less** |
+| CPU avg | 7.40ms | 3.20ms | **57% faster** |
+| Render avg | 4.65ms | 1.29ms | **72% faster** |
+| Update avg | 2.75ms | 2.39ms | **13% faster** |
+| spriteDraw/call | 0.0349ms | 0.0047ms | **7.4x faster** |
+| drawFace calls | 38K | 3.5K | **91% reduction** (skip when >30 units) |
+| drawShapeRaw calls | 236K | 22K | **91% reduction** (cache hits) |
+| Memory | 17.6MB | 17.4MB | **1% less** |
 
 ## Optimizations Implemented
 
@@ -208,6 +211,32 @@ Separate timings:
 - Cache `createRadialGradient` for arena glow — only depends on w/h/arena
 - Batch 12 decorative ground dots into single beginPath/fill (12 → 1 draw call)
 
+### 24. Sprite Draw: Avoid save/restore in cached path
+- Replace `c.save(); c.globalAlpha=alpha; c.drawImage(...); c.restore()` with
+  `const old=c.globalAlpha; c.globalAlpha=alpha; c.drawImage(...); c.globalAlpha=old;`
+- save/restore pushes/pops entire state stack — just swapping globalAlpha is cheaper
+- drawImage doesn't modify any state besides what's explicitly set
+
+### 25. Skip face rendering when >30 units
+- Face drawing (eye tracking) requires save + translate + scale + translate + drawFace + restore
+- For 100 units, that's 100 save/restore + 100 transform stacks per frame
+- Skip when >30 units — faces are a tiny visual detail at that scale
+- drawFace calls: 38K → 3.5K (91% reduction)
+
+### 26. Hoist per-frame constants outside render loop
+- `manyUnits`, `manyUnitsR`, `ringPulse` computed once per frame instead of per unit
+- Avoids 100× recomputation of `Battle.units.length>30` and `Math.sin(this.time*6)`
+
+### 27. Merge update loops
+- Merged 3 loops (death detect + alive arrays + flag reset) into 1
+- Reduces 300 iterations to 100 per frame
+- onUnitDeath can spawn minions — for...of picks them up in same pass (V8 behavior)
+
+### 28. Skip nearly-invisible damage numbers
+- Damage numbers with alpha < 0.05 are skipped (life < 0.015s)
+- Saves text rendering (strokeText + fillText) for fading numbers
+- Reduces drawDmgNums work by ~10% at end of damage number lifetime
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -216,11 +245,18 @@ Separate timings:
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): 3.10ms on my Mac
-- On a 5x slower machine: ~15.5ms — within 16.67ms budget
-- On a 3x slower machine: ~9.3ms — comfortable headroom
-- MP Guest (50v50): 0.39ms render only — trivially 60fps on any hardware
+- 50v50 CPU (with combat): ~3.2ms avg on my Mac (2.65-4.26ms range)
+- On a 5x slower machine: ~16ms — at the 16.67ms budget limit
+- On a 3x slower machine: ~9.6ms — comfortable headroom
+- MP Guest (50v50): 0.57ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
+
+## Single/Multiplayer Unification
+- Render path is already unified: both single and multiplayer call `this.render()`
+- Single-player: `update()` runs game logic (movement, attacks, abilities), then `render()`
+- Multiplayer guest: `_interpRender()` interpolates unit positions from snapshots, then calls `render()`
+- No duplicated render code — all rendering (sprites, HP bars, projectiles, damage numbers, background) is shared
+- Update path is necessarily different (single-player is authoritative, guest just interpolates)
 
 ## Bugs Found and Fixed
 1. **Splash damage friendly fire**: Projectile foes array included all units, not just enemies. Fixed by building separate foes arrays per team.
