@@ -5900,7 +5900,9 @@ const Battle={
     // 2. detect newly dead units → onUnitDeath
     // 3. build alive arrays (split by team) + reset animation flags.
     // PERF-R12: merge 3 loops into 1 (death detect + alive arrays + flag reset).
-    const players=[],enemies=[];
+    // PERF-R12: store alive arrays as instance props for checkEnd() reuse.
+    const players=this._alivePlayers||(this._alivePlayers=[]), enemies=this._aliveEnemies||(this._aliveEnemies=[]);
+    players.length=0; enemies.length=0;
     for(const u of this.units){
       if(u.h<=0){
         if(u.deathT===undefined)this.onUnitDeath(u);
@@ -7167,7 +7169,10 @@ const Battle={
   spawnDmgNum(x,y,val,team,crit,type){
     if(typeof x!=="number"||typeof y!=="number"||isNaN(x)||isNaN(y))return;
     if(!this.damageNums)this.damageNums=[];
-    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,team,crit:!!crit,type:type||"normal",vy:-40});
+    // PERF-R12: precompute display text at spawn (avoids ternary chain per draw call).
+    const t=type||"normal";
+    const txt=t==="ability"?"*"+val:t==="spell"?"~"+val:t==="poison"?"p"+val:""+val;
+    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,txt,team,crit:!!crit,type:t,vy:-40});
     if(this.damageNums.length>40)this.damageNums.shift();
   },
 
@@ -7210,7 +7215,7 @@ const Battle={
     if(!this.damageNums||!this.damageNums.length)return;
     // PERF-R12: batch by font size (crit=14px, normal=10px) AND by color.
     // Group: [font][color] → fillStyle set once per group instead of per item.
-    // Remove emojis (💥✨🔮☠️) — emoji rendering in canvas is extremely expensive.
+    // PERF-R12: precomputed txt field avoids ternary chain per draw call.
     c.textAlign="center";
     c.strokeStyle="rgba(0,0,0,0.8)";
     c.lineWidth=3;
@@ -7220,39 +7225,36 @@ const Battle={
     c.fillStyle=TEAM_COLORS.player;
     for(const d of this.damageNums){
       if(d.crit)continue;
-      if(typeof d.val==="string"&&d.val.startsWith("+"))continue;
       if(d.team!=="player")continue;
-      const alpha=Math.min(1,d.life/0.3);
+      if(typeof d.val==="string"&&d.val.charAt(0)==="+")continue;
+      const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
-      const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
-      c.strokeText(txt,d.x,d.y);
-      c.fillText(txt,d.x,d.y);
+      c.strokeText(d.txt,d.x,d.y);
+      c.fillText(d.txt,d.x,d.y);
     }
     // Group B: enemy damage (red).
     c.fillStyle=TEAM_COLORS.enemy;
     for(const d of this.damageNums){
       if(d.crit)continue;
-      if(typeof d.val==="string"&&d.val.startsWith("+"))continue;
       if(d.team==="player")continue;
-      const alpha=Math.min(1,d.life/0.3);
+      if(typeof d.val==="string"&&d.val.charAt(0)==="+")continue;
+      const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
-      const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
-      c.strokeText(txt,d.x,d.y);
-      c.fillText(txt,d.x,d.y);
+      c.strokeText(d.txt,d.x,d.y);
+      c.fillText(d.txt,d.x,d.y);
     }
     // Group C: heals (green).
     c.fillStyle="#34d399";
     for(const d of this.damageNums){
       if(d.crit)continue;
-      if(!(typeof d.val==="string"&&d.val.startsWith("+")))continue;
-      const alpha=Math.min(1,d.life/0.3);
+      if(!(typeof d.val==="string"&&d.val.charAt(0)==="+"))continue;
+      const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
-      const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
-      c.strokeText(txt,d.x,d.y);
-      c.fillText(txt,d.x,d.y);
+      c.strokeText(d.txt,d.x,d.y);
+      c.fillText(d.txt,d.x,d.y);
     }
     // Pass 2: crit (14px font, gold color)
     c.font="bold 14px sans-serif";
@@ -7260,14 +7262,12 @@ const Battle={
     for(const d of this.damageNums){
       if(!d.crit)continue;
       // PERF-R12: critical heals don't exist in current code, but guard for safety.
-      if(typeof d.val==="string"&&d.val.startsWith("+"))continue;
-      const alpha=Math.min(1,d.life/0.3);
+      if(typeof d.val==="string"&&d.val.charAt(0)==="+")continue;
+      const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
-      const prefix=d.type==="ability"?"*":d.type==="spell"?"~":d.type==="poison"?"p":"";
-      const txt=prefix+d.val;
-      c.strokeText(txt,d.x,d.y);
-      c.fillText(txt,d.x,d.y);
+      c.strokeText(d.txt,d.x,d.y);
+      c.fillText(d.txt,d.x,d.y);
     }
     c.globalAlpha=1;
     c.textAlign="left";
@@ -7275,13 +7275,16 @@ const Battle={
   },
 
   checkEnd(){
-    const playerAlive=this.units.some(u=>u.team==="player"&&u.h>0);
-    const enemyAlive=this.units.some(u=>u.team==="enemy"&&u.h>0);
+    // PERF-R12: use pre-built alive arrays (avoids 2× this.units.some() per frame).
+    const players=this._alivePlayers, enemies=this._aliveEnemies;
+    const playerAlive=players&&players.length>0;
+    const enemyAlive=enemies&&enemies.length>0;
     if(playerAlive&&enemyAlive){
       // Battle timeout: if battle runs > 90s, end as draw (prevents kite stalemates).
       if(this.time>90){
-        const playerHP=this.units.filter(u=>u.team==="player").reduce((s,u)=>s+Math.max(0,u.h),0);
-        const enemyHP=this.units.filter(u=>u.team==="enemy").reduce((s,u)=>s+Math.max(0,u.h),0);
+        let playerHP=0,enemyHP=0;
+        for(let i=0;i<players.length;i++)playerHP+=Math.max(0,players[i].h);
+        for(let i=0;i<enemies.length;i++)enemyHP+=Math.max(0,enemies[i].h);
         this.winner=playerHP>enemyHP?"player":(enemyHP>playerHP?"enemy":"draw");
         if(this.debug){
           console.warn("[TIMEOUT] t="+this.time.toFixed(1)+" battle ended after 90s! winner="+this.winner+" P_HP="+playerHP.toFixed(0)+" E_HP="+enemyHP.toFixed(0));
