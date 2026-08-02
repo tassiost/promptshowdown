@@ -3970,6 +3970,8 @@ const ANIM_DURATIONS={idle:2.0,move:0.6,attack:0.4,death:0.5};
 const SPRITE_CACHE_FRAMES=8; // frames per animation cycle
 const SPRITE_CACHE_PAD=4;     // padding around sprite bounds
 const _spriteCache=new Map(); // key → offscreen canvas
+// PERF-R12: hoist faced plans Set (avoid per-drawFace array allocation + includes scan).
+const _facedPlans=new Set(["humanoid","undead","demon","beast-man","ghost","flying","monopod","angel","wraith","gargoyle","spider","kraken","wyvern","treant"]);
 
 function _getRecipeId(u){
   // Use the unit's name as a proxy for recipe identity (each forged unit has a unique name).
@@ -4629,8 +4631,8 @@ const SpriteRenderer={
   // Phase 24f: faces — eyes that track targets, blink, widen on attack.
   drawFace(c,u,channels,state){
     // Only draw faces for humanoid-like body plans.
-    const facedPlans=["humanoid","undead","demon","beast-man","ghost","flying","monopod","angel","wraith","gargoyle","spider","kraken","wyvern","treant"];
-    if(u.bodyPlan&&!facedPlans.includes(u.bodyPlan))return;
+    // PERF-R12: hoist facedPlans set (avoid per-call array allocation).
+    if(u.bodyPlan&&!_facedPlans.has(u.bodyPlan))return;
     // Phase 25: skip face if recipe says face:false or eyeStyle is closed.
     if(u.recipe&&(u.recipe.face===false||u.recipe.eyeStyle==="closed"))return;
     // Find head position (top of the unit).
@@ -4663,14 +4665,15 @@ const SpriteRenderer={
     // Target tracking: shift eyes toward target.
     // PERF-R12: skip target tracking when many units (Math.hypot per unit per frame).
     let dx=0,dy=0;
-    if(Battle.units.length<=30&&u.target&&u.target.h>0){
+    if(SpriteRenderer._frameUnitCount<=30&&u.target&&u.target.h>0){
       const tdx=u.target.x-u.x,tdy=u.target.y-u.y;
-      const td=Math.hypot(tdx,tdy)||1;
+      // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+      const td=Math.sqrt(tdx*tdx+tdy*tdy)||1;
       dx=(tdx/td)*1.5;dy=(tdy/td)*1.5;
     }
     c.save();
     // PERF-R11: skip shadowBlur on glowing eyes when many units (expensive GPU op).
-    if(eyeGlow&&Battle.units.length<=10){c.shadowBlur=eyeGlow;c.shadowColor=eyeColor;}
+    if(eyeGlow&&SpriteRenderer._frameUnitCount<=10){c.shadowBlur=eyeGlow;c.shadowColor=eyeColor;}
     c.fillStyle=eyeColor;
     // Render eyes differently based on eye style.
     switch(eyeStyle){
@@ -5180,7 +5183,8 @@ const BattleFX={
     if(fxType==="projectile"){
       // Arrow projectile: small particle streak from unit to target.
       const dx=target.x-u.x,dy=target.y-u.y;
-      const d=Math.hypot(dx,dy)||1;
+      // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+      const d=Math.sqrt(dx*dx+dy*dy)||1;
       const steps=Math.min(5,Math.floor(d/20));
       for(let i=0;i<steps;i++){
         const t=i/steps;
