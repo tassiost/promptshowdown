@@ -6175,7 +6175,7 @@ const Battle={
     target.hasBeenHit=true; // Phase 10: for on_first_hit trigger
     // D4: hit reaction — recoil away from attacker.
     const dx=target.x-attacker.x,dy=target.y-attacker.y;
-    const dd=Math.hypot(dx,dy)||1;
+    const dd=Math.sqrt(dx*dx+dy*dy)||1;
     target.hitReact=0.15;
     target.hitReactDir={x:dx/dd,y:dy/dd};
     // Phase 17: FX on hit.
@@ -6446,14 +6446,15 @@ const Battle={
         const tgt=idMap.get(p.targetId);
         if(tgt&&tgt.h>0){p.tx=tgt.x;p.ty=tgt.y;}
       }
-      const dx=p.tx-p.x, dy=p.ty-p.y, dd=Math.hypot(dx,dy);
+      const dx=p.tx-p.x, dy=p.ty-p.y, dd=Math.sqrt(dx*dx+dy*dy);
       const sp=320*dt;
       if(dd<=sp){
         // PERF-R12: build foes array lazily per team (only when a projectile hits).
         const foes=getFoes.call(this,p.team);
         let hit=false;
         for(let f of foes){
-          if(Math.hypot(f.x-p.tx,f.y-p.ty)<=22+f.z){
+          const fdx=f.x-p.tx, fdy=f.y-p.ty;
+          if(fdx*fdx+fdy*fdy<=(22+f.z)*(22+f.z)){
             // Synthetic attacker carrying projectile properties.
             const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
               c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD,dmgDealt:0};
@@ -6522,18 +6523,22 @@ const Battle={
         const sameCell=(dx===0&&dy===0);
         for(let ai=0;ai<cell.length;ai++){
           const a=cell[ai];
+          const aSep=a.z*1.8;
+          const aSep2=aSep*aSep;
           const bStart=sameCell?ai+1:0;
           for(let bi=bStart;bi<ncell.length;bi++){
             const b=ncell[bi];
             const ddx=b.x-a.x, ddy=b.y-a.y;
             const d2=ddx*ddx+ddy*ddy;
             // D5: keep units at least 1.8× their radius apart so they don't visually overlap.
-            const minD=Math.max(a.z,b.z)*1.8;
-            if(d2<minD*minD){
+            const bSep=b.z*1.8;
+            const minD2=aSep>bSep?aSep2:bSep*bSep;
+            if(d2<minD2){
               const d=Math.sqrt(d2);
               let nx,ny;
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
               else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
+              const minD=aSep>bSep?aSep:bSep;
               const push=(minD-Math.max(d,0.001))/2;
               a.x-=nx*push;a.y-=ny*push;
               b.x+=nx*push;b.y+=ny*push;
