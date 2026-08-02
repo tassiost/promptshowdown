@@ -6444,19 +6444,19 @@ const Battle={
     for(let p of this.projectiles){
       if(p.dead)continue;
       // PERF-R12: record trail position (reuse array, avoid per-frame object alloc).
-      if(!p.trail)p.trail=[0,0,0,0,0,0,0,0]; // 4 points × 2 coords
+      // Array holds 4 points × 2 coords = 8 slots. Shift before writing when full.
+      if(!p.trail)p.trail=[0,0,0,0,0,0,0,0];
       if(!p._trailLen)p._trailLen=0;
-      const ti=p._trailLen*2;
-      p.trail[ti]=p.x;p.trail[ti+1]=p.y;
-      p._trailLen++;
-      if(p._trailLen>4){
-        // Shift: copy points 1-3 to 0-2 (cheaper than array.shift on object array).
+      // PERF-R12: shift first if full (avoids out-of-bounds write at index 8).
+      if(p._trailLen>=4){
         p.trail[0]=p.trail[2];p.trail[1]=p.trail[3];
         p.trail[2]=p.trail[4];p.trail[3]=p.trail[5];
         p.trail[4]=p.trail[6];p.trail[5]=p.trail[7];
-        p.trail[6]=p.x;p.trail[7]=p.y;
-        p._trailLen=4;
+        p._trailLen=3; // will be incremented to 4 below
       }
+      const ti=p._trailLen*2;
+      p.trail[ti]=p.x;p.trail[ti+1]=p.y;
+      p._trailLen++;
       // Homing: track target unit if still alive, update target position.
       if(p.targetId!=null){
         const tgt=idMap.get(p.targetId);
