@@ -69,22 +69,23 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.34ms | 0.50ms | 0.84ms | 15.5MB | 2 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.73ms | 0.65ms | 1.39ms | 17.2MB | 10 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.40ms | 0.84ms | 2.24ms | 18.5MB | 15 |
-| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.34ms | 0.00ms | 19.4MB | 0 |
+| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.66ms | 0.37ms | 0.56ms | 0.93ms | 15.5MB | 2 |
+| 20v20 (40 units) | 60.3 | 16.66ms | 0.74ms | 0.66ms | 1.40ms | 17.1MB | 9 |
+| 50v50 (100 units) | 60.2 | 16.67ms | 1.40ms | 0.84ms | 2.24ms | 17.2MB | 18 |
+| MP Guest (50v50) | 60.2 | 16.67ms | 0.00ms | 0.32ms | 0.00ms | 20.8MB | 0 |
 
-Note: 50v50 CPU varies 2.2-2.7ms across runs due to combat randomness (avg ~2.4ms).
+Note: 50v50 CPU varies 2.2-2.7ms across runs due to combat randomness (avg ~2.3ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0041ms/call (159ms total, 38K calls) — **8.5x faster per call**
-- drawShapeRaw: 0.0024ms/call (45ms total, 19K calls) — **92% fewer calls** (cache hits)
-- act: 0.0102ms/call (389ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0022ms/call (7ms total, 3.0K calls) — **92% fewer calls** (skip when >30 units)
-- drawBackground: 0.0477ms/call (18ms total, 386 calls) — **pattern+gradient+lane cached**
-- separate: 0.1363ms/call (53ms total, 386 calls)
-- drawDmgNums: 0.0756ms/call (29ms total, 386 calls) — **4-pass color batch + skip invisible**
+- spriteDraw: 0.0043ms/call (166ms total, 39K calls) — **8.1x faster per call**
+- drawShapeRaw: 0.0023ms/call (46ms total, 20K calls) — **92% fewer calls** (cache hits)
+- act: 0.0102ms/call (397ms total, 39K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0018ms/call (6ms total, 3.2K calls) — **92% fewer calls** (skip when >30 units)
+- drawBackground: 0.0418ms/call (16ms total, 392 calls) — **pattern+gradient+lane cached**
+- separate: 0.1288ms/call (51ms total, 392 calls) — **spatial grid + hoisted aSep**
+- drawDmgNums: 0.0765ms/call (30ms total, 392 calls) — **4-pass color batch + precomputed text + skip invisible**
+- updateProjectiles: 0.0477ms/call (19ms total, 392 calls) — **Map-based lookup + squared dist**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
@@ -93,7 +94,7 @@ Note: 50v50 CPU varies 2.2-2.7ms across runs due to combat randomness (avg ~2.4m
 | CPU avg | 7.40ms | 2.24ms | **70% faster** |
 | Render avg | 4.65ms | 0.84ms | **82% faster** |
 | Update avg | 2.75ms | 1.40ms | **49% faster** |
-| spriteDraw/call | 0.0349ms | 0.0041ms | **8.5x faster** |
+| spriteDraw/call | 0.0349ms | 0.0043ms | **8.1x faster** |
 | act/call | 0.0300ms | 0.0102ms | **2.9x faster** |
 | drawFace calls | 38K | 3.0K | **92% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 19K | **92% reduction** (cache hits) |
@@ -279,6 +280,26 @@ Note: 50v50 CPU varies 2.2-2.7ms across runs due to combat randomness (avg ~2.4m
 ### 36. Hoisted quality/reducedMotion checks
 - Compute `_auraEnabled` once per frame (was 100× per frame via fxAura → G.qualityTier)
 - Skips fxAura call entirely when auras disabled
+
+### 37. Remaining Math.hypot → Math.sqrt + squared dist
+- updateProjectiles: projectile distance + hit detection (squared dist)
+- takeDamage: hit reaction recoil direction
+- Saves ~50 Math.hypot calls per frame in combat
+
+### 38. drawDmgNums precomputed text
+- Precompute display text (`txt` field) at spawn time
+- Avoids ternary chain per draw call (4 passes × 40 items = 160 ternary evals/frame)
+- Use `charAt(0)` instead of `startsWith` (faster for single char)
+- Use ternary instead of `Math.min` for alpha (branch prediction friendly)
+
+### 39. checkEnd uses alive arrays
+- Use pre-built `_alivePlayers`/`_aliveEnemies` (avoids 2× `this.units.some()` per frame)
+- Timeout path: iterate alive arrays instead of `filter`+`reduce`
+- Guard against first-frame call before arrays are built
+
+### 40. separate inner loop optimization
+- Hoist `a.z*1.8` + squared comparison outside inner loop
+- Use `Math.max` → ternary for `push` calculation (avoids function call)
 
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
