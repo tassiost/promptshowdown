@@ -7032,8 +7032,8 @@ const Battle={
       const u=e.u;
       if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
       if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
-      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
+      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
       if(u.abFlash>0){
         const t=1-u.abFlash/0.4;
         c.globalAlpha=Math.max(0,1-t);
@@ -7159,6 +7159,8 @@ const Battle={
           c.stroke();
         }
       }
+      // PERF-R12: reset globalAlpha after trail (trail loop leaves it at last segment value).
+      c.globalAlpha=1;
       // Weapon-specific projectile shape.
       c.save();
       c.translate(p.x,p.y);
