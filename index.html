@@ -6833,10 +6833,11 @@ const Battle={
     }
     this._bgParticles.length=bpW;
     // Draw behind units (already on canvas, before unit draw).
+    // PERF-R12: set fillStyle once (all particles use same color = theme.ambient).
+    c.fillStyle=theme.ambient;
     for(const p of this._bgParticles){
       const a=Math.min(1,p.life/p.maxLife)*0.6;
       c.globalAlpha=a;
-      c.fillStyle=p.c;
       c.beginPath();
       c.arc(p.x,p.y,p.r,0,Math.PI*2);
       c.fill();
