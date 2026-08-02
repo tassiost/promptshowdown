@@ -7450,7 +7450,9 @@ const Battle={
     c.font="bold 10px sans-serif";
     // Group A: player damage (blue).
     c.fillStyle=TEAM_COLORS.player;
-    for(const d of this.damageNums){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let i=0;i<n;i++){
+      const d=this.damageNums[i];
       if(d.crit||d.isHeal||d.team!=="player")continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
@@ -7460,7 +7462,8 @@ const Battle={
     }
     // Group B: enemy damage (red).
     c.fillStyle=TEAM_COLORS.enemy;
-    for(const d of this.damageNums){
+    for(let i=0;i<n;i++){
+      const d=this.damageNums[i];
       if(d.crit||d.isHeal||d.team==="player")continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
@@ -7470,7 +7473,8 @@ const Battle={
     }
     // Group C: heals (green).
     c.fillStyle="#34d399";
-    for(const d of this.damageNums){
+    for(let i=0;i<n;i++){
+      const d=this.damageNums[i];
       if(d.crit||!d.isHeal)continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
@@ -7481,7 +7485,8 @@ const Battle={
     // Pass 2: crit (14px font, gold color)
     c.font="bold 14px sans-serif";
     c.fillStyle="#fbbf24";
-    for(const d of this.damageNums){
+    for(let i=0;i<n;i++){
+      const d=this.damageNums[i];
       if(!d.crit||d.isHeal)continue;
       const alpha=d.life<0.3?d.life/0.3:1;
       if(alpha<0.05)continue;
