@@ -70,34 +70,34 @@ Separate timings:
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
 | Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.2 | 16.67ms | 0.34ms | 0.44ms | 0.79ms | 15.6MB | 3 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.71ms | 0.50ms | 1.21ms | 15.8MB | 10 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.38ms | 0.69ms | 2.07ms | 17.3MB | 21 |
-| MP Guest (50v50) | 60.3 | 16.66ms | 0.00ms | 0.28ms | 0.00ms | 20.1MB | 0 |
+| 5v5 (10 units) | 60.2 | 16.67ms | 0.37ms | 0.45ms | 0.82ms | 15.8MB | 2 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.74ms | 0.52ms | 1.27ms | 16.8MB | 8 |
+| 50v50 (100 units) | 60.2 | 16.67ms | 1.37ms | 0.64ms | 2.01ms | 19.0MB | 21 |
+| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.30ms | 0.00ms | 20.9MB | 0 |
 
-Note: 50v50 CPU varies 2.0-2.3ms across runs due to combat randomness (avg ~2.1ms).
+Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.0ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0027ms/call (104ms total, 39K calls) — **12.9x faster per call**
-- drawShapeRaw: 0.0028ms/call (10ms total, 3.6K calls) — **98% fewer calls** (hitReact now cached)
-- act: 0.0099ms/call (381ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0020ms/call (1ms total, 441 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
-- drawBackground: 0.0407ms/call (16ms total, 388 calls) — **pattern+gradient+lane cached**
-- separate: 0.1420ms/call (55ms total, 388 calls) — **spatial grid + hoisted aSep**
-- drawDmgNums: 0.0845ms/call (33ms total, 388 calls) — **4-pass color batch + precomputed text + skip invisible**
-- updateProjectiles: 0.0495ms/call (19ms total, 388 calls) — **Map-based lookup + squared dist + flat trail**
+- spriteDraw: 0.0026ms/call (96ms total, 38K calls) — **13.4x faster per call**
+- drawShapeRaw: 0.0035ms/call (12ms total, 3.5K calls) — **99% fewer calls** (hitReact now cached)
+- act: 0.0104ms/call (390ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0026ms/call (1ms total, 428 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
+- drawBackground: 0.0346ms/call (13ms total, 381 calls) — **offscreen canvas cache (static layers)**
+- separate: 0.1052ms/call (40ms total, 381 calls) — **spatial grid + cellSize=40 + hoisted aSep**
+- drawDmgNums: 0.0567ms/call (22ms total, 381 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text**
+- updateProjectiles: 0.0501ms/call (19ms total, 381 calls) — **Map-based lookup + squared dist + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.07ms | **72% faster** |
-| Render avg | 4.65ms | 0.69ms | **85% faster** |
-| Update avg | 2.75ms | 1.38ms | **50% faster** |
-| spriteDraw/call | 0.0349ms | 0.0027ms | **12.9x faster** |
-| act/call | 0.0300ms | 0.0099ms | **3.0x faster** |
-| drawFace calls | 38K | 3.0K | **92% reduction** (skip when >30 units) |
-| drawShapeRaw calls | 236K | 19K | **92% reduction** (cache hits) |
+| CPU avg | 7.40ms | 2.01ms | **73% faster** |
+| Render avg | 4.65ms | 0.64ms | **86% faster** |
+| Update avg | 2.75ms | 1.37ms | **50% faster** |
+| spriteDraw/call | 0.0349ms | 0.0026ms | **13.4x faster** |
+| act/call | 0.0300ms | 0.0104ms | **2.9x faster** |
+| drawFace calls | 38K | 428 | **99% reduction** (skip when >30 units) |
+| drawShapeRaw calls | 236K | 3.5K | **99% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
 | Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
 | Memory | 17.6MB | 18.5MB | **+5%** (grid + pass2 arrays) |
@@ -341,6 +341,26 @@ Note: 50v50 CPU varies 2.0-2.3ms across runs due to combat randomness (avg ~2.1m
 ### 48. Integer pixel drawImage
 - Round cached sprite position to integer pixels (|0)
 - Avoids sub-pixel anti-aliasing overhead (per MDN canvas optimization guide)
+
+### 49. Skip strokeText when >15 damage numbers
+- strokeText is expensive (glyph path rendering, see MDN + Firefox bug 943351)
+- Skip outline when many damage numbers on screen (visual nicety)
+- drawDmgNums: 33ms to 22ms (33% faster)
+
+### 50. Cache static background to offscreen canvas
+- Render static layers (gradient, noise, arena glow, ground, fog, lanes, divider) to offscreen canvas
+- Only re-render when theme/canvas size/arena changes
+- Per frame: drawImage cached canvas + draw dynamic parts (parallax midground + ambient particles)
+- drawBackground: 17ms to 13ms (24% faster)
+
+### 51. separate cellSize=40 (was 60)
+- Smaller cells = fewer units per cell = fewer pair checks
+- separate: 45ms to 38ms (16% faster)
+
+### 52. Optimize ability triggers (when_surrounded, when_ally_hurt)
+- when_surrounded: avoid filter() allocation, use squared dist, early exit on abCool>0
+- when_ally_hurt: early exit on abCool>0, manual loop instead of some()
+- Eliminates array allocation + Math.sqrt per trigger check
 
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
