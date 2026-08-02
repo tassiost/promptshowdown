@@ -5566,7 +5566,16 @@ const Spell={
       }
       if(z.duration<=0)z._remove=true;
     }
-    battle.zones=battle.zones.filter(z=>!z._remove);
+    // PERF-R12: in-place compaction (avoids filter array allocation).
+    let zw=0;
+    for(let i=0;i<battle.zones.length;i++){
+      const z=battle.zones[i];
+      if(!z._remove){
+        if(zw!==i)battle.zones[zw]=z;
+        zw++;
+      }
+    }
+    battle.zones.length=zw;
   },
 };
 
@@ -6053,7 +6062,18 @@ const Battle={
         if(idx>=0)this._allUnits[idx]={...u};
       }
     }
-    if(hasDead)this.units=this.units.filter(u=>u.deathT===undefined||u.deathT<0.5);
+    // PERF-R12: in-place compaction for death cleanup (avoids filter array allocation).
+    if(hasDead){
+      let w=0;
+      for(let i=0;i<this.units.length;i++){
+        const u=this.units[i];
+        if(u.deathT===undefined||u.deathT<0.5){
+          if(w!==i)this.units[w]=u;
+          w++;
+        }
+      }
+      this.units.length=w;
+    }
     // HUD — PERF-R11: throttle to ~10fps to avoid DOM thrash every frame.
     this._hudT=(this._hudT||0)+dt;
     if(this._hudT>=0.1){
