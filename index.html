@@ -5816,7 +5816,8 @@ const Battle={
     };
     this.last=performance.now();
     cancelAnimationFrame(this.frame);
-    this.frame=requestAnimationFrame(this.loop.bind(this));
+    if(!this._loopBound)this._loopBound=this.loop.bind(this);
+    this.frame=requestAnimationFrame(this._loopBound);
   },
 
   // Phase 7: adaptive frame budget — 60fps desktop, ~30fps mobile (battery).
@@ -5863,7 +5864,9 @@ const Battle={
 
   loop(time){
     if(!this.running)return;
-    this.frame=requestAnimationFrame(this.loop.bind(this));
+    // PERF-R12: cache bound loop function (avoids .bind() allocation every frame).
+    if(!this._loopBound)this._loopBound=this.loop.bind(this);
+    this.frame=requestAnimationFrame(this._loopBound);
     if(document.hidden){this.last=time;return;}
     let dt=(time-this.last)/1000;
     if(dt<this.targetFrameTime())return;
@@ -5875,7 +5878,8 @@ const Battle={
     // to 60% speed for dramatic effect (only if speed is >= 1).
     let effectiveSpeed=this.speed||1;
     if(effectiveSpeed>=1&&!this._manualSpeed){
-      const aliveCount=this.units.filter(u=>u.h>0).length;
+      // PERF-R12: use pre-built alive arrays (avoids filter() allocation every frame).
+      const aliveCount=(this._alivePlayers?this._alivePlayers.length:0)+(this._aliveEnemies?this._aliveEnemies.length:0);
       if(aliveCount<=3&&aliveCount>0&&this.time>5){
         effectiveSpeed=effectiveSpeed*0.6;
       }
