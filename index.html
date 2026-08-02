@@ -4105,28 +4105,30 @@ const SpriteRenderer={
   // PERF-R12: reusable lightweight uLocal buffer (only x,y needed by drawShapeRaw/_applyJoint).
   _uLocalBuf:{x:0,y:0},
   _drawOne(c,shape,channels,u,isStroke){
-    const raw=(isStroke?this._strokeShapeRaw:this._drawShapeRaw).bind(this);
+    // PERF-R12: avoid .bind(this) per call (allocates function) — call directly.
+    const self=this;
+    const raw=isStroke?self._strokeShapeRaw:self._drawShapeRaw;
     const parent=shape.parentJoint;
     const joint=shape.joint;
-    if(!parent&&!joint){raw(c,shape,u);return;}
+    if(!parent&&!joint){raw.call(self,c,shape,u);return;}
     // When parented, the weapon is drawn at the unit's position + gripOffset (the hand)
     // in the parent-rotated frame. The parent pivot is the shoulder.
     // PERF-R12: only x,y are needed downstream — avoid {...u} spread (copies ~30 props).
     let uLocal=u;
     if(parent){
-      uLocal=this._uLocalBuf;
+      uLocal=self._uLocalBuf;
       uLocal.x=u.x+(shape.gripOffset?.x||0);
       uLocal.y=u.y+(shape.gripOffset?.y||0);
     }
     c.save();
-    if(parent) this._applyJoint(c,shape,channels,u,parent,shape.parentPivot);
+    if(parent) self._applyJoint(c,shape,channels,u,parent,shape.parentPivot);
     if(joint){
       c.save();
-      this._applyJoint(c,shape,channels,uLocal,joint,null);
-      raw(c,shape,uLocal);
+      self._applyJoint(c,shape,channels,uLocal,joint,null);
+      raw.call(self,c,shape,uLocal);
       c.restore();
     }else{
-      raw(c,shape,uLocal);
+      raw.call(self,c,shape,uLocal);
     }
     c.restore();
   },
