@@ -7742,8 +7742,9 @@ const Battle={
     for(let i=0;i<dw.length;i++)recentDmg+=dw[i][1];
     const dps=Math.round(recentDmg/3);
     if(dps>s.peakDPS)s.peakDPS=dps;
-    const playerAlive=this.units.filter(u=>u.team==="player"&&u.h>0).length;
-    const enemyAlive=this.units.filter(u=>u.team==="enemy"&&u.h>0).length;
+    // PERF-R12: use pre-built alive arrays (avoid 2× filter per overlay update).
+    const playerAlive=this._alivePlayers?this._alivePlayers.length:0;
+    const enemyAlive=this._aliveEnemies?this._aliveEnemies.length:0;
     el.style.display="block";
     el.innerHTML=
       `<div style="font-weight:700;color:var(--accent);margin-bottom:3px;">📊 Battle Stats</div>`+
