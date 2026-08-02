@@ -6617,7 +6617,47 @@ const Battle={
     // Use CSS pixel dimensions (not c.canvas.width/height which include DPR scaling).
     const w=this.canvasW||400,h=this.canvasH||550;
     const theme=this._bgThemes[this.bgTheme]||this._bgThemes.forest;
-    // PERF-R11: cache background gradients (they only depend on w/h/theme, not per-frame state).
+    // PERF-R12: cache entire static background to offscreen canvas.
+    // Only dynamic parts (parallax midground + ambient particles) are drawn per frame.
+    const bgKey=w+"x"+h+"_"+this.bgTheme+"_"+(G.save?.arena||0);
+    if(!this._bgStaticCanvas||this._bgStaticKey!==bgKey){
+      this._bgStaticKey=bgKey;
+      // Invalidate gradient caches (they're tied to context — will be rebuilt in _renderStaticBackground).
+      this._bgGradCache=null;
+      this._bgArenaGrad=null;
+      this._laneBandCache=null;
+      this._bgNoisePat=null;
+      const oc=document.createElement("canvas");
+      oc.width=w;oc.height=h;
+      const bc=oc.getContext("2d");
+      this._renderStaticBackground(bc,w,h,theme);
+      this._bgStaticCanvas=oc;
+    }
+    // Draw cached static background.
+    c.drawImage(this._bgStaticCanvas,0,0);
+    // Dynamic parts: parallax midground + ambient particles.
+    const grads=this._bgGradCache;
+    // Parallax midground — silhouette ridge that drifts with screen shake.
+    const shakeX=this.shakeAmount||0;
+    const mgY=grads.groundY-30;
+    c.fillStyle=theme.accent+"18";
+    c.beginPath();
+    c.moveTo(0,mgY+20);
+    for(let mx=0;mx<=w+20;mx+=20){
+      const ridge=Math.sin(mx*0.03+shakeX*0.1)*8+Math.sin(mx*0.07)*4;
+      c.lineTo(mx,mgY+ridge);
+    }
+    c.lineTo(w,mgY+20);
+    c.lineTo(w,h);
+    c.lineTo(0,h);
+    c.closePath();
+    c.fill();
+    // Ambient background particles — themed per arena.
+    this._updateBgParticles(c,theme);
+  },
+
+  // PERF-R12: render static background layers to offscreen canvas (cached).
+  _renderStaticBackground(c,w,h,theme){
     const cacheKey=w+"x"+h+"_"+this.bgTheme;
     if(!this._bgGradCache||this._bgGradCacheKey!==cacheKey){
       this._bgGradCacheKey=cacheKey;
@@ -6636,13 +6676,9 @@ const Battle={
       this._bgGradCache={bg:bgGrad,fog:fogGrad,ground:groundGrad,groundY};
     }
     const grads=this._bgGradCache;
-    // If a sprite background image is loaded, draw it with parallax.
+    // If a sprite background image is loaded, draw it.
     if(this.bgImage&&this.bgImage.complete){
-      const shake=this.shakeAmount||0;
-      const px=shake>0?(Math.random()-0.5)*shake:0;
-      const py=shake>0?(Math.random()-0.5)*shake*0.5:0;
-      c.drawImage(this.bgImage,px,py,w,h);
-      // Dark gradient overlay at bottom for depth.
+      c.drawImage(this.bgImage,0,0,w,h);
       const grad=c.createLinearGradient(0,h*0.6,0,h);
       grad.addColorStop(0,"rgba(0,0,0,0)");
       grad.addColorStop(1,"rgba(0,0,0,0.5)");
@@ -6652,10 +6688,9 @@ const Battle={
       // Procedural gradient background.
       c.fillStyle=grads.bg;
       c.fillRect(0,0,w,h);
-      // Noise texture overlay — tiled faint grain for organic feel.
+      // Noise texture overlay.
       const noise=this._getNoiseCanvas();
       if(noise){
-        // PERF-R12: cache pattern (only depends on noise canvas, not per-frame state).
         if(!this._bgNoisePat||this._bgNoiseSrc!==noise){
           this._bgNoisePat=c.createPattern(noise,"repeat");
           this._bgNoiseSrc=noise;
@@ -6671,7 +6706,6 @@ const Battle={
       // Arena-colored radial glow at center.
       const arena=G.arenas?.[G.save?.arena||0];
       if(arena){
-        // PERF-R12: cache radial gradient (only depends on w/h/arena, not per-frame state).
         const rgCacheKey=w+"x"+h+"_"+(arena.c||"");
         if(!this._bgArenaGrad||this._bgArenaGradKey!==rgCacheKey){
           this._bgArenaGradKey=rgCacheKey;
@@ -6684,18 +6718,16 @@ const Battle={
         c.fillStyle=this._bgArenaGrad;
         c.fillRect(0,0,w,h);
       }
-      // Ground line — subtle horizontal band where units stand.
+      // Ground line.
       c.fillStyle=grads.ground;
       c.fillRect(0,grads.groundY-20,w,50);
-      // Ground accent line.
       c.strokeStyle=theme.accent+"30";
       c.lineWidth=1;
       c.beginPath();
       c.moveTo(0,grads.groundY);
       c.lineTo(w,grads.groundY);
       c.stroke();
-      // Decorative ground dots — sparse texture.
-      // PERF-R12: batch all dots into one beginPath/fill (12 arcs → 1 draw call).
+      // Decorative ground dots.
       c.fillStyle=theme.accent+"20";
       c.beginPath();
       for(let i=0;i<12;i++){
@@ -6705,27 +6737,11 @@ const Battle={
         c.arc(gx,gy,1.5,0,Math.PI*2);
       }
       c.fill();
-      // Parallax midground — silhouette ridge that drifts with screen shake.
-      const shakeX=this.shakeAmount||0;
-      const mgY=grads.groundY-30;
-      c.fillStyle=theme.accent+"18";
-      c.beginPath();
-      c.moveTo(0,mgY+20);
-      for(let mx=0;mx<=w+20;mx+=20){
-        const ridge=Math.sin(mx*0.03+shakeX*0.1)*8+Math.sin(mx*0.07)*4;
-        c.lineTo(mx,mgY+ridge);
-      }
-      c.lineTo(w,mgY+20);
-      c.lineTo(w,h);
-      c.lineTo(0,h);
-      c.closePath();
-      c.fill();
-      // Depth fog — gradient darkening toward the top (far distance).
+      // Depth fog.
       c.fillStyle=grads.fog;
       c.fillRect(0,0,w,h*0.5);
-      // Lane formation bands — show role-based formation zones.
+      // Lane formation bands.
       const canvasH=this.canvasH||h;
-      // PERF-R12: cache lane band gradients (only depend on canvasH, not per-frame state).
       const lbKey=canvasH;
       if(!this._laneBandCache||this._laneBandCacheKey!==lbKey){
         this._laneBandCacheKey=lbKey;
@@ -6761,7 +6777,7 @@ const Battle={
         c.stroke();
         c.setLineDash([]);
       }
-      // Center divider — mid-line between armies.
+      // Center divider.
       const midY=canvasH*0.5;
       c.strokeStyle="rgba(255,255,255,.06)";
       c.lineWidth=1;
@@ -6772,8 +6788,6 @@ const Battle={
       c.stroke();
       c.setLineDash([]);
     }
-    // Ambient background particles — themed per arena.
-    this._updateBgParticles(c,theme);
   },
 
   _updateBgParticles(c,theme){
