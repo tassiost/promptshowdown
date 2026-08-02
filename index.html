@@ -3174,6 +3174,7 @@ function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=nul
   if(typeof Battle!=="undefined"){
     Battle._lockstepActive=false;
     Battle._peerConfirmedTick=null;
+    Battle._stallStart=null;
   }
 }}
 
@@ -3444,7 +3445,17 @@ function networkReceive(data){
         if(_cmdLockRate.count>20)return;
         // Validate command payload.
         if(c.type==="spell_cast"&&typeof c.spellIdx!=="number")return;
-        Battle.queueCommand(c,c.tick);
+        // DET: detect late commands — if the target tick already passed, the
+        // command can't be executed deterministically (one peer already ran it,
+        // the other missed it). Fall back to snapshot sync for the next round.
+        const currentTick=Battle._tick||0;
+        if(Battle._lockstepActive&&c.tick<=currentTick){
+          console.warn("[DET] Late command for tick "+c.tick+" (current="+currentTick+") — desync fallback.");
+          Battle._desyncFallback=true;
+          // Still queue it (harmless — the tick buffer was already deleted).
+        }else{
+          Battle.queueCommand(c,c.tick);
+        }
         // The peer has confirmed up to this tick (they're scheduling past it).
         Battle._peerConfirmedTick=Math.max(Battle._peerConfirmedTick||0,c.tick);
       }
@@ -6103,6 +6114,7 @@ const Battle={
     this._peerConfirmedTick=null;   // latest tick the peer has acknowledged
     this._lockstepActive=false;     // set true when both peers run the sim
     this._desyncFallback=false;     // set true on hash mismatch → snapshot fallback
+    this._stallStart=null;          // DET: lockstep stall watchdog timestamp
     // DET: the local player's team in the sim. Host/solo → "player". Guest in
     // lockstep → "enemy" (the sim keeps the host's labeling on both peers so the
     // initial unit array + team tags are byte-identical → deterministic).
@@ -6286,6 +6298,23 @@ const Battle={
       }
       this._accumulator-=FIXED_DT;
       steps++;
+    }
+    // DET: lockstep stall watchdog — if we're in lockstep but haven't been able to
+    // simulate any steps for 5 seconds (peer stopped sending tick_ack), fall back to
+    // snapshot sync. This prevents the sim from freezing forever when the peer
+    // disconnects or lags severely.
+    if(this._lockstepActive&&this._peerConfirmedTick!=null&&steps===0&&this._accumulator>=FIXED_DT){
+      if(!this._stallStart)this._stallStart=Date.now();
+      if(Date.now()-this._stallStart>5000){
+        console.warn("[DET] Lockstep stall detected (no peer ack for 5s) — falling back to snapshot sync.");
+        this._desyncFallback=true;
+        this._lockstepActive=false;
+        this._peerConfirmedTick=null;
+        this._stallStart=null;
+        this._accumulator=0; // reset to avoid catch-up burst
+      }
+    }else{
+      this._stallStart=null;
     }
     // _lastDt drives HP-bar interpolation in render; use real frame time so it
     // stays smooth even on frames where no sim step runs (accumulator < FIXED_DT).

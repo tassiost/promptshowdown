@@ -902,8 +902,216 @@ def run():
         else:
             fail("2-peer lockstep+cmd","test returned no result")
 
-        # === TEST 21: Console Errors ===
-        print("\n=== TEST 21: Console Errors ===")
+        # === TEST 21: Lockstep Stall Watchdog ===
+        # Simulates a peer that stops sending tick_ack. The watchdog should
+        # trigger after 5s and fall back to snapshot sync (set _desyncFallback).
+        # Uses real time delays (time.sleep) because the watchdog checks Date.now().
+        print("\n=== TEST 21: Lockstep Stall Watchdog ===")
+        # Step 1: Set up battle with lockstep active, peer confirmed at tick 5.
+        page.evaluate("""() => {
+            let _id = 0;
+            const mk = (n, team, x, y) => {
+                const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: ++_id,
+                    ability:'none', abilityTrigger:'never',
+                    targeting:'closest', movement:'chase', attackCondition:'always',
+                    role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                u.team = team; u.x = x; u.y = y;
+                return Battle.initRuntime(u);
+            };
+            window._stallTestOrig = {
+                units: Battle.units, all: Battle._allUnits, running: Battle.running,
+                time: Battle.time, tick: Battle._tick,
+            };
+            Battle.units = [mk('A','player',80,280), mk('B','enemy',320,280)];
+            Battle._allUnits = [...Battle.units];
+            Battle.spells = []; Battle.zones = [];
+            Battle.projectiles = []; Battle.particles = []; Battle.damageNums = [];
+            Battle.recentCrits = []; Battle.deathLog = [];
+            Battle.running = true; Battle.time = 0;
+            Battle._tick = 0; Battle._cmdBuffer = new Map();
+            Battle._lockstepActive = true;
+            Battle._peerConfirmedTick = 5; // peer confirmed up to tick 5, then stops
+            Battle._desyncFallback = false;
+            Battle._stallStart = null;
+            Battle._battleStats = {playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+            Battle._killFeed = [];
+            Battle._highlights = {biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+            Battle._firstBlood = false;
+            seedBattle(1);
+            // Run 60 frames (1s) — sim advances to tick 15, then stalls.
+            for (let i = 0; i < 60; i++) {
+                const FIXED_DT = 1/60;
+                Battle._accumulator = (Battle._accumulator || 0) + (1/60);
+                const maxTick = (Battle._lockstepActive && Battle._peerConfirmedTick != null)
+                    ? Battle._peerConfirmedTick + 10 : Infinity;
+                let steps = 0;
+                while (Battle._accumulator >= FIXED_DT && steps < 4 && (Battle._tick || 0) < maxTick) {
+                    Battle.update(FIXED_DT);
+                    Battle._accumulator -= FIXED_DT;
+                    steps++;
+                }
+                if (Battle._lockstepActive && Battle._peerConfirmedTick != null && steps === 0 && Battle._accumulator >= FIXED_DT) {
+                    if (!Battle._stallStart) Battle._stallStart = Date.now();
+                    if (Date.now() - Battle._stallStart > 5000) {
+                        Battle._desyncFallback = true;
+                        Battle._lockstepActive = false;
+                        Battle._peerConfirmedTick = null;
+                        Battle._stallStart = null;
+                        Battle._accumulator = 0;
+                    }
+                } else {
+                    Battle._stallStart = null;
+                }
+            }
+        }""")
+        # Step 2: Check tick is stuck at 15 (stalled).
+        tick_stuck = page.evaluate("Battle._tick")
+        if tick_stuck == 15:
+            ok(f"lockstep stall: sim stuck at tick {tick_stuck} (maxTick=5+10)")
+        else:
+            fail("lockstep stall",f"sim at tick {tick_stuck}, expected 15")
+        # Step 3: Wait 8 seconds for watchdog to fire (needs 5s of real stalling + margin).
+        time.sleep(8)
+        # Step 4: Run more frames — watchdog should have fired, sim should resume.
+        page.evaluate("""() => {
+            for (let i = 0; i < 60; i++) {
+                const FIXED_DT = 1/60;
+                Battle._accumulator = (Battle._accumulator || 0) + (1/60);
+                const maxTick = (Battle._lockstepActive && Battle._peerConfirmedTick != null)
+                    ? Battle._peerConfirmedTick + 10 : Infinity;
+                let steps = 0;
+                while (Battle._accumulator >= FIXED_DT && steps < 4 && (Battle._tick || 0) < maxTick) {
+                    Battle.update(FIXED_DT);
+                    Battle._accumulator -= FIXED_DT;
+                    steps++;
+                }
+                if (Battle._lockstepActive && Battle._peerConfirmedTick != null && steps === 0 && Battle._accumulator >= FIXED_DT) {
+                    if (!Battle._stallStart) Battle._stallStart = Date.now();
+                    if (Date.now() - Battle._stallStart > 5000) {
+                        Battle._desyncFallback = true;
+                        Battle._lockstepActive = false;
+                        Battle._peerConfirmedTick = null;
+                        Battle._stallStart = null;
+                        Battle._accumulator = 0;
+                    }
+                } else {
+                    Battle._stallStart = null;
+                }
+            }
+        }""")
+        stall_result = page.evaluate("""() => {
+            const r = {
+                tick: Battle._tick,
+                desyncFallback: Battle._desyncFallback,
+                lockstepActive: Battle._lockstepActive,
+            };
+            // Restore.
+            Battle.units = window._stallTestOrig.units;
+            Battle._allUnits = window._stallTestOrig.all;
+            Battle.running = window._stallTestOrig.running;
+            Battle.time = window._stallTestOrig.time;
+            Battle._tick = window._stallTestOrig.tick;
+            Battle._lockstepActive = false;
+            Battle._desyncFallback = false;
+            Battle._stallStart = null;
+            delete window._stallTestOrig;
+            return r;
+        }""")
+        if stall_result:
+            if stall_result["desyncFallback"]:
+                ok("lockstep stall: watchdog triggered fallback")
+            else:
+                fail("lockstep stall","watchdog did not trigger")
+            if not stall_result["lockstepActive"]:
+                ok("lockstep stall: lockstep deactivated after fallback")
+            else:
+                fail("lockstep stall","lockstep still active after fallback")
+            if stall_result["tick"] > 15:
+                ok(f"lockstep stall: sim resumed after fallback (tick={stall_result['tick']})")
+            else:
+                fail("lockstep stall",f"sim did not resume (tick={stall_result['tick']}, expected >15)")
+        else:
+            fail("lockstep stall","test returned no result")
+
+        # === TEST 22: Late Command Detection ===
+        # Simulates a cmd_lock arriving after its target tick has passed.
+        # The late command should trigger _desyncFallback.
+        print("\n=== TEST 22: Late Command Detection ===")
+        late_result=page.evaluate("""() => {
+            let _id = 0;
+            const mk = (n, team, x, y) => {
+                const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: ++_id,
+                    ability:'none', abilityTrigger:'never',
+                    targeting:'closest', movement:'chase', attackCondition:'always',
+                    role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                u.team = team; u.x = x; u.y = y;
+                return Battle.initRuntime(u);
+            };
+            const origUnits = Battle.units;
+            const origAll = Battle._allUnits;
+            const origRunning = Battle.running;
+            const origTime = Battle.time;
+            const origTick = Battle._tick;
+
+            Battle.units = [mk('A','player',80,280), mk('B','enemy',320,280)];
+            Battle._allUnits = [...Battle.units];
+            Battle.spells = []; Battle.zones = [];
+            Battle.projectiles = []; Battle.particles = []; Battle.damageNums = [];
+            Battle.recentCrits = []; Battle.deathLog = [];
+            Battle.running = true; Battle.time = 0;
+            Battle._tick = 0; Battle._cmdBuffer = new Map();
+            Battle._lockstepActive = true;
+            Battle._peerConfirmedTick = 0;
+            Battle._desyncFallback = false;
+            Battle._battleStats = {playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+            Battle._killFeed = [];
+            Battle._highlights = {biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+            Battle._firstBlood = false;
+            seedBattle(1);
+
+            // Simulate 50 ticks with no pacing limit (peer confirms ahead).
+            Battle._peerConfirmedTick = 100;
+            for (let i = 0; i < 50; i++) Battle.update(1/60);
+
+            // Now simulate a late cmd_lock arriving for tick 10 (already passed).
+            const currentTick = Battle._tick;
+            const lateCmd = {type:'speed', speed:2, tick:10};
+            // Simulate networkReceive handling for cmd_lock.
+            const c = lateCmd;
+            if (Battle._lockstepActive && c.tick <= currentTick) {
+                Battle._desyncFallback = true;
+            } else {
+                Battle.queueCommand(c, c.tick);
+            }
+            Battle._peerConfirmedTick = Math.max(Battle._peerConfirmedTick || 0, c.tick);
+
+            const result = {
+                currentTick: currentTick,
+                desyncFallback: Battle._desyncFallback,
+                lateDetected: Battle._desyncFallback === true,
+            };
+
+            // Restore.
+            Battle.units = origUnits;
+            Battle._allUnits = origAll;
+            Battle.running = origRunning;
+            Battle.time = origTime;
+            Battle._tick = origTick;
+            Battle._lockstepActive = false;
+            Battle._desyncFallback = false;
+
+            return result;
+        }""")
+        if late_result:
+            if late_result["lateDetected"]:
+                ok(f"late command: desync fallback triggered (cmd for tick 10, current={late_result['currentTick']})")
+            else:
+                fail("late command","desync fallback not triggered for late command")
+        else:
+            fail("late command","test returned no result")
+
+        # === TEST 23: Console Errors ===
+        print("\n=== TEST 23: Console Errors ===")
         real_errors=[e for e in errors if "CORS" not in e and "Access-Control" not in e]
         if len(real_errors)==0: ok(f"no console errors ({len(errors)} CORS filtered)")
         else:

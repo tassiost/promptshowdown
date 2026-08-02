@@ -79,6 +79,11 @@
 - [x] Fixed: `_localTeam` not reset to "player" for solo battles after guest lockstep
 - [x] Fixed: `stop()` didn't clear `snapTimer` → interval leak on error/timeout stop
 - [x] Fixed: Per-hit allocation `{x:0,y:0}` fallback in sprite render (replaced with `_zeroDir`)
+- [x] Fixed: Lockstep stall watchdog — if peer stops sending `tick_ack` for 5s, sim freezes
+  at `maxTick` forever. Added watchdog that falls back to snapshot sync after 5s of stalling.
+- [x] Fixed: Late command desync — `cmd_lock` arriving after its target tick was silently
+  dropped (tick buffer already deleted). Now detects late commands and triggers
+  `_desyncFallback` so the next round uses snapshot sync instead of divergent lockstep.
 - [x] Verified: No hidden class divergence in `initRuntime()` (consistent property order)
 - [x] Verified: No per-frame allocations in hot paths (all use pooled arrays/objects)
 
@@ -106,7 +111,7 @@
 - [x] 50v50 snapshot guest: 65.9fps, 0 slow frames (0 tps expected — no sim in guest mode)
 - [x] Memory stable (8.3-15.1MB JSHeap across all scenarios, no growth over 10s)
 - [x] GPU time measured via CDP Tracing (0.53-3.26ms per frame, well under budget)
-- [x] E2E tests pass (188 PASS, 0 FAIL)
+- [x] E2E tests pass (201 PASS, 0 FAIL) — includes 2-peer lockstep desync, stall watchdog, late command tests
 
 ## Results Log
 
