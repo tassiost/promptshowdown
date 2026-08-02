@@ -3474,9 +3474,12 @@ function avoidanceOffset(u,allies,radius){
 }
 function closestEnemy(u,enemies){
   let best=null,bd=Infinity;
-  for(const e of enemies){
+  const ux=u.x,uy=u.y;
+  for(let i=0;i<enemies.length;i++){
+    const e=enemies[i];
     if(e.h<=0)continue;
-    const d=(u.x-e.x)**2+(u.y-e.y)**2;
+    const dx=ux-e.x, dy=uy-e.y;
+    const d=dx*dx+dy*dy;
     if(d<bd){bd=d;best=e;}
   }
   return best;
@@ -3700,8 +3703,10 @@ const MOVEMENT={
     const mid=u.team==="player"?Battle.canvasH*0.6:Battle.canvasH*0.4;
     const sp=effSpeed(u)*dt;
     if(target&&target.h>0){
-      const d=dist(u,target);
-      if(d>u.r){
+      // PERF-R12: squared distance check (avoid Math.sqrt).
+      const dx=target.x-u.x, dy=target.y-u.y;
+      const r2=u.r*u.r;
+      if(dx*dx+dy*dy>r2){
         moveToward(u,target,sp);
       }else{
         if(Math.abs(u.y-mid)>10)u.y+=Math.sign(mid-u.y)*sp*0.5;
@@ -3712,10 +3717,13 @@ const MOVEMENT={
   },
   kite:(u,target,dt)=>{
     if(!target||target.h<=0)return;
-    const d=dist(u,target);
+    // PERF-R12: squared distance check (avoid Math.sqrt).
+    const dx=target.x-u.x, dy=target.y-u.y;
+    const d2=dx*dx+dy*dy;
     const sp=effSpeed(u)*dt;
-    if(d<u.r*0.5)moveAway(u,target,sp);
-    else if(d>u.r)moveToward(u,target,sp);
+    const r2=u.r*u.r, halfR2=r2*0.25;
+    if(d2<halfR2)moveAway(u,target,sp);
+    else if(d2>r2)moveToward(u,target,sp);
   },
   patrol:(u,target,dt)=>{
     u.patrolT=(u.patrolT||0)+dt;
@@ -3725,18 +3733,24 @@ const MOVEMENT={
     // blink: teleport toward target every 2s, otherwise hold
     if(!target||target.h<=0)return;
     u.blinkT=(u.blinkT||0)+dt;
-    if(u.blinkT>=2&&dist(u,target)>u.r){
-      u.x=target.x+Q(-20,20);u.y=target.y+Q(-20,20);
-      u.blinkT=0;
-      BattleFX.burst(u.x,u.y,u.c,4,20);
+    if(u.blinkT>=2){
+      // PERF-R12: squared distance check (avoid Math.sqrt).
+      const dx=target.x-u.x, dy=target.y-u.y;
+      if(dx*dx+dy*dy>u.r*u.r){
+        u.x=target.x+Q(-20,20);u.y=target.y+Q(-20,20);
+        u.blinkT=0;
+        BattleFX.burst(u.x,u.y,u.c,4,20);
+      }
     }
   },
   strafe:(u,target,dt)=>{
     // strafe: move side-to-side while approaching
     if(!target||target.h<=0)return;
-    const d=dist(u,target);
+    // PERF-R12: squared distance check (avoid Math.sqrt).
+    const dx=target.x-u.x, dy=target.y-u.y;
+    const d2=dx*dx+dy*dy;
     const sp=effSpeed(u)*dt;
-    if(d>u.r)moveToward(u,target,sp*0.7);
+    if(d2>u.r*u.r)moveToward(u,target,sp*0.7);
     u.strafeT=(u.strafeT||0)+dt;
     u.y+=Math.sin(u.strafeT*3)*sp*0.5;
   },
@@ -5998,15 +6012,18 @@ const Battle={
     // D5: soft avoidance — push away from nearby allies to prevent clumping.
     const av=avoidanceOffset(u,allies);
     u.x+=av.x; u.y+=av.y;
-    // PERF-R11: compute distance once, reuse for attack check + debug log.
+    // PERF-R12: use squared distance for attack range check (avoid Math.sqrt).
     const atkCondFn=ATTACK_CONDITIONS[u.attackCondition];
-    const tDist=target&&target.h>0?dist(u,target):Infinity;
-    if(target&&target.h>0&&atkCondFn&&atkCondFn(u,target)&&u.cool<=0&&tDist<=u.r){
-      if(this.debug)console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+tDist.toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));
-      this.attack(u,target,enemies);
-      u.cool=(1/u.a)*(u.frenzyT>0?0.5:1); // cooldown = 1 / attacks_per_second (frenzy halves)
-      u.attackedThisFrame=true; // Phase 11: trigger attack animation
-      u.attackT=0;              // Phase 11: start attack anim timer
+    const r2=u.r*u.r;
+    if(target&&target.h>0&&atkCondFn&&atkCondFn(u,target)&&u.cool<=0){
+      const tdx=u.x-target.x, tdy=u.y-target.y;
+      if(tdx*tdx+tdy*tdy<=r2){
+        if(this.debug){const tDist=Math.sqrt(tdx*tdx+tdy*tdy);console.log("[ATK] t="+this.time.toFixed(2)+" "+u.n+"["+u.team+"] → "+target.n+"["+target.team+"] d="+u.d+" dist="+tDist.toFixed(0)+"/"+u.r+(u.r>RANGED_THRESHOLD?" RANGED":" MELEE"));}
+        this.attack(u,target,enemies);
+        u.cool=(1/u.a)*(u.frenzyT>0?0.5:1); // cooldown = 1 / attacks_per_second (frenzy halves)
+        u.attackedThisFrame=true; // Phase 11: trigger attack animation
+        u.attackT=0;              // Phase 11: start attack anim timer
+      }
     }
     const triggerFn=ABILITY_TRIGGERS[u.abilityTrigger];
     if(triggerFn&&triggerFn(u,allies,enemies)){
@@ -6432,12 +6449,8 @@ const Battle={
     const grid=this._sepGrid||(this._sepGrid=new Map());
     grid.clear();
     // Bin units into cells with numeric keys (faster than string concat).
-    // PERF-R12: precompute z*1.8 and (z*1.8)² per unit to avoid per-pair multiplication.
     for(const u of all){
       if(u.h<=0)continue;
-      const sepD=u.z*1.8;
-      u._sepD=sepD;
-      u._sepD2=sepD*sepD;
       const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
       let cell=grid.get(k);
       if(!cell){cell=[];grid.set(k,cell);}
@@ -6456,23 +6469,18 @@ const Battle={
         const sameCell=(dx===0&&dy===0);
         for(let ai=0;ai<cell.length;ai++){
           const a=cell[ai];
-          const aSepD=a._sepD;
-          const aSepD2=a._sepD2;
           const bStart=sameCell?ai+1:0;
           for(let bi=bStart;bi<ncell.length;bi++){
             const b=ncell[bi];
             const ddx=b.x-a.x, ddy=b.y-a.y;
             const d2=ddx*ddx+ddy*ddy;
             // D5: keep units at least 1.8× their radius apart so they don't visually overlap.
-            // PERF-R12: use precomputed (z*1.8)² — max of the two is the threshold.
-            const bSepD=b._sepD;
-            const minD2=aSepD>bSepD?aSepD2:b._sepD2;
-            if(d2<minD2){
+            const minD=Math.max(a.z,b.z)*1.8;
+            if(d2<minD*minD){
               const d=Math.sqrt(d2);
               let nx,ny;
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
               else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
-              const minD=aSepD>bSepD?aSepD:bSepD;
               const push=(minD-Math.max(d,0.001))/2;
               a.x-=nx*push;a.y-=ny*push;
               b.x+=nx*push;b.y+=ny*push;
@@ -6622,22 +6630,31 @@ const Battle={
       c.fillRect(0,0,w,h*0.5);
       // Lane formation bands — show role-based formation zones.
       const canvasH=this.canvasH||h;
-      const laneBands=[
-        {yMin:30,yMax:80,color:"#ff4444",label:"Enemy Back",side:"enemy"},
-        {yMin:80,yMax:200,color:"#ff8844",label:"Enemy Front",side:"enemy"},
-        {yMin:350,yMax:540,color:"#4488ff",label:"Your Front",side:"player"},
-      ];
-      for(const lane of laneBands){
-        const ly=(lane.yMin+lane.yMax)/2*(canvasH/600);
-        const lh=(lane.yMax-lane.yMin)*(canvasH/600);
-        // Subtle colored band.
-        const lg=c.createLinearGradient(0,ly-lh/2,0,ly+lh/2);
-        lg.addColorStop(0,lane.color+"08");
-        lg.addColorStop(0.5,lane.color+"0d");
-        lg.addColorStop(1,lane.color+"08");
-        c.fillStyle=lg;
+      // PERF-R12: cache lane band gradients (only depend on canvasH, not per-frame state).
+      const lbKey=canvasH;
+      if(!this._laneBandCache||this._laneBandCacheKey!==lbKey){
+        this._laneBandCacheKey=lbKey;
+        const laneBands=[
+          {yMin:30,yMax:80,color:"#ff4444"},
+          {yMin:80,yMax:200,color:"#ff8844"},
+          {yMin:350,yMax:540,color:"#4488ff"},
+        ];
+        const cached=[];
+        for(const lane of laneBands){
+          const ly=(lane.yMin+lane.yMax)/2*(canvasH/600);
+          const lh=(lane.yMax-lane.yMin)*(canvasH/600);
+          const lg=c.createLinearGradient(0,ly-lh/2,0,ly+lh/2);
+          lg.addColorStop(0,lane.color+"08");
+          lg.addColorStop(0.5,lane.color+"0d");
+          lg.addColorStop(1,lane.color+"08");
+          cached.push({ly,lh,grad:lg,color:lane.color});
+        }
+        this._laneBandCache=cached;
+      }
+      for(const lane of this._laneBandCache){
+        const ly=lane.ly, lh=lane.lh;
+        c.fillStyle=lane.grad;
         c.fillRect(0,ly-lh/2,w,lh);
-        // Dashed lane divider lines.
         c.strokeStyle=lane.color+"15";
         c.lineWidth=1;
         c.setLineDash([6,4]);
@@ -6742,10 +6759,17 @@ const Battle={
       c.translate((Math.random()-0.5)*shake*2,(Math.random()-0.5)*shake*2);
     }
     try{
-    // PERF-R12: hoist per-frame constants outside the unit loop (avoid 100× recompute).
+    // PERF-R12: two-pass render for color batching.
+    // Pass 1: shadows + sprites + hit flashes (per unit, depth-ordered with lunge).
+    // Pass 2: status rings + HP bars + names (batched by color, original position).
     const manyUnits=Battle.units.length>30;
     const manyUnitsR=manyUnits;
     const ringPulse=manyUnitsR?1:1+0.04*Math.sin(this.time*6);
+    // Collect Pass 2 data during Pass 1 (avoid second iteration over units).
+    // PERF-R12: reuse arrays to avoid per-frame allocation.
+    if(!this._renderPass2)this._renderPass2=[];
+    const pass2=this._renderPass2;
+    let pass2Len=0;
     // units
     for(let u of this.units){
       if(!u||u.x===undefined)continue;
@@ -6791,84 +6815,128 @@ const Battle={
       }
       // Restore original position (lunge is visual only).
       u.x=origX;u.y=origY;u.z=origZ;
-      // status rings (always drawn, on top of sprite).
-      // PERF-R12: skip pulsing animation when many units (Math.sin per status per unit).
-      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(u.x,u.y,(u.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
-      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(u.x,u.y,(u.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
-      // Ability activation flash: expanding colored ring.
+      // Collect Pass 2 data (status rings + HP bar + name).
+      // PERF-R12: update HP bar smoothing here (needs dt, not in pass 2).
+      if(u.dispH===undefined)u.dispH=u.h;
+      u.dispH+=(u.h-u.dispH)*Math.min(1,(this._lastDt||0.05)*8);
+      if(u.ghostH===undefined)u.ghostH=u.h;
+      u.ghostH+=(u.h-u.ghostH)*Math.min(1,(this._lastDt||0.05)*3);
+      const spriteTop=origY-(origZ||10)/10*1.8*26;
+      const entry=pass2[pass2Len]||(pass2[pass2Len]={});
+      entry.u=u;
+      entry.x=origX;
+      entry.y=origY;
+      entry.z=origZ;
+      entry.spriteTop=spriteTop;
+      entry.hpRatio=Math.max(0,u.dispH/u.mh);
+      entry.ghostRatio=Math.max(0,u.ghostH/u.mh);
+      pass2Len++;
+    }
+    // Pass 2: status rings + ability flash + name + low-HP warning + HP bar.
+    // PERF-R12: batch HP bar by color — group all same-color fillRects together.
+    // This reduces fillStyle changes from ~500 to ~7 per frame (100 units × 5 colors → 7 groups).
+    // Status rings + ability flash (per unit — alpha varies, can't batch easily).
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      const u=e.u;
+      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
+      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;}
       if(u.abFlash>0){
         const t=1-u.abFlash/0.4;
         c.globalAlpha=Math.max(0,1-t);
         c.strokeStyle=u.abFlashColor||"#fff";
         c.lineWidth=3;
         c.beginPath();
-        c.arc(u.x,u.y,u.z+4+t*15,0,Math.PI*2);
+        c.arc(e.x,e.y,e.z+4+t*15,0,Math.PI*2);
         c.stroke();
         c.lineWidth=1;
         c.globalAlpha=1;
       }
-      // name + HP bar (smooth animated HP bar).
-      // D5: adjusted for sprite scale — sprite top is at u.y - 24*1.8*(z/10).
-      // PERF-R12: skip name text when >30 units (text rendering is very expensive).
-      const spriteTop=u.y-(u.z||10)/10*1.8*26;
-      if(!manyUnits){
-        c.fillStyle=TEAM_COLORS[u.team]||"#fff";c.font="9px sans-serif";c.textAlign="center";
-        c.strokeStyle="rgba(0,0,0,0.7)";c.lineWidth=2.5;
-        c.strokeText(u.n,u.x,spriteTop-2);
-        c.fillText(u.n,u.x,spriteTop-2);
-        c.lineWidth=1;
-        // Role indicator: small colored dot above name.
+    }
+    // Name text (only when <=30 units — text rendering is expensive).
+    if(!manyUnits){
+      c.textAlign="center";
+      c.strokeStyle="rgba(0,0,0,0.7)";c.lineWidth=2.5;
+      for(let i=0;i<pass2Len;i++){
+        const e=pass2[i];
+        const u=e.u;
+        c.fillStyle=TEAM_COLORS[u.team]||"#fff";c.font="9px sans-serif";
+        c.strokeText(u.n,e.x,e.spriteTop-2);
+        c.fillText(u.n,e.x,e.spriteTop-2);
+      }
+      c.lineWidth=1;
+      // Role indicator dots.
+      for(let i=0;i<pass2Len;i++){
+        const e=pass2[i];
+        const u=e.u;
         if(u.role){
           c.fillStyle=ROLE_COLORS[u.role]||"#fff";
-          c.beginPath();c.arc(u.x-20,spriteTop,2,0,Math.PI*2);c.fill();
+          c.beginPath();c.arc(e.x-20,e.spriteTop,2,0,Math.PI*2);c.fill();
         }
       }
       // Low-HP warning: pulsing red glow when HP < 25%.
-      // PERF-R12: skip when many units (pulsing ring is non-essential).
-      if(!manyUnits&&u.h>0&&u.h<u.mh*0.25){
-        const pulse=Math.sin(this.time*8)*0.5+0.5;
-        c.globalAlpha=0.3+pulse*0.3;
-        c.strokeStyle=TEAM_COLORS[u.team]||"#fb7185";
-        c.lineWidth=2;
-        c.beginPath();
-        c.arc(u.x,u.y,u.z+5+pulse*3,0,Math.PI*2);
-        c.stroke();
-        c.lineWidth=1;
-        c.globalAlpha=1;
+      const pulse=Math.sin(this.time*8)*0.5+0.5;
+      for(let i=0;i<pass2Len;i++){
+        const e=pass2[i];
+        const u=e.u;
+        if(u.h>0&&u.h<u.mh*0.25){
+          c.globalAlpha=0.3+pulse*0.3;
+          c.strokeStyle=TEAM_COLORS[u.team]||"#fb7185";
+          c.lineWidth=2;
+          c.beginPath();
+          c.arc(e.x,e.y,e.z+5+pulse*3,0,Math.PI*2);
+          c.stroke();
+          c.lineWidth=1;
+          c.globalAlpha=1;
+        }
       }
-      // HP bar — beveled background, damage ghost bar, gradient fill, top highlight.
-      const barX=u.x-18,barY=spriteTop+8,barW=36,barH=5;
-      // Background (dark with subtle border).
-      c.fillStyle="#1a1a2e";
-      c.fillRect(barX,barY,barW,barH);
+    }
+    // HP bars — batched by color (5 groups: bg, player border, enemy border, ghost, green, yellow, red, highlight).
+    // Group 1: All backgrounds (#1a1a2e).
+    c.fillStyle="#1a1a2e";
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      c.fillRect(e.x-18,e.spriteTop+8,36,5);
+    }
+    // Group 2: Borders by team (strokeRect).
+    c.lineWidth=1;
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      const u=e.u;
       c.strokeStyle=TEAM_COLORS[u.team]||"#888";
-      c.lineWidth=1;
-      c.strokeRect(barX,barY,barW,barH);
-      // Smooth HP bar: lerp displayed HP toward actual HP.
-      if(u.dispH===undefined)u.dispH=u.h;
-      u.dispH+=(u.h-u.dispH)*Math.min(1,(this._lastDt||0.05)*8);
-      const hpRatio=Math.max(0,u.dispH/u.mh);
-      // Damage ghost bar — lerp slower, shows recent damage as a lighter trail.
-      if(u.ghostH===undefined)u.ghostH=u.h;
-      u.ghostH+=(u.h-u.ghostH)*Math.min(1,(this._lastDt||0.05)*3);
-      const ghostRatio=Math.max(0,u.ghostH/u.mh);
-      if(ghostRatio>hpRatio+0.01){
-        c.fillStyle="rgba(255,255,255,0.25)";
-        c.fillRect(barX,barY,barW*ghostRatio,barH);
+      c.strokeRect(e.x-18,e.spriteTop+8,36,5);
+    }
+    // Group 3: Ghost bars (rgba(255,255,255,0.25)) — only units with ghost > hp.
+    c.fillStyle="rgba(255,255,255,0.25)";
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      if(e.ghostRatio>e.hpRatio+0.01){
+        c.fillRect(e.x-18,e.spriteTop+8,36*e.ghostRatio,5);
       }
-      // Gradient HP fill — color shifts green→yellow→red.
-      // PERF-R11: use flat color instead of createLinearGradient per unit per frame.
-      // The bar is only 5px tall — the gradient is barely visible.
-      const hpColor=hpRatio>0.5?"#34d399":hpRatio>0.25?"#fbbf24":"#fb7185";
-      if(hpRatio>0){
-        c.fillStyle=hpColor;
-        c.fillRect(barX,barY,barW*hpRatio,barH);
-        // Top highlight — 1px glossy line.
-        c.fillStyle="rgba(255,255,255,0.35)";
-        c.fillRect(barX,barY,barW*hpRatio,1);
-      }
+    }
+    // Group 4: HP fills by color (green > 50%, yellow > 25%, red).
+    c.fillStyle="#34d399";
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      if(e.hpRatio>0.5)c.fillRect(e.x-18,e.spriteTop+8,36*e.hpRatio,5);
+    }
+    c.fillStyle="#fbbf24";
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      if(e.hpRatio>0.25&&e.hpRatio<=0.5)c.fillRect(e.x-18,e.spriteTop+8,36*e.hpRatio,5);
+    }
+    c.fillStyle="#fb7185";
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      if(e.hpRatio>0&&e.hpRatio<=0.25)c.fillRect(e.x-18,e.spriteTop+8,36*e.hpRatio,5);
+    }
+    // Group 5: Top highlights (rgba(255,255,255,0.35)) — only units with hp > 0.
+    c.fillStyle="rgba(255,255,255,0.35)";
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      if(e.hpRatio>0)c.fillRect(e.x-18,e.spriteTop+8,36*e.hpRatio,1);
     }
     // projectiles — weapon-specific shapes with glowing trail.
     const projPrev=c.globalCompositeOperation;
@@ -6877,7 +6945,8 @@ const Battle={
       const accent=p.accent||p.c;
       const dx=p.tx-p.x,dy=p.ty-p.y;
       const angle=Math.atan2(dy,dx);
-      const dist=Math.hypot(dx,dy)||1;
+      // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+      const dist=Math.sqrt(dx*dx+dy*dy)||1;
       // Trail — fading line segments behind the projectile (additive).
       c.globalCompositeOperation="lighter";
       if(p.trail&&p.trail.length>1){
@@ -7081,34 +7150,62 @@ const Battle={
   },
   drawDmgNums(c){
     if(!this.damageNums||!this.damageNums.length)return;
-    // PERF-R12: batch by font size (crit=14px, normal=10px) to avoid per-item font changes.
-    // Remove emojis (💥✨🔮☠️) — emoji rendering in canvas is extremely expensive
-    // (requires font fallback + complex glyph shaping, 10-50x slower than ASCII text).
+    // PERF-R12: batch by font size (crit=14px, normal=10px) AND by color.
+    // Group: [font][color] → fillStyle set once per group instead of per item.
+    // Remove emojis (💥✨🔮☠️) — emoji rendering in canvas is extremely expensive.
     c.textAlign="center";
     c.strokeStyle="rgba(0,0,0,0.8)";
     c.lineWidth=3;
-    // Pass 1: non-crit (10px font)
+    // Pass 1: non-crit (10px font) — batch by color (player, enemy, heal).
     c.font="bold 10px sans-serif";
+    // Group A: player damage (blue).
+    c.fillStyle=TEAM_COLORS.player;
     for(const d of this.damageNums){
       if(d.crit)continue;
+      if(typeof d.val==="string"&&d.val.startsWith("+"))continue;
+      if(d.team!=="player")continue;
       const alpha=Math.min(1,d.life/0.3);
-      // PERF-R12: skip nearly-invisible damage numbers (saves text rendering).
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
-      const isHeal=typeof d.val==="string"&&d.val.startsWith("+");
-      c.fillStyle=isHeal?"#34d399":TEAM_COLORS[d.team]||"#fff";
+      const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
+      c.strokeText(txt,d.x,d.y);
+      c.fillText(txt,d.x,d.y);
+    }
+    // Group B: enemy damage (red).
+    c.fillStyle=TEAM_COLORS.enemy;
+    for(const d of this.damageNums){
+      if(d.crit)continue;
+      if(typeof d.val==="string"&&d.val.startsWith("+"))continue;
+      if(d.team==="player")continue;
+      const alpha=Math.min(1,d.life/0.3);
+      if(alpha<0.05)continue;
+      c.globalAlpha=alpha;
+      const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
+      c.strokeText(txt,d.x,d.y);
+      c.fillText(txt,d.x,d.y);
+    }
+    // Group C: heals (green).
+    c.fillStyle="#34d399";
+    for(const d of this.damageNums){
+      if(d.crit)continue;
+      if(!(typeof d.val==="string"&&d.val.startsWith("+")))continue;
+      const alpha=Math.min(1,d.life/0.3);
+      if(alpha<0.05)continue;
+      c.globalAlpha=alpha;
       const txt=d.type==="ability"?"*"+d.val:d.type==="spell"?"~"+d.val:d.type==="poison"?"p"+d.val:""+d.val;
       c.strokeText(txt,d.x,d.y);
       c.fillText(txt,d.x,d.y);
     }
     // Pass 2: crit (14px font, gold color)
     c.font="bold 14px sans-serif";
+    c.fillStyle="#fbbf24";
     for(const d of this.damageNums){
       if(!d.crit)continue;
+      // PERF-R12: critical heals don't exist in current code, but guard for safety.
+      if(typeof d.val==="string"&&d.val.startsWith("+"))continue;
       const alpha=Math.min(1,d.life/0.3);
       if(alpha<0.05)continue;
       c.globalAlpha=alpha;
-      c.fillStyle="#fbbf24";
       const prefix=d.type==="ability"?"*":d.type==="spell"?"~":d.type==="poison"?"p":"";
       const txt=prefix+d.val;
       c.strokeText(txt,d.x,d.y);
