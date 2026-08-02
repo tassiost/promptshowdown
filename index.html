@@ -4426,14 +4426,40 @@ const SpriteRenderer={
     // Interpolate keyframes for the current state.
     const anims=recipe.animations||{};
     const keyframes=anims[state]||anims.idle||[{t:0}];
-    const channels=this.interpolate(keyframes,t);
+    // PERF-R12: fast path — only compute bob/alpha/rot when using cache (avoids full interpolate).
     // Phase 32: reduced motion — skip bob/squash/stretch/wobble channels.
     const rm=G.save?.settings?.reducedMotion;
-    // Apply bob offset (vertical bob for idle/move).
-    const bobY=rm?0:(channels.bob?Math.sin(t*Math.PI*2)*2:0);
-    // Apply death alpha + rotation.
-    const alpha=channels.alpha!==undefined?channels.alpha:1;
-    const rot=rm?0:(channels.rot||0);
+    const useCacheFast=state!=="death"&&!rm&&!(u.spawnT>0);
+    let channels,bobY,alpha,rot;
+    if(useCacheFast){
+      // Fast path: only extract bob/alpha/rot from keyframes (no full object allocation).
+      // Find surrounding keyframes.
+      let prev=keyframes[0],next=keyframes[keyframes.length-1];
+      if(keyframes.length>1){
+        t=Math.max(0,Math.min(1,t));
+        for(let i=0;i<keyframes.length-1;i++){
+          if(t>=keyframes[i].t&&t<=keyframes[i+1].t){prev=keyframes[i];next=keyframes[i+1];break;}
+        }
+      }
+      const span=next.t-prev.t||1;
+      let f=(t-prev.t)/span;
+      const ease=next.ease;
+      if(ease==="easeOut")f=1-(1-f)*(1-f);
+      else if(ease==="easeIn")f=f*f;
+      else if(ease==="easeInOut")f=f<0.5?2*f*f:1-((-2*f+2)**2)/2;
+      const bobCh=next.bob, alphaCh=next.alpha, rotCh=next.rot;
+      const hasBob=bobCh!==undefined, hasAlpha=alphaCh!==undefined, hasRot=rotCh!==undefined;
+      // bob is a truthy flag — amplitude is always 2 (matches original channels.bob?Math.sin(...)*2:0).
+      bobY=rm?0:(hasBob?Math.sin(t*Math.PI*2)*2:0);
+      alpha=hasAlpha?(prev.alpha||0)+(alphaCh-(prev.alpha||0))*f:1;
+      rot=rm?0:(hasRot?(prev.rot||0)+(rotCh-(prev.rot||0))*f:0);
+      channels=null; // not needed for cache path
+    }else{
+      channels=this.interpolate(keyframes,t);
+      bobY=rm?0:(channels.bob?Math.sin(t*Math.PI*2)*2:0);
+      alpha=channels.alpha!==undefined?channels.alpha:1;
+      rot=rm?0:(channels.rot||0);
+    }
 
     // PERF-R12: Use pre-rendered sprite cache when possible.
     // Skip cache for death state (continuous fade), reducedMotion (different channel set),
