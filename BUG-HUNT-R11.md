@@ -143,3 +143,18 @@ BUGS:     0
 - All 21 abilities tested in isolation (init, no crash, no NaN)
 - All 11 spell effects tested in isolation (fire, no NaN)
 - All 4 arena mechanics tested end-to-end
+
+## Follow-up: PERF-R12 Performance Optimization
+
+After this bug hunt, a comprehensive performance optimization round (PERF-R12) was conducted.
+See [PERF-R12.md](PERF-R12.md) for full details.
+
+- **90 optimizations** implemented and documented
+- **60 FPS** achieved in all scenarios (empty, 5v5, 20v20, 50v50, MP guest) with 0 slow frames
+- **50v50 CPU**: 2.45ms (15% of 16.67ms budget, 85% headroom)
+- **All 184 E2E tests still pass** after all optimizations
+- **Bug verification**: All optimizations verified correct (shadow batching, status ring batching,
+  targeting filter elimination, hitReactDir reuse, grid generation counters, flat offset arrays)
+- **Key optimizations**: sprite cache, object pooling, spatial grids, render batching,
+  per-frame targeting cache, index loops, squared distance, reusable arrays, background cache,
+  single/multiplayer render unification

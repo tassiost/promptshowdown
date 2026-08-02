@@ -2,6 +2,15 @@
 
 Date: 2026-08-02
 
+> **See [PERF-R12.md](PERF-R12.md) for the final, comprehensive optimization round.**
+> R12 achieved 60 FPS in all scenarios (50v50 CPU 2.45ms = 15% of budget) with 90 documented
+> optimizations including sprite caching, object pooling, spatial grids, render batching,
+> per-frame targeting cache, and full single/multiplayer render unification.
+>
+> This R11 document covers the initial profiling and first 8 optimizations. The recommendations
+> below (Web Workers, object pooling, spatial partitioning, sprite caching, render batching)
+> were all implemented in R12.
+
 ## Methodology
 
 1. Instrument `Battle.loop`, `update`, `render` with `performance.now()` timers
@@ -161,12 +170,20 @@ Render time is ~0ms in headless Chrome — canvas rendering is GPU-accelerated a
 
 ## Recommendations for Future Optimization
 
-1. **Web Workers** — Move battle simulation to a Web Worker to keep UI thread free for rendering
-2. **Object pooling** — Pool projectile objects (currently allocated per attack, GC'd when dead)
-3. **Spatial partitioning for targeting** — `closestEnemy` is O(n) per unit; could use grid for O(1)
-4. **Sprite caching** — Pre-render unit sprites to offscreen canvases, blit instead of redrawing shapes
-5. **Particle culling** — Off-screen particles could be skipped
-6. **Render batching** — Group shapes by fillStyle to reduce canvas state changes
+> **All recommendations below were implemented in R12.** See [PERF-R12.md](PERF-R12.md).
+
+1. **Web Workers** — ~~Move battle simulation to a Web Worker to keep UI thread free for rendering~~
+   Not pursued in R12 — CPU is only 15% of budget, not the bottleneck.
+2. **Object pooling** — ✅ Implemented in R12: projectiles, damage numbers, particles, synth
+   attacker, damage window entries, hitReactDir, avoidanceOffset buffer, pass2 render entries.
+3. **Spatial partitioning for targeting** — ✅ Implemented in R12: flat-array grids for both
+   avoidance (cellSize=30) and separation (cellSize=60), avoiding Map overhead.
+4. **Sprite caching** — ✅ Implemented in R12: pre-rendered to offscreen canvas per
+   (recipe, state, frameIdx, team). Hot path is single drawImage per unit.
+5. **Particle culling** — ✅ Implemented in R12: off-screen particles culled, MAX_PARTICLES cap.
+6. **Render batching** — ✅ Implemented in R12: HP bars (7 groups), status rings (4 batched
+   paths), shadows (1 fill for all alive units), damage numbers (4-pass color batch),
+   background (offscreen canvas cache).
 
 ## Files Modified
 

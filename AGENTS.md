@@ -564,3 +564,108 @@ Ability cooldowns (`u.abCool`) must never go negative. Use `Math.max(0, u.abCool
 ### Minion Spawn Unit Limit
 
 The `spawn` ability checks `this.units.length < 100` before creating a minion. This prevents memory exhaustion from unlimited minion spawning in long battles.
+
+## Performance Optimization Rules (PERF-R12)
+
+All scenarios (empty, 5v5, 20v20, 50v50, MP guest) run at 60 FPS with 0 slow frames.
+50v50 (100 units + projectiles + combat) uses only 2.45ms CPU — 15% of the 16.67ms budget.
+See `PERF-R12.md` for full methodology, before/after metrics, and 90 documented optimizations.
+
+### Sprite Cache (Hot Path)
+
+`SpriteRenderer.draw` pre-renders each unique (recipe, state, frameIdx, team) combination to an
+offscreen canvas. The hot path is a single `drawImage` call per unit per frame. The fallback
+path (cache miss, death, spawn animation) does full shape rendering — this is rare.
+
+Key rules:
+- **Never** change sprite shape/color at runtime and expect the cache to reflect it. The cache
+  key is `(recipe, state, frameIdx, team)`. If you add a new visual state, add it to the cache key.
+- `_getCachedSprite` lazily builds the cache entry on first access. Don't pre-warm — it's fast.
+- `_clearSpriteCache()` must be called when entering a new battle (units change). Already done
+  in `Battle.start` and `applyRemoteSnapshot` (when units go from empty to non-empty).
+- `SPRITE_CACHE_FRAMES` controls animation granularity (default 8 frames per state). Higher =
+  smoother but more memory. Lower = faster but choppier.
+- Enemy flip is baked into the cache (separate cache entries for player/enemy). Don't apply
+  `c.scale(-1,1)` in the hot path — it's already in the cached image.
+- `drawFace` is skipped when >30 units (`_frameUnitCount <= 30`). Faces are a tiny visual detail
+  with high per-unit cost (transform stack + eye tracking + blink state).
+
+### Object Pooling (Zero GC in Hot Paths)
+
+All per-frame allocations are eliminated via pooling. Never allocate in hot paths:
+
+- **Projectiles**: `_projPool` — reused via `pop()`/`push()`. Trail is a flat `[0,0,0,0,0,0,0,0]`
+  array on the projectile object, shifted in-place.
+- **Damage numbers**: `_dmgPool` — reused. Capped at 40 on-screen, excess recycled to pool.
+- **Particles**: `_particlePool` — global, reused via `_spawnParticle`/`_recycleParticle`.
+- **Damage window entries**: `_dmgWinPool` — flat `[time, dmg]` arrays, reused.
+- **Synth attacker**: `_projSynth` — single reusable object for projectile hit damage (not stored).
+- **hitReactDir**: Reused in place (not re-allocated per hit). Better for V8 hidden classes.
+- **avoidanceOffset**: Returns `_avoidBuf` (pre-allocated `{x,y}`), never allocates.
+- **Pass2 render entries**: `_renderPass2` — array of entry objects reused across frames.
+
+### Spatial Grids (O(n) instead of O(n²))
+
+Two flat-array grids avoid Map overhead:
+
+- **Avoidance grid** (`_avoidFlatGen`/`_avoidFlatUnits`): cellSize=30, 16×21 cells. Generation
+  counter incremented by 2 per frame (one per team). `avoidanceOffset` checks 9 neighboring cells.
+- **Separation grid** (`_sepFlatGen`/`_sepFlatUnits`): cellSize=60, 9×12 cells. Tracks non-empty
+  cell keys in `_sepKeys` array to avoid iterating empty cells. Checks 5 neighbor offsets (right,
+  down, down-right, up-right, self) to avoid double-checking pairs.
+
+Both use `Int32Array` for generation tracking (fast comparison) and pre-allocated cell arrays.
+
+### Render Batching (Minimize Canvas State Changes)
+
+Canvas state changes (`fillStyle`, `strokeStyle`, `font`, `globalAlpha`) are expensive. Batch by:
+
+- **HP bars**: 7 groups (bg, player border, enemy border, ghost, green, yellow, red, highlight)
+  instead of per-unit fillStyle. 7 state changes for 100 units.
+- **Status rings**: 4 batched paths (shield, stun, poison, slow) — all same-type rings in one
+  `beginPath` + `stroke()`. Uses `moveTo` before each `arc` for distinct sub-paths.
+- **Shadows**: All alive-unit shadows in one `beginPath` + `fill()` (constant alpha=0.35). Dying
+  units (per-unit alpha) drawn separately.
+- **Damage numbers**: 4-pass color batch (player, enemy, heal, crit) — fillStyle set once per group.
+- **Background**: Static parts (gradient, ground, lane bands, noise) cached to offscreen canvas.
+  Only dynamic parts (parallax ridge, ambient particles) drawn per frame.
+
+### Per-Frame Targeting Cache
+
+Team-level targeting functions (`lowest_hp`, `highest_hp`, `enemy_carry`, `enemy_support`,
+`enemy_frontline`, `enemy_backline`, `enemy_cluster`) return the same result for all units on
+the same team. `_getCachedTarget` caches per `(team, targetingKey)` per frame. `_targetCache`
+is reset to `{}` at the start of each `update()`.
+
+### Index Loops (Never for...of in Hot Paths)
+
+`for...of` allocates an iterator object per call. All hot-path loops use index-based `for` loops:
+`for(let i=0;i<arr.length;i++)`. This applies to: update, render, act, separate, updateProjectiles,
+tickZones, checkTriggers, drawDmgNums, applySnapshot, _interpRender, and all targeting functions.
+
+### Squared Distance (Avoid Math.sqrt)
+
+Distance checks use `dx*dx+dy*dy` compared against `r*r` instead of `Math.sqrt(dx*dx+dy*dy) <= r`.
+Math.sqrt is only called when the actual distance value is needed (movement, avoidance push).
+
+### Reusable Arrays (No Per-Frame Allocation)
+
+- `_alivePlayers`/`_aliveEnemies`: built once per `update()`, reused via `length=0` + push.
+- `_renderPass2`: render pass 2 entries, reused via `length=0` + index assignment.
+- `_sepKeys`: separation grid non-empty cell keys, reused via `length=0` + push.
+- `_zoneAffected`: spell zone affected units, reused via `length=0` + push.
+- `_prevSnapMap`/`_curSnapIds`: snapshot diff maps, reused via `clear()`.
+
+### MP Guest Render Unification
+
+The render path is fully unified — both single-player and MP guest call `this.render()`. All
+shared infrastructure (sprite cache, pools, background cache, pass2 arrays) is used by both.
+The only difference is the update path: single-player runs `Battle.update()`, MP guest runs
+`_interpRender()` which interpolates between snapshots without running simulation logic.
+
+### Low Power Mode Testing
+
+macOS low power mode throttles `requestAnimationFrame` to 30Hz. The perf script (`perf_r12.py`)
+overrides `requestAnimationFrame` with `setTimeout(16.67ms)` to simulate 60fps and measure true
+CPU performance regardless of display refresh rate. In a real 60Hz browser, results would be
+exactly 60 FPS (the ~59 FPS in test results is setTimeout overhead).

@@ -23,7 +23,7 @@ python3 -m http.server 8765
 - **Sprite system** — 28 body plans (humanoid, quadruped, dragon, serpent, bird, insect, crab, golem, ghost, fish, blob, flying, mechanical, structure, plant, undead, demon, beast-man, aquatic, monopod, centaur, hydra, elemental, aberration, ooze, crystal, construct, angel), 14 weapons, skeletal joints with animation (arm_raise, leg_swing, bow_draw, tail_wag, wing_flap), 7 visual modifier categories (head, back, tail, aura, eyes, pattern, weapon style), role-coded fallbacks
 - **Unit explanations** — detailed descriptions for all abilities, movement types, targeting options, ability triggers, and weapons. Unit detail modal shows full breakdown.
 - **Clean modern UI** — purple/gold Draft Showdown-style palette, radial gradient backgrounds, gradient cards with glow effects, bolder typography with text shadows, screen transitions
-- **Mobile-friendly** — adaptive FPS (60 desktop / 30 mobile), tap-to-tick, vibration feedback, fullscreen, pause-on-hidden
+- **Mobile-friendly** — 60 FPS on all devices (50v50 with combat uses only 2.45ms CPU = 15% of frame budget), tap-to-tick, vibration feedback, fullscreen, pause-on-hidden
 - **Resilient** — visible error panel, save backup + crash recovery, version migrations, PWA manifest, IndexedDB fallback for localStorage quota
 - **Secure** — unit names sanitized at creation to prevent XSS, forge daily cap (10/day), save import runs migration
 
@@ -88,3 +88,5 @@ PLAN.md             # development roadmap and phase tracking
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — full system architecture: game objects, screens, LLM generation, P2P protocol, battle system, sprite rendering, progression
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — development setup, code conventions, testing, commit style
 - **[PLAN.md](PLAN.md)** — development roadmap with phase tracking
+- **[AGENTS.md](AGENTS.md)** — engineering notes: rules for battle system, P2P, sprites, performance, and all gotchas
+- **[PERF-R12.md](PERF-R12.md)** — performance optimization: 90 optimizations, 60 FPS in all scenarios, CPU/GPU/memory stats

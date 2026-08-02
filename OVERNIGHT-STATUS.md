@@ -151,3 +151,31 @@ Round 2 complete. All blocks A-J from OVERNIGHT2.md fully implemented including 
   - #213 MINOR: saveReplay silent error swallowing (impossible to debug failures)
 - **E2E test results: 42 PASS, 0 FAIL, 0 BUGS, 0 PageErrors**
 - **Final bug counts: 0 NEW, 0 CONFIRMED, 178 FIXED, 206 PASS**
+
+### Session R9-R10: Expanded E2E + Bug Hunt
+- Expanded E2E test suite to 184 tests (`e2e_test_r11.py`) covering all 21 abilities, 11 spell effects, 4 arena mechanics, P2P, save/import, quests, achievements, replays, URL import
+- Found and fixed BUG-R11-001 (buff_dmg overwriting ramp bonus)
+- **E2E test results: 184 PASS, 0 FAIL, 0 BUGS, 0 PageErrors**
+
+### Session R12: Performance Optimization (PERF-R12)
+- **Goal**: 60 FPS in all scenarios (empty, 5v5, 20v20, 50v50, MP guest) with 0 slow frames
+- **Result**: All scenarios hit ~60 FPS with 0 slow frames. 50v50 CPU 2.45ms (15% of 16.67ms budget)
+- **90 optimizations** documented in `PERF-R12.md`, including:
+  - Sprite cache (pre-rendered offscreen canvases, single drawImage per unit)
+  - Object pooling (projectiles, damage numbers, particles, synth attacker — zero GC in hot paths)
+  - Spatial grids (flat-array grids for avoidance + separation, avoiding Map overhead)
+  - Render batching (HP bars 7 groups, status rings 4 batched paths, shadows 1 fill, damage numbers 4-pass)
+  - Per-frame targeting cache (team-level targets computed once per team per frame)
+  - Index loops (all for...of in hot paths converted to index loops)
+  - Squared distance checks (avoid Math.sqrt where possible)
+  - Reusable arrays (alive arrays, pass2 entries, sep keys, zone affected — no per-frame allocation)
+  - Background cache (static parts to offscreen canvas, only dynamic parts drawn per frame)
+  - Single/multiplayer render unification (both paths call same render(), share all infrastructure)
+- **Research** on techniques NOT pursued (with rationale):
+  - OffscreenCanvas worker (CPU not bottleneck, 15% of budget)
+  - Typed arrays Float32Array (5% slower in V8 due to float64 conversion)
+  - ECS architecture (overkill for 100 entities)
+- **Testing**: Perf script uses setTimeout-based rAF override to bypass macOS low power mode 30Hz throttle
+- **E2E**: All 184 tests pass after all optimizations
+- **Bug hunt**: Verified all optimizations are correct — shadow batching, status ring batching, targeting changes, hitReactDir reuse, grid generation counters
+- **Commits**: 20+ commits from `b83fc0c` to `18c53ac`
