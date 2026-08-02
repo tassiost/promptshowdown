@@ -6543,21 +6543,28 @@ const Battle={
   // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
   // PERF-R12: hoist offsets array outside function (avoid per-frame allocation).
   _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
+  // PERF-R12: track non-empty cell keys to avoid Map iterator array allocation.
+  _sepKeys:[],
   separate(all){
     const cellSize=60;
     const grid=this._sepGrid||(this._sepGrid=new Map());
     grid.clear();
+    const keys=this._sepKeys;
+    keys.length=0;
     // Bin units into cells with numeric keys (faster than string concat).
     for(const u of all){
       if(u.h<=0)continue;
       const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
       let cell=grid.get(k);
-      if(!cell){cell=[];grid.set(k,cell);}
+      if(!cell){cell=[];grid.set(k,cell);keys.push(k);}
       cell.push(u);
     }
     // Check collisions within same + adjacent cells.
     const offsets=this._sepOffsets;
-    for(const [k,cell] of grid){
+    // PERF-R12: iterate keys array (avoids [k,cell] array allocation from Map iterator).
+    for(let ki=0;ki<keys.length;ki++){
+      const k=keys[ki];
+      const cell=grid.get(k);
       const cx=k>>>16, cy=k&0xFFFF;
       // Check this cell + 4 adjacent (right, down, down-right, up-right) to avoid double-checks.
       for(let oi=0;oi<5;oi++){
