@@ -7201,24 +7201,58 @@ const Battle={
     // Pass 2: status rings + ability flash + name + low-HP warning + HP bar.
     // PERF-R12: batch HP bar by color — group all same-color fillRects together.
     // This reduces fillStyle changes from ~500 to ~7 per frame (100 units × 5 colors → 7 groups).
-    // Status rings + ability flash (per unit — alpha varies, can't batch easily).
-    for(let i=0;i<pass2Len;i++){
-      const e=pass2[i];
-      const u=e.u;
-      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(time*5);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.abFlash>0){
-        const t=1-u.abFlash/0.4;
-        c.globalAlpha=Math.max(0,1-t);
-        c.strokeStyle=u.abFlashColor||"#fff";
-        c.lineWidth=3;
-        c.beginPath();
-        c.arc(e.x,e.y,e.z+4+t*15,0,Math.PI*2);
-        c.stroke();
-        c.lineWidth=1;
-        c.globalAlpha=1;
+    // Status rings + ability flash.
+    // PERF-R12: when manyUnitsR, batch by status type (constant alpha per type).
+    // Reduces ~400 state changes (100 units × 4 statuses) to ~12 (4 types × 3 states).
+    if(manyUnitsR){
+      // Shield rings (strokeStyle="#fff", lineWidth=2, alpha=0.8).
+      c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=0.8;
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.shieldActive>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);c.stroke();}}
+      // Stun rings (strokeStyle="#ff0", lineWidth=2, alpha=0.7).
+      c.strokeStyle="#ff0";c.globalAlpha=0.7;
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.stun>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);c.stroke();}}
+      // Poison rings (strokeStyle="#3f3", alpha=0.6).
+      c.strokeStyle="#3f3";c.lineWidth=1;c.globalAlpha=0.6;
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.poison>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+6)*ringPulse,0,Math.PI*2);c.stroke();}}
+      // Slow rings (strokeStyle="#39f", alpha=0.6).
+      c.strokeStyle="#39f";c.globalAlpha=0.6;
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.slow>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+9)*ringPulse,0,Math.PI*2);c.stroke();}}
+      c.globalAlpha=1;c.lineWidth=1;
+      // Ability flash (per-unit — alpha varies, can't batch).
+      for(let i=0;i<pass2Len;i++){
+        const u=pass2[i].u;
+        if(u.abFlash>0){
+          const t=1-u.abFlash/0.4;
+          c.globalAlpha=Math.max(0,1-t);
+          c.strokeStyle=u.abFlashColor||"#fff";
+          c.lineWidth=3;
+          c.beginPath();
+          c.arc(pass2[i].x,pass2[i].y,pass2[i].z+4+t*15,0,Math.PI*2);
+          c.stroke();
+          c.lineWidth=1;
+          c.globalAlpha=1;
+        }
+      }
+    }else{
+      // Low unit count: per-unit rings with pulsing alpha (visual quality).
+      for(let i=0;i<pass2Len;i++){
+        const e=pass2[i];
+        const u=e.u;
+        if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=0.7+0.3*Math.sin(time*5);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+        if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=0.6+0.4*Math.sin(time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+        if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+        if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+        if(u.abFlash>0){
+          const t=1-u.abFlash/0.4;
+          c.globalAlpha=Math.max(0,1-t);
+          c.strokeStyle=u.abFlashColor||"#fff";
+          c.lineWidth=3;
+          c.beginPath();
+          c.arc(e.x,e.y,e.z+4+t*15,0,Math.PI*2);
+          c.stroke();
+          c.lineWidth=1;
+          c.globalAlpha=1;
+        }
       }
     }
     // Name text (only when <=30 units — text rendering is expensive).
