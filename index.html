@@ -6760,14 +6760,13 @@ const Battle={
       const cell=flatUnits[idx];
       const cx=idx%gw, cy=(idx/gw)|0;
       // Check this cell + 4 adjacent (right, down, down-right, up-right) to avoid double-checks.
-      for(let oi=0;oi<5;oi++){
-        const dx=offsets[oi][0],dy=offsets[oi][1];
-        const ncx=cx+dx,ncy=cy+dy;
+      for(let oi=0;oi<10;oi+=2){
+        const ncx=cx+offsets[oi],ncy=cy+offsets[oi+1];
         if(ncx<0||ncx>=gw||ncy<0||ncy>=gh)continue;
         const nidx=ncy*gw+ncx;
         if(flatGen[nidx]!==gen)continue;
         const ncell=flatUnits[nidx];
-        const sameCell=(dx===0&&dy===0);
+        const sameCell=(offsets[oi]===0&&offsets[oi+1]===0);
         for(let ai=0;ai<cell.length;ai++){
           const a=cell[ai];
           const aSep=a.z*1.8;
