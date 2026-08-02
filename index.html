@@ -3450,17 +3450,30 @@ const _zeroDir={x:0,y:0};
 // PERF-R12: spatial grid for avoidance (avoids O(n²) ally scan).
 const _avoidGrid=new Map();
 const _avoidOffsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+// PERF-R12: pool cell arrays to avoid per-frame [] allocations.
+const _avoidCellPool=[];
+let _avoidPoolIdx=0;
 function _buildAvoidGrid(units){
+  // Collect previous frame's cells into pool before clearing.
+  for(const cell of _avoidGrid.values())_avoidCellPool.push(cell);
   _avoidGrid.clear();
+  _avoidPoolIdx=0;
   const cellSize=30; // slightly larger than avoidance radius (28)
   for(let i=0;i<units.length;i++){
     const u=units[i];
     if(u.h<=0)continue;
     const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
     let cell=_avoidGrid.get(k);
-    if(!cell){cell=[];_avoidGrid.set(k,cell);}
+    if(!cell){
+      cell=_avoidPoolIdx<_avoidCellPool.length?_avoidCellPool[_avoidPoolIdx++]:[];
+      cell.length=0;
+      _avoidGrid.set(k,cell);
+    }
     cell.push(u);
   }
+  // Return unused pooled cells.
+  while(_avoidPoolIdx<_avoidCellPool.length)_avoidCellPool.pop();
+  if(_avoidCellPool.length>128)_avoidCellPool.length=128;
   return cellSize;
 }
 function avoidanceOffset(u,allies,radius){
