@@ -70,34 +70,34 @@ Separate timings:
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
 | Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.2 | 16.66ms | 0.37ms | 0.44ms | 0.81ms | 15.7MB | 2 |
-| 20v20 (40 units) | 60.1 | 16.67ms | 0.71ms | 0.47ms | 1.19ms | 16.5MB | 8 |
-| 50v50 (100 units) | 60.3 | 16.67ms | 1.41ms | 0.61ms | 2.02ms | 18.5MB | 18 |
-| MP Guest (50v50) | 60.2 | 16.66ms | 0.00ms | 0.26ms | 0.00ms | 21.6MB | 0 |
+| 5v5 (10 units) | 60.2 | 16.67ms | 0.37ms | 0.44ms | 0.81ms | 15.5MB | 3 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.74ms | 0.49ms | 1.23ms | 16.9MB | 11 |
+| 50v50 (100 units) | 60.2 | 16.67ms | 1.40ms | 0.62ms | 2.02ms | 18.8MB | 21 |
+| MP Guest (50v50) | 60.2 | 16.67ms | 0.00ms | 0.28ms | 0.00ms | 22.3MB | 0 |
 
 Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.0ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0024ms/call (91ms total, 38K calls) — **14.5x faster per call**
-- drawShapeRaw: 0.0033ms/call (10ms total, 2.8K calls) — **99% fewer calls** (hitReact now cached)
-- act: 0.0102ms/call (387ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0038ms/call (1ms total, 339 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
-- drawBackground: 0.0298ms/call (11ms total, 382 calls) — **offscreen canvas cache + bg particle fillStyle batch**
-- separate: 0.1325ms/call (51ms total, 382 calls) — **spatial grid + hoisted aSep**
-- drawDmgNums: 0.0565ms/call (22ms total, 382 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text**
-- updateProjectiles: 0.0474ms/call (18ms total, 382 calls) — **Map-based lookup + squared dist + flat trail**
+- spriteDraw: 0.0025ms/call (96ms total, 38K calls) — **14x faster per call**
+- drawShapeRaw: 0.0037ms/call (10ms total, 2.6K calls) — **99% fewer calls** (hitReact now cached)
+- act: 0.0102ms/call (391ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0020ms/call (0.6ms total, 304 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
+- drawBackground: 0.0306ms/call (12ms total, 386 calls) — **offscreen canvas cache + bg particle fillStyle batch**
+- separate: 0.1246ms/call (48ms total, 386 calls) — **spatial grid + hoisted aSep + non-empty cell keys**
+- drawDmgNums: 0.0490ms/call (19ms total, 386 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text + isHeal flag**
+- updateProjectiles: 0.0495ms/call (19ms total, 386 calls) — **Map-based lookup + squared dist + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
 | CPU avg | 7.40ms | 2.02ms | **73% faster** |
-| Render avg | 4.65ms | 0.61ms | **87% faster** |
-| Update avg | 2.75ms | 1.41ms | **49% faster** |
-| spriteDraw/call | 0.0349ms | 0.0024ms | **14.5x faster** |
+| Render avg | 4.65ms | 0.62ms | **87% faster** |
+| Update avg | 2.75ms | 1.40ms | **49% faster** |
+| spriteDraw/call | 0.0349ms | 0.0025ms | **14x faster** |
 | act/call | 0.0300ms | 0.0102ms | **2.9x faster** |
-| drawFace calls | 38K | 339 | **99% reduction** (skip when >30 units) |
-| drawShapeRaw calls | 236K | 2.8K | **99% reduction** (cache hits) |
+| drawFace calls | 38K | 304 | **99% reduction** (skip when >30 units) |
+| drawShapeRaw calls | 236K | 2.6K | **99% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
 | Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
 | Memory | 17.6MB | 18.5MB | **+5%** (grid + pass2 arrays) |
@@ -371,6 +371,37 @@ Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.
 - Halo is a bloom visual effect (larger, fainter circle per particle)
 - Skip when >30 particles to halve arc count (114 to 57 arcs)
 - Particles are small and fast-moving — halo is barely visible
+
+### 55. Track non-empty cell keys in separate (avoid Map iterator alloc)
+- Collect cell keys into array during binning
+- Iterate keys array instead of Map iterator (avoids [k,cell] array alloc per cell)
+- separate: 51ms to 48ms (6% faster)
+
+### 56. Cache sprite key prefix on unit (avoid string concat per call)
+- Prefix = recipeId + "|z" + zRounded + "|" — only changes when z changes
+- Append state + "|" + frameIdx per call (small concat)
+- Minor improvement (string concat was fast compared to drawImage)
+
+### 57. Hoist projectile trail strokeStyle (set once per projectile)
+- All trail segments of a projectile share the same accent color
+- Set strokeStyle once before the segment loop instead of per-segment
+- Minor improvement (few projectiles, ~3 segments each)
+
+### 58. Fast path for interpolate in cache path (only bob/alpha/rot)
+- Cache path only needs bob/alpha/rot from keyframes (not full channels object)
+- Fast path extracts 3 values directly (avoids object allocation + for...in loop)
+- Full interpolate still used for non-cache paths (death, reducedMotion, spawn)
+- spriteDraw: 102ms to 96ms (6% faster)
+
+### 59. Precompute isHeal flag on dmg nums (avoid typeof check per draw)
+- isHeal flag set at spawn (typeof val==='string' && val[0]==='+')
+- drawDmgNums uses d.isHeal instead of typeof d.val==='string' check
+- Combines multiple if conditions into single || check per iteration
+
+### 60. Avoid .bind(this) in _drawOne (use .call instead)
+- .bind(this) allocates a new function per call (38K calls/frame)
+- Use raw.call(self, ...) instead — no allocation
+- Minor improvement (drawShapeRaw is mostly cached now)
 
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
