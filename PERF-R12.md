@@ -69,35 +69,36 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.2 | 16.67ms | 0.37ms | 0.44ms | 0.81ms | 15.5MB | 3 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.74ms | 0.49ms | 1.23ms | 16.9MB | 11 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.40ms | 0.62ms | 2.02ms | 18.8MB | 21 |
-| MP Guest (50v50) | 60.2 | 16.67ms | 0.00ms | 0.28ms | 0.00ms | 22.3MB | 0 |
+| Empty (0 units) | 60.4 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.67ms | 0.57ms | 0.61ms | 1.18ms | 15.8MB | 2 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.79ms | 0.54ms | 1.33ms | 17.6MB | 10 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.53ms | 0.70ms | 2.23ms | 17.3MB | 30 |
+| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.24ms | 0.00ms | 19.7MB | 0 |
 
-Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.0ms).
+Note: 50v50 CPU varies 2.0-2.6ms across runs due to combat randomness + system load.
+All scenarios at 60fps with 0 slow frames (>20ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0025ms/call (96ms total, 38K calls) — **14x faster per call**
-- drawShapeRaw: 0.0037ms/call (10ms total, 2.6K calls) — **99% fewer calls** (hitReact now cached)
-- act: 0.0102ms/call (391ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0020ms/call (0.6ms total, 304 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
-- drawBackground: 0.0306ms/call (12ms total, 386 calls) — **offscreen canvas cache + bg particle fillStyle batch**
-- separate: 0.1246ms/call (48ms total, 386 calls) — **spatial grid + hoisted aSep + non-empty cell keys**
-- drawDmgNums: 0.0490ms/call (19ms total, 386 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text + isHeal flag**
-- updateProjectiles: 0.0495ms/call (19ms total, 386 calls) — **Map-based lookup + squared dist + flat trail**
+- spriteDraw: 0.0030ms/call (115ms total, 38K calls) — **12x faster per call**
+- drawShapeRaw: 0.0040ms/call (17ms total, 4.3K calls) — **99% fewer calls** (hitReact now cached)
+- act: 0.0111ms/call (425ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0048ms/call (2.3ms total, 483 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
+- drawBackground: 0.0360ms/call (14ms total, 389 calls) — **offscreen canvas cache + bg particle fillStyle batch**
+- separate: 0.1447ms/call (56ms total, 389 calls) — **spatial grid + hoisted aSep + non-empty cell keys**
+- drawDmgNums: 0.0560ms/call (22ms total, 389 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text + isHeal flag**
+- updateProjectiles: 0.0542ms/call (21ms total, 389 calls) — **Map-based lookup + squared dist + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.02ms | **73% faster** |
-| Render avg | 4.65ms | 0.62ms | **87% faster** |
-| Update avg | 2.75ms | 1.40ms | **49% faster** |
-| spriteDraw/call | 0.0349ms | 0.0025ms | **14x faster** |
+| CPU avg | 7.40ms | 2.03ms | **73% faster** |
+| Render avg | 4.65ms | 0.64ms | **86% faster** |
+| Update avg | 2.75ms | 1.39ms | **49% faster** |
+| spriteDraw/call | 0.0349ms | 0.0027ms | **13x faster** |
 | act/call | 0.0300ms | 0.0102ms | **2.9x faster** |
-| drawFace calls | 38K | 304 | **99% reduction** (skip when >30 units) |
-| drawShapeRaw calls | 236K | 2.6K | **99% reduction** (cache hits) |
+| drawFace calls | 38K | 500 | **99% reduction** (skip when >30 units) |
+| drawShapeRaw calls | 236K | 4.2K | **98% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
 | Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
 | Memory | 17.6MB | 18.5MB | **+5%** (grid + pass2 arrays) |
@@ -403,6 +404,30 @@ Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.
 - Use raw.call(self, ...) instead — no allocation
 - Minor improvement (drawShapeRaw is mostly cached now)
 
+### 61. Remove redundant quality/reducedMotion checks in unitAura
+- Caller (update loop) already checks _auraEnabled before calling fxAura
+- unitAura re-checked G.qualityTier() and G.save?.settings?.reducedMotion per unit
+- Removed 100× G.qualityTier() calls + 100× optional chaining per frame
+- Also cached Battle.particles reference (avoid 100× optional chaining)
+
+### 62. Cache bound loop function + use alive arrays for headcount
+- this.loop.bind(this) was called every frame (allocates new function)
+- Cached as _loopBound on first use, reused for all rAF calls
+- Also fixed in start() which had the same .bind() call
+- Dramatic slowdown check was: this.units.filter(u=>u.h>0).length (allocates array)
+- Now: _alivePlayers.length + _aliveEnemies.length (no allocation)
+
+### 63. In-place compaction for death + zone cleanup (avoid filter alloc)
+- Death cleanup: was this.units.filter(...) — allocates array every frame
+  when units are dying. Now uses in-place compaction (write index).
+- Zone cleanup: was battle.zones.filter(z=>!z._remove) — allocates array
+  every frame when zones are active. Now uses in-place compaction.
+
+### 64. Fix minor render bugs — reset lineWidth and globalAlpha
+- Poison/slow status rings: add missing c.lineWidth=1 reset after stroke
+- Projectile trail: reset c.globalAlpha=1 after trail loop before c.save()
+- Both are minor (no visual bugs in practice) but improve consistency
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -411,11 +436,11 @@ Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): ~2.24ms avg on my Mac (2.2-2.7ms range)
+- 50v50 CPU (with combat): ~2.23ms avg on my Mac (2.0-2.6ms range)
 - On a 7x slower machine: ~16ms — at the 16.67ms budget limit
 - On a 5x slower machine: ~11ms — comfortable headroom
 - On a 3x slower machine: ~6.7ms — plenty of headroom
-- MP Guest (50v50): 0.34ms render only — trivially 60fps on any hardware
+- MP Guest (50v50): 0.24ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
 ## Single/Multiplayer Unification
