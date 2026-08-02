@@ -69,35 +69,36 @@ Separate timings:
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.37ms | 0.57ms | 0.95ms | 15.7MB | 3 |
-| 20v20 (40 units) | 60.3 | 16.67ms | 1.03ms | 0.91ms | 1.95ms | 16.6MB | 10 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 2.39ms | 1.29ms | 3.20ms | 17.4MB | 24 |
-| MP Guest (50v50) | 60.9 | 16.67ms | 0.00ms | 0.57ms | 0.00ms | 20.2MB | 0 |
+| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.4MB | 0 |
+| 5v5 (10 units) | 61.1 | 16.67ms | 0.44ms | 0.64ms | 1.08ms | 15.5MB | 1 |
+| 20v20 (40 units) | 60.3 | 16.67ms | 0.96ms | 0.85ms | 1.81ms | 16.2MB | 7 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.95ms | 1.03ms | 2.98ms | 17.0MB | 21 |
+| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.48ms | 0.00ms | 20.0MB | 0 |
 
-Note: 50v50 CPU varies 2.65-4.26ms across runs due to combat randomness (avg ~3.2ms).
+Note: 50v50 CPU varies 2.6-4.4ms across runs due to combat randomness (avg ~3.0ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0047ms/call (179ms total, 38K calls) — **7.4x faster per call**
-- drawShapeRaw: 0.0022ms/call (48ms total, 22K calls) — **91% fewer calls** (cache hits)
-- act: 0.0132ms/call (500ms total, 38K calls) — **targeting cache + merged loops**
-- drawFace: 0.0020ms/call (7ms total, 3.5K calls) — **91% fewer calls** (skip when >30 units)
-- drawBackground: 0.0635ms/call (24ms total, 384 calls) — **pattern+gradient cached**
-- updateProjectiles: 0.0567ms/call (22ms total, 384 calls) — **Map-based lookup**
-- separate: 0.1492ms/call (57ms total, 384 calls)
-- drawDmgNums: 0.0919ms/call (35ms total, 384 calls) — **emojis removed, two-pass batch, skip invisible**
+- spriteDraw: 0.0053ms/call (201ms total, 38K calls) — **6.6x faster per call**
+- drawShapeRaw: 0.0030ms/call (59ms total, 20K calls) — **91% fewer calls** (cache hits)
+- act: 0.0148ms/call (559ms total, 38K calls) — **targeting cache + squared dist + merged loops**
+- drawFace: 0.0027ms/call (8ms total, 3.1K calls) — **91% fewer calls** (skip when >30 units)
+- drawBackground: 0.0705ms/call (27ms total, 383 calls) — **pattern+gradient+lane cached**
+- separate: 0.1470ms/call (56ms total, 383 calls)
+- drawDmgNums: 0.0979ms/call (38ms total, 383 calls) — **4-pass color batch + skip invisible**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 3.20ms | **57% faster** |
-| Render avg | 4.65ms | 1.29ms | **72% faster** |
-| Update avg | 2.75ms | 2.39ms | **13% faster** |
-| spriteDraw/call | 0.0349ms | 0.0047ms | **7.4x faster** |
-| drawFace calls | 38K | 3.5K | **91% reduction** (skip when >30 units) |
-| drawShapeRaw calls | 236K | 22K | **91% reduction** (cache hits) |
-| Memory | 17.6MB | 17.4MB | **1% less** |
+| CPU avg | 7.40ms | 2.98ms | **60% faster** |
+| Render avg | 4.65ms | 1.03ms | **78% faster** |
+| Update avg | 2.75ms | 1.95ms | **29% faster** |
+| spriteDraw/call | 0.0349ms | 0.0053ms | **6.6x faster** |
+| drawFace calls | 38K | 3.1K | **92% reduction** (skip when >30 units) |
+| drawShapeRaw calls | 236K | 20K | **92% reduction** (cache hits) |
+| HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
+| Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
+| Memory | 17.6MB | 17.0MB | **3% less** |
 
 ## Optimizations Implemented
 
@@ -237,6 +238,32 @@ Note: 50v50 CPU varies 2.65-4.26ms across runs due to combat randomness (avg ~3.
 - Saves text rendering (strokeText + fillText) for fading numbers
 - Reduces drawDmgNums work by ~10% at end of damage number lifetime
 
+### 29. Two-pass render (biggest render win)
+- Pass 1: shadows + sprites + hit flashes (depth-ordered with lunge offset)
+- Pass 2: status rings + HP bars + names (batched by color)
+- HP bars: 500 fillStyle changes → 7 per frame (100 units × 5 colors → 7 groups)
+- Reuse pass2 array + entry objects (no per-frame allocation)
+- Render avg: 1.29ms → 1.03ms (20% faster)
+
+### 30. drawDmgNums 4-pass color batching
+- 4 passes by color (player blue, enemy red, heal green, crit gold) instead of 2 by font
+- Reduces fillStyle changes from ~40 to 4 per frame
+- Guard against theoretical critical heals (defensive)
+
+### 31. Squared distance checks (avoid Math.sqrt)
+- Attack range check in act(): `dist(u,target) <= u.r` → `dx*dx+dy*dy <= r*r`
+- Movement functions (hold_midpoint, kite, blink, strafe): same pattern
+- Saves ~200 Math.sqrt calls per frame
+- act: 0.0159ms → 0.0148ms/call
+
+### 32. Lane band gradient caching
+- Cache 3 lane band gradients (only depend on canvasH, not per-frame state)
+- Avoids 3 createLinearGradient + 6 addColorStop calls per frame
+
+### 33. closestEnemy micro-optimization
+- Cache `ux=u.x, uy=u.y` outside loop (avoid repeated property access)
+- Use `dx*dx` instead of `**2` (V8 optimizes multiplication better)
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -245,10 +272,10 @@ Note: 50v50 CPU varies 2.65-4.26ms across runs due to combat randomness (avg ~3.
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): ~3.2ms avg on my Mac (2.65-4.26ms range)
-- On a 5x slower machine: ~16ms — at the 16.67ms budget limit
-- On a 3x slower machine: ~9.6ms — comfortable headroom
-- MP Guest (50v50): 0.57ms render only — trivially 60fps on any hardware
+- 50v50 CPU (with combat): ~3.0ms avg on my Mac (2.6-4.4ms range)
+- On a 5x slower machine: ~15ms — within 16.67ms budget
+- On a 3x slower machine: ~9ms — comfortable headroom
+- MP Guest (50v50): 0.48ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
 ## Single/Multiplayer Unification
