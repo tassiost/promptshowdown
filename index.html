@@ -7150,7 +7150,10 @@ const Battle={
     // Shadows are drawn first with fillStyle="#000", then sprites on top.
     // PERF-R12: index loop (avoid for...of iterator allocation).
     // Pass 1a: shadows (batched fillStyle="#000").
+    // PERF-R12: batch alive-unit shadows into single path (constant alpha=0.35).
+    // Dying units have per-unit alpha → drawn separately after.
     c.fillStyle="#000";
+    c.globalAlpha=0.35;c.beginPath();
     for(let ui=0;ui<this.units.length;ui++){
       const u=this.units[ui];
       if(!u||u.x===undefined)continue;
@@ -7160,11 +7163,26 @@ const Battle={
       // PERF-R12: cache lunge/spawnScale on unit for sprite pass (avoid double compute).
       u._renderLungeX=lunge.x;u._renderLungeY=lunge.y;u._renderSpawnScale=spawnScale;
       const sx=u.x+lunge.x, sy=u.y+lunge.y, sz=u.z*spawnScale;
-      const shadowAlpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5)*0.35:0.35;
-      if(shadowAlpha>0.02){
-        c.globalAlpha=shadowAlpha;
-        c.beginPath();
+      if(u.deathT===undefined){
+        // Alive unit — add to batched shadow path.
+        c.moveTo(sx+sz*0.9,sy+sz*0.9);
         c.ellipse(sx,sy+sz*0.9,sz*0.9,sz*0.35,0,0,Math.PI*2);
+      }else{
+        // Dying unit — store for per-unit alpha pass.
+        const shadowAlpha=Math.max(0,1-u.deathT/0.5)*0.35;
+        if(shadowAlpha>0.02){
+          u._shadowAlpha=shadowAlpha;u._shadowSx=sx;u._shadowSy=sy+sz*0.9;u._shadowSz=sz;
+        }else u._shadowAlpha=0;
+      }
+    }
+    c.fill();
+    // Dying unit shadows (per-unit alpha — can't batch).
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
+      if(u._shadowAlpha&&u._shadowAlpha>0.02){
+        c.globalAlpha=u._shadowAlpha;
+        c.beginPath();
+        c.ellipse(u._shadowSx,u._shadowSy,u._shadowSz*0.9,u._shadowSz*0.35,0,0,Math.PI*2);
         c.fill();
       }
     }
@@ -7229,18 +7247,24 @@ const Battle={
     // PERF-R12: when manyUnitsR, batch by status type (constant alpha per type).
     // Reduces ~400 state changes (100 units × 4 statuses) to ~12 (4 types × 3 states).
     if(manyUnitsR){
+      // PERF-R12: batch all same-type rings into a single path (one stroke call per type).
+      // Research: drawing N arcs in 1 path + 1 stroke() is ~2x faster than N × (beginPath+arc+stroke).
       // Shield rings (strokeStyle="#fff", lineWidth=2, alpha=0.8).
-      c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=0.8;
-      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.shieldActive>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);c.stroke();}}
+      c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=0.8;c.beginPath();
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.shieldActive>0){c.moveTo(pass2[i].x+(pass2[i].z+3)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);}}
+      c.stroke();
       // Stun rings (strokeStyle="#ff0", lineWidth=2, alpha=0.7).
-      c.strokeStyle="#ff0";c.globalAlpha=0.7;
-      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.stun>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);c.stroke();}}
+      c.strokeStyle="#ff0";c.globalAlpha=0.7;c.beginPath();
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.stun>0){c.moveTo(pass2[i].x+(pass2[i].z+3)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);}}
+      c.stroke();
       // Poison rings (strokeStyle="#3f3", alpha=0.6).
-      c.strokeStyle="#3f3";c.lineWidth=1;c.globalAlpha=0.6;
-      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.poison>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+6)*ringPulse,0,Math.PI*2);c.stroke();}}
+      c.strokeStyle="#3f3";c.lineWidth=1;c.globalAlpha=0.6;c.beginPath();
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.poison>0){c.moveTo(pass2[i].x+(pass2[i].z+6)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+6)*ringPulse,0,Math.PI*2);}}
+      c.stroke();
       // Slow rings (strokeStyle="#39f", alpha=0.6).
-      c.strokeStyle="#39f";c.globalAlpha=0.6;
-      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.slow>0){c.beginPath();c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+9)*ringPulse,0,Math.PI*2);c.stroke();}}
+      c.strokeStyle="#39f";c.globalAlpha=0.6;c.beginPath();
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.slow>0){c.moveTo(pass2[i].x+(pass2[i].z+9)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+9)*ringPulse,0,Math.PI*2);}}
+      c.stroke();
       c.globalAlpha=1;c.lineWidth=1;
       // Ability flash (per-unit — alpha varies, can't batch).
       for(let i=0;i<pass2Len;i++){
