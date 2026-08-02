@@ -6118,7 +6118,9 @@ const Battle={
     // Keep them in _allUnits for cumulative draft revival.
     // PERF-R11: in-place filter to avoid allocating 2 arrays per frame.
     let hasDead=false;
-    for(const u of this.units){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let di=0;di<this.units.length;di++){
+      const u=this.units[di];
       if(u.deathT!==undefined&&u.deathT>=0.5){
         hasDead=true;
         const idx=this._allUnits.findIndex(a=>a.id===u.id);
@@ -7973,8 +7975,10 @@ const Battle={
       if(!this._prevSnapMap)this._prevSnapMap=new Map();
       const prevMap=this._prevSnapMap;
       prevMap.clear();
-      for(const u of prev.units)prevMap.set(u.id,u);
-      for(const u of this.units){
+      // PERF-R12: index loop (avoid for...of iterator allocation).
+      for(let pui=0;pui<prev.units.length;pui++)prevMap.set(prev.units[pui].id,prev.units[pui]);
+      for(let ui=0;ui<this.units.length;ui++){
+        const u=this.units[ui];
         const pu=prevMap.get(u.id);
         if(!pu){
           // New unit → spawn FX.
@@ -7987,8 +7991,9 @@ const Battle={
       // Units that disappeared → death FX.
       if(!this._curSnapIds)this._curSnapIds=new Set();
       this._curSnapIds.clear();
-      for(const u of this.units)this._curSnapIds.add(u.id);
-      for(const pu of prev.units){
+      for(let ui=0;ui<this.units.length;ui++)this._curSnapIds.add(this.units[ui].id);
+      for(let pui=0;pui<prev.units.length;pui++){
+        const pu=prev.units[pui];
         if(!this._curSnapIds.has(pu.id)&&pu.h>0){
           BattleFX.onDeath(pu);
         }
@@ -8040,7 +8045,8 @@ const Battle={
       this._interpFromUnits=this._interpFrom.units;
       if(!this._interpFromMap)this._interpFromMap=new Map();
       this._interpFromMap.clear();
-      for(const u of this._interpFrom.units){if(u&&u.id)this._interpFromMap.set(u.id,u);}
+      // PERF-R12: index loop (avoid for...of iterator allocation).
+      for(let i=0;i<this._interpFrom.units.length;i++){const u=this._interpFrom.units[i];if(u&&u.id)this._interpFromMap.set(u.id,u);}
     }
     const fromMap=this._interpFromMap;
     // PERF-R12: reuse the same units array (avoid filter+map allocation every frame).
@@ -8049,7 +8055,8 @@ const Battle={
       this._interpUnitsBase=toUnits;
       this._interpUnits=toUnits.filter(u=>u&&u.id);
       // Store original "to" positions for interpolation (avoid losing them when mutating).
-      for(const u of this._interpUnits){u._origTx=u.x;u._origTy=u.y;u._origTh=u.h;}
+      // PERF-R12: index loop (avoid for...of iterator allocation).
+      for(let i=0;i<this._interpUnits.length;i++){const u=this._interpUnits[i];u._origTx=u.x;u._origTy=u.y;u._origTh=u.h;}
     }
     // PERF-R12: mutate unit objects in place (avoids N object allocations per frame).
     for(let i=0;i<this._interpUnits.length;i++){
