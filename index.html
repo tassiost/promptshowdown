@@ -3560,6 +3560,9 @@ const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal",
 const ROLE_OPTS=["frontline","carry","support","counter","utility","assassin","bruiser"];
 // Reusable role color map for canvas rendering (avoids per-frame allocation).
 const ROLE_COLORS={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",utility:"#4ff",assassin:"#f4f",bruiser:"#888"};
+// PERF-R12: hoist spell FX color maps (avoid per-frame object allocation).
+const SPELL_FX_COLORS={explosion:"#f84",frost:"#6cf",lightning:"#ff4",poison_cloud:"#6f4",heal_glow:"#fd8",shockwave:"#fff",fire_wall:"#f84"};
+const ZONE_FX_COLORS={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
 // Team colors — used consistently for HP bar borders, name text, damage numbers,
 // ground decals, and selection indicators so friend/foe is instantly readable.
 const TEAM_COLORS={player:"#4af",enemy:"#f44"};
@@ -4446,7 +4449,8 @@ const SpriteRenderer={
     const keyframes=anims[state]||anims.idle||[{t:0}];
     // PERF-R12: fast path — only compute bob/alpha/rot when using cache (avoids full interpolate).
     // Phase 32: reduced motion — skip bob/squash/stretch/wobble channels.
-    const rm=G.save?.settings?.reducedMotion;
+    // PERF-R12: use per-frame cached values (avoid per-unit property access).
+    const rm=SpriteRenderer._frameRM;
     const useCacheFast=state!=="death"&&!rm&&!(u.spawnT>0);
     let channels,bobY,alpha,rot;
     if(useCacheFast){
@@ -4512,7 +4516,7 @@ const SpriteRenderer={
         c.globalAlpha=oldAlpha;
         // Draw face on top (dynamic — tracks target).
         // PERF-R12: skip face when >30 units (tiny visual detail, expensive transform).
-        if(recipe.face!==false&&state!=="death"&&Battle.units.length<=30){
+        if(recipe.face!==false&&state!=="death"&&SpriteRenderer._frameUnitCount<=30){
           const saveY=u.y, saveX=u.x;
           u.y=saveY+bobY+reactY;
           u.x=saveX+reactX;
@@ -5043,16 +5047,16 @@ const BattleFX={
     // Mark affected units with hit flash (always, even in reduced motion).
     affected.forEach(u=>{u.hitFlash=0.1;});
     if(G.save?.reducedMotion)return; // skip particles/shake in reduced motion
-    const colorMap={explosion:"#f84",frost:"#6cf",lightning:"#ff4",poison_cloud:"#6f4",heal_glow:"#fd8",shockwave:"#fff",fire_wall:"#f84"};
-    const color=colorMap[spec.fxType]||"#fff";
+    // PERF-R12: use hoisted SPELL_FX_COLORS constant (avoid per-call object allocation).
+    const color=SPELL_FX_COLORS[spec.fxType]||"#fff";
     const count=spec.shape==="persistent_zone"?8:spec.shape==="circle_aoe"?12:6;
     this.burst(ax,ay,color,count,100);
     this.shake(spec.fxType==="explosion"?6:3);
   },
   // Phase 23: persistent zone FX — particles at zone perimeter.
   spellZone(z){
-    const colorMap={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
-    const color=colorMap[z.spec.fxType]||"#fa4";
+    // PERF-R12: use hoisted ZONE_FX_COLORS constant (avoid per-call object allocation).
+    const color=ZONE_FX_COLORS[z.spec.fxType]||"#fa4";
     const budget=MAX_PARTICLES-(Battle.particles?.length||0);
     if(budget<=0)return;
     const n=Math.min(3,budget);
@@ -6968,6 +6972,9 @@ const Battle={
   render(){
     let c=this.ctx;
     if(!c)return;
+    // PERF-R12: cache per-frame values used by SpriteRenderer (avoid per-unit property access).
+    SpriteRenderer._frameRM=G.save?.settings?.reducedMotion||false;
+    SpriteRenderer._frameUnitCount=this.units.length;
     // Clear the full canvas (in raw pixel space) to prevent artifacts from
     // previous frames, especially during screen transitions or resize.
     c.save();
@@ -7290,10 +7297,11 @@ const Battle={
     c.globalAlpha=1;
     c.globalCompositeOperation=projPrev;
     // Phase 23: draw persistent spell zones.
-    for(let z of this.zones){
+    for(let zi=0;zi<this.zones.length;zi++){
+      const z=this.zones[zi];
       const pulse=0.2+0.1*Math.sin(this.time*4);
-      const colorMap={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightning:"#ff4"};
-      const color=colorMap[z.spec.fxType]||"#fa4";
+      // PERF-R12: use hoisted ZONE_FX_COLORS constant (avoid per-zone object allocation).
+      const color=ZONE_FX_COLORS[z.spec.fxType]||"#fa4";
       c.save();
       // Additive fill for energy glow.
       c.globalCompositeOperation="lighter";
