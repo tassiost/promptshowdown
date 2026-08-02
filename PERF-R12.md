@@ -67,39 +67,39 @@ Separate timings:
 
 ## After Optimization (headed browser, 10s per scenario, WITH combat, deterministic seed)
 
-| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
-|---|---|---|---|---|---|---|---|
-| Empty (0 units) | 63.5 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 61.6 | 16.67ms | 1.00ms | 1.32ms | 2.32ms | 15.4MB | 2 |
-| 20v20 (40 units) | 61.4 | 16.67ms | 2.61ms | 1.81ms | 4.42ms | 15.7MB | 9 |
-| 50v50 (100 units) | 64.7 | 16.67ms | 4.60ms | 2.42ms | 7.02ms | 17.7MB | 17 |
-| MP Guest (50v50) | 64.6 | 16.67ms | 0.00ms | 1.06ms | 0.00ms | 20.7MB | 0 |
+| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | GPU avg | Memory | Max Proj |
+|---|---|---|---|---|---|---|---|---|
+| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
+| 5v5 (10 units) | 60.2 | 16.67ms | 0.55ms | 0.60ms | 1.15ms | 15.52ms | 15.6MB | 2 |
+| 20v20 (40 units) | 60.3 | 16.67ms | 0.90ms | 0.62ms | 1.52ms | 15.14ms | 15.6MB | 9 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.49ms | 0.72ms | 2.21ms | 14.45ms | 16.6MB | 16 |
+| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.33ms | 0.00ms | 0.00ms | 21.3MB | 0 |
 
 **All scenarios hit 60+ FPS with 0 slow frames (>20ms).**
-50v50 CPU avg 7.02ms — well within 16.67ms budget (42% utilization).
-GPU time (frameInterval - CPU) decreases with scene complexity, confirming
-CPU is the bottleneck, not GPU.
+50v50 CPU avg 2.21ms — only 13% of 16.67ms budget (87% headroom).
+GPU time (frameInterval - CPU) is ~15ms — dominated by vsync wait, not actual GPU work.
+On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0107ms/call (451ms total, 42K calls) — **sprite cache + drawImage**
-- drawShapeRaw: 0.0126ms/call (65ms total, 5.2K calls) — **cache miss path only (death/spawn)**
-- act: 0.0344ms/call (1439ms total, 42K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0111ms/call (7ms total, 639 calls) — **99% fewer calls** (skip when >30 units)
-- drawBackground: 0.1235ms/call (53ms total, 426 calls) — **offscreen canvas cache**
-- separate: 0.3425ms/call (146ms total, 426 calls) — **flat array grid + non-empty cell keys**
-- drawDmgNums: 0.1920ms/call (82ms total, 426 calls) — **4-pass color batch + pooled objects**
-- updateProjectiles: 0.1737ms/call (74ms total, 426 calls) — **Map lookup + pooled projectiles + flat trail**
+- spriteDraw: 0.0030ms/call (117ms total, 39K calls) — **sprite cache + drawImage**
+- drawShapeRaw: 0.0037ms/call (14ms total, 3.9K calls) — **cache miss path only (death/spawn)**
+- act: 0.0113ms/call (434ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0030ms/call (1.4ms total, 465 calls) — **99% fewer calls** (skip when >30 units)
+- drawBackground: 0.0362ms/call (14ms total, 389 calls) — **offscreen canvas cache**
+- separate: 0.0522ms/call (20ms total, 389 calls) — **flat array grid + non-empty cell keys**
+- drawDmgNums: 0.0573ms/call (22ms total, 389 calls) — **4-pass color batch + pooled objects**
+- updateProjectiles: 0.0591ms/call (23ms total, 389 calls) — **Map lookup + pooled projectiles + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 7.02ms | **5% faster** (was already fast, now 60fps confirmed) |
-| Render avg | 4.65ms | 2.42ms | **48% faster** |
-| Update avg | 2.75ms | 4.60ms | **(now includes more per-unit work, still fast)** |
-| spriteDraw/call | 0.0349ms | 0.0107ms | **3.3x faster** |
-| act/call | 0.0300ms | 0.0344ms | **(now includes pooled particles, targeting cache)** |
-| drawFace calls | 38K | 500 | **99% reduction** (skip when >30 units) |
+| CPU avg | 7.40ms | 2.21ms | **70% faster** |
+| Render avg | 4.65ms | 0.72ms | **85% faster** |
+| Update avg | 2.75ms | 1.49ms | **46% faster** |
+| spriteDraw/call | 0.0349ms | 0.0030ms | **11.6x faster** |
+| act/call | 0.0300ms | 0.0113ms | **2.7x faster** |
+| drawFace calls | 38K | 465 | **99% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 4.2K | **98% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
 | Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
@@ -520,6 +520,20 @@ CPU is the bottleneck, not GPU.
 - Was: this.units.filter() twice per overlay update
 - Now: uses pre-built _alivePlayers/_aliveEnemies arrays
 
+### 80. Flatten _avoidOffsets array (avoid nested array indexing)
+- avoidanceOffset() called per unit per frame (100× per frame in 50v50)
+- Was: offsets[oi][0]/offsets[oi][1] (two property lookups per iteration)
+- Now: _avoidOffsetsFlat[oi]/_avoidOffsetsFlat[oi+1] (single array, stride 2)
+
+### 81. V8 hidden class lesson learned (reverted)
+- Attempted to cache function refs (_targetFn, _moveFn, etc.) on units in initRuntime()
+- This caused 50v50 CPU to regress from 6.54ms to 9.10ms (39% slower)
+- Root cause: adding properties to existing objects changes V8 hidden class
+  transition tree, deoptimizing inline caches for ALL property accesses on units
+- Lesson: never add new properties to hot objects after initialization.
+  V8's dictionary lookups (TARGETING[u.targeting]) are already well-optimized
+  by inline caches — don't try to "fix" them by adding properties to objects.
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -528,11 +542,12 @@ CPU is the bottleneck, not GPU.
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): ~7.02ms avg on my Mac (measured at 60+ FPS)
+- 50v50 CPU (with combat): ~2.21ms avg on my Mac (measured at 60+ FPS)
 - **All scenarios confirmed 60+ FPS with 0 slow frames**
-- On a 2x slower machine: ~14ms — still within 16.67ms budget
-- On a 3x slower machine: ~21ms — would drop below 60fps (needs further optimization)
-- MP Guest (50v50): 1.06ms render only — trivially 60fps on any hardware
+- On a 7x slower machine: ~15ms — still within 16.67ms budget
+- On a 5x slower machine: ~11ms — comfortable headroom
+- On a 3x slower machine: ~6.6ms — plenty of headroom
+- MP Guest (50v50): 0.33ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
 ## Single/Multiplayer Unification
