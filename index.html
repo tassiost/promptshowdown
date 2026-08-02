@@ -6641,37 +6641,61 @@ const Battle={
   // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
   // PERF-R12: hoist offsets array outside function (avoid per-frame allocation).
   _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
+  // PERF-R12: flat array grid for separate (avoids Map overhead).
+  // Game space is 400×550, cellSize=60 → 7×10 cells. Pad by 1 for negative coords.
+  _sepGridW:9,_sepGridH:12,
+  _sepFlatGen:null,_sepFlatUnits:null,_sepFlatGenCounter:0,
   // PERF-R12: track non-empty cell keys to avoid Map iterator array allocation.
   _sepKeys:[],
   separate(all){
     const cellSize=60;
-    const grid=this._sepGrid||(this._sepGrid=new Map());
-    grid.clear();
+    // PERF-R12: flat array grid (avoids Map.get/hash overhead).
+    // Lazily init flat arrays on first call.
+    if(!this._sepFlatGen){
+      const n=this._sepGridW*this._sepGridH;
+      this._sepFlatGen=new Int32Array(n);
+      this._sepFlatUnits=new Array(n);
+      for(let i=0;i<n;i++)this._sepFlatUnits[i]=[];
+    }
+    const gw=this._sepGridW,gh=this._sepGridH;
+    const gen=++this._sepFlatGenCounter;
+    const flatGen=this._sepFlatGen;
+    const flatUnits=this._sepFlatUnits;
     const keys=this._sepKeys;
     keys.length=0;
-    // Bin units into cells with numeric keys (faster than string concat).
+    // Bin units into cells with flat array indexing.
     // PERF-R12: index loop (avoid for...of iterator allocation).
     for(let ui=0;ui<all.length;ui++){
       const u=all[ui];
       if(u.h<=0)continue;
-      const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
-      let cell=grid.get(k);
-      if(!cell){cell=[];grid.set(k,cell);keys.push(k);}
-      cell.push(u);
+      const cx=Math.floor(u.x/cellSize)+1; // +1 offset for negative coords
+      const cy=Math.floor(u.y/cellSize)+1;
+      if(cx<0||cx>=gw||cy<0||cy>=gh)continue;
+      const idx=cy*gw+cx;
+      if(flatGen[idx]!==gen){
+        flatGen[idx]=gen;
+        flatUnits[idx].length=0;
+        flatUnits[idx].push(u);
+        keys.push(idx);
+      }else{
+        flatUnits[idx].push(u);
+      }
     }
     // Check collisions within same + adjacent cells.
     const offsets=this._sepOffsets;
-    // PERF-R12: iterate keys array (avoids [k,cell] array allocation from Map iterator).
+    // PERF-R12: iterate keys array (only non-empty cells).
     for(let ki=0;ki<keys.length;ki++){
-      const k=keys[ki];
-      const cell=grid.get(k);
-      const cx=k>>>16, cy=k&0xFFFF;
+      const idx=keys[ki];
+      const cell=flatUnits[idx];
+      const cx=idx%gw, cy=(idx/gw)|0;
       // Check this cell + 4 adjacent (right, down, down-right, up-right) to avoid double-checks.
       for(let oi=0;oi<5;oi++){
         const dx=offsets[oi][0],dy=offsets[oi][1];
-        const nk=((cx+dx)<<16)|(cy+dy);
-        const ncell=grid.get(nk);
-        if(!ncell)continue;
+        const ncx=cx+dx,ncy=cy+dy;
+        if(ncx<0||ncx>=gw||ncy<0||ncy>=gh)continue;
+        const nidx=ncy*gw+ncx;
+        if(flatGen[nidx]!==gen)continue;
+        const ncell=flatUnits[nidx];
         const sameCell=(dx===0&&dy===0);
         for(let ai=0;ai<cell.length;ai++){
           const a=cell[ai];
