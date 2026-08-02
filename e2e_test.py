@@ -667,8 +667,243 @@ def run():
         else:
             fail("determinism","test returned no result")
 
-        # === TEST 19: Console Errors ===
-        print("\n=== TEST 19: Console Errors ===")
+        # === TEST 19: 2-Peer Lockstep Desync Test ===
+        # Simulates two peers running the same lockstep sim independently in the
+        # same page (same seed, same armies, same command schedule). Both peers
+        # run 600 ticks (10s at 60tps) and we compare stateHash() — must match.
+        # This is the same contract as real P2P: both peers run update(1/60)
+        # from identical initial state + same commands → identical final state.
+        print("\n=== TEST 19: 2-Peer Lockstep Desync Test ===")
+        desync_result=page.evaluate("""() => {
+            // Build identical initial state for both peers.
+            const buildState = () => {
+                let _id = 0;
+                const mk = (n, team, x, y, ability, movement, targeting) => {
+                    const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: ++_id,
+                        ability: ability||'none',
+                        abilityTrigger: ability?'on_cooldown':'never',
+                        targeting: targeting||'closest', movement: movement||'chase',
+                        attackCondition:'always', role:'frontline', moveSpeedMod:100,
+                        weaponType:'sword', bodyPlan:'humanoid'});
+                    u.team = team; u.x = x; u.y = y;
+                    return Battle.initRuntime(u);
+                };
+                const units = [
+                    mk('A1','player',80,280,'rage','chase','closest'),
+                    mk('A2','player',80,360,'heal','chase','closest'),
+                    mk('A3','player',80,440,'poison','chase','closest'),
+                    mk('A4','player',80,200,'splash','chase','closest'),
+                    mk('A5','player',80,120,'shield','chase','closest'),
+                    mk('B1','enemy',320,280,'heal','chase','closest'),
+                    mk('B2','enemy',320,360,'rage','chase','closest'),
+                    mk('B3','enemy',320,440,'splash','chase','closest'),
+                    mk('B4','enemy',320,200,'poison','chase','closest'),
+                    mk('B5','enemy',320,120,'frenzy','chase','closest'),
+                ];
+                return units;
+            };
+
+            // Deep-clone units for peer2 (structuredClone not available in all contexts).
+            const cloneUnits = (units) => units.map(u => {
+                const c = {};
+                for (const k in u) c[k] = u[k];
+                // Clone nested objects.
+                if (u.lungeDir) c.lungeDir = {x:u.lungeDir.x, y:u.lungeDir.y};
+                if (u.faceState) c.faceState = {blinkT:u.faceState.blinkT, blinkPhase:u.faceState.blinkPhase};
+                if (u.recipe) c.recipe = u.recipe; // shared reference is fine (read-only)
+                return c;
+            });
+
+            // Save original Battle state to restore after test.
+            const origUnits = Battle.units;
+            const origAll = Battle._allUnits;
+            const origRunning = Battle.running;
+            const origTime = Battle.time;
+            const origTick = Battle._tick;
+
+            // Run peer1 sim.
+            G.save.arena = 0;
+            const units1 = buildState();
+            Battle.units = units1;
+            Battle._allUnits = [...units1];
+            Battle.spells = []; Battle.zones = [];
+            Battle.projectiles = []; Battle.particles = []; Battle.damageNums = [];
+            Battle.recentCrits = []; Battle.deathLog = [];
+            Battle.running = true; Battle.time = 0;
+            Battle._tick = 0; Battle._cmdBuffer = new Map();
+            Battle._lockstepActive = false; Battle._peerConfirmedTick = null;
+            Battle._battleStats = {playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+            Battle._killFeed = [];
+            Battle._highlights = {biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+            Battle._firstBlood = false;
+            seedBattle(42);
+            const seed1 = Battle._seed;
+            for (let i = 0; i < 600; i++) {
+                if (!Battle.running) break;
+                Battle.update(1/60);
+            }
+            const hash1 = Battle.stateHash();
+            const alive1 = Battle.units.filter(u=>u.h>0).length;
+            const time1 = Battle.time;
+            const tick1 = Battle._tick;
+
+            // Run peer2 sim with identical state + same seed.
+            const units2 = buildState(); // rebuild from scratch (same IDs, same positions)
+            Battle.units = units2;
+            Battle._allUnits = [...units2];
+            Battle.spells = []; Battle.zones = [];
+            Battle.projectiles = []; Battle.particles = []; Battle.damageNums = [];
+            Battle.recentCrits = []; Battle.deathLog = [];
+            Battle.running = true; Battle.time = 0;
+            Battle._tick = 0; Battle._cmdBuffer = new Map();
+            Battle._lockstepActive = false; Battle._peerConfirmedTick = null;
+            Battle._battleStats = {playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+            Battle._killFeed = [];
+            Battle._highlights = {biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+            Battle._firstBlood = false;
+            seedBattle(42); // same seed
+            const seed2 = Battle._seed;
+            for (let i = 0; i < 600; i++) {
+                if (!Battle.running) break;
+                Battle.update(1/60);
+            }
+            const hash2 = Battle.stateHash();
+            const alive2 = Battle.units.filter(u=>u.h>0).length;
+            const time2 = Battle.time;
+            const tick2 = Battle._tick;
+
+            // Restore original Battle state.
+            Battle.units = origUnits;
+            Battle._allUnits = origAll;
+            Battle.running = origRunning;
+            Battle.time = origTime;
+            Battle._tick = origTick;
+
+            return {
+                hash1, hash2, match: hash1 === hash2,
+                alive1, alive2, aliveMatch: alive1 === alive2,
+                time1, time2, timeMatch: Math.abs(time1 - time2) < 0.001,
+                tick1, tick2, tickMatch: tick1 === tick2,
+                seed1, seed2, seedMatch: seed1 === seed2,
+            };
+        }""")
+        if desync_result:
+            if desync_result["hash1"] and desync_result["match"]:
+                ok(f"2-peer lockstep: hashes match ({desync_result['hash1']})")
+            else:
+                fail("2-peer lockstep",f"hash mismatch: {desync_result['hash1']} vs {desync_result['hash2']}")
+            if desync_result["aliveMatch"]:
+                ok(f"2-peer lockstep: same alive count ({desync_result['alive1']})")
+            else:
+                fail("2-peer lockstep",f"alive count differs: {desync_result['alive1']} vs {desync_result['alive2']}")
+            if desync_result["timeMatch"]:
+                ok(f"2-peer lockstep: same sim time ({desync_result['time1']:.4f}s)")
+            else:
+                fail("2-peer lockstep",f"time differs: {desync_result['time1']} vs {desync_result['time2']}")
+            if desync_result["tickMatch"]:
+                ok(f"2-peer lockstep: same tick count ({desync_result['tick1']})")
+            else:
+                fail("2-peer lockstep",f"tick differs: {desync_result['tick1']} vs {desync_result['tick2']}")
+            if desync_result["seedMatch"]:
+                ok(f"2-peer lockstep: same seed ({desync_result['seed1']})")
+            else:
+                fail("2-peer lockstep",f"seed differs: {desync_result['seed1']} vs {desync_result['seed2']}")
+        else:
+            fail("2-peer lockstep","test returned no result")
+
+        # === TEST 20: 2-Peer Lockstep with Commands ===
+        # Same as above but both peers queue the same spell cast command at tick 100.
+        # This tests the command buffer + executeCommands path for determinism.
+        print("\n=== TEST 20: 2-Peer Lockstep with Commands ===")
+        cmd_result=page.evaluate("""() => {
+            const buildState = () => {
+                let _id = 0;
+                const mk = (n, team, x, y, ability) => {
+                    const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: ++_id,
+                        ability: ability||'none',
+                        abilityTrigger: ability?'on_cooldown':'never',
+                        targeting:'closest', movement:'chase', attackCondition:'always',
+                        role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                    u.team = team; u.x = x; u.y = y;
+                    return Battle.initRuntime(u);
+                };
+                return [
+                    mk('A1','player',80,280,'rage'), mk('A2','player',80,360,'heal'),
+                    mk('B1','enemy',320,280,'poison'), mk('B2','enemy',320,360,'splash'),
+                ];
+            };
+
+            const origUnits = Battle.units;
+            const origAll = Battle._allUnits;
+            const origRunning = Battle.running;
+            const origTime = Battle.time;
+            const origTick = Battle._tick;
+
+            const runPeer = (seed) => {
+                const units = buildState();
+                Battle.units = units;
+                Battle._allUnits = [...units];
+                Battle.spells = []; Battle.zones = [];
+                Battle.projectiles = []; Battle.particles = []; Battle.damageNums = [];
+                Battle.recentCrits = []; Battle.deathLog = [];
+                Battle.running = true; Battle.time = 0;
+                Battle._tick = 0; Battle._cmdBuffer = new Map();
+                Battle._lockstepActive = false; Battle._peerConfirmedTick = null;
+                Battle._battleStats = {playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+                Battle._killFeed = [];
+                Battle._highlights = {biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+                Battle._firstBlood = false;
+                seedBattle(seed);
+                // Queue a speed change command at tick 50 (both peers do the same).
+                Battle.queueCommand({type:'speed', speed:2}, 50);
+                // Queue a pause + resume at tick 100.
+                Battle.queueCommand({type:'pause'}, 100);
+                Battle.queueCommand({type:'resume'}, 103);
+                for (let i = 0; i < 600; i++) {
+                    if (!Battle.running) break;
+                    Battle.update(1/60);
+                }
+                const hash = Battle.stateHash();
+                const alive = Battle.units.filter(u=>u.h>0).length;
+                Battle.running = false;
+                return {hash, alive, time: Battle.time, tick: Battle._tick};
+            };
+
+            G.save.arena = 0;
+            const r1 = runPeer(777);
+            const r2 = runPeer(777);
+
+            Battle.units = origUnits;
+            Battle._allUnits = origAll;
+            Battle.running = origRunning;
+            Battle.time = origTime;
+            Battle._tick = origTick;
+
+            return {
+                hash1: r1.hash, hash2: r2.hash, match: r1.hash === r2.hash,
+                alive1: r1.alive, alive2: r2.alive,
+                time1: r1.time, time2: r2.time,
+                tick1: r1.tick, tick2: r2.tick,
+            };
+        }""")
+        if cmd_result:
+            if cmd_result["match"]:
+                ok(f"2-peer lockstep+cmd: hashes match ({cmd_result['hash1']})")
+            else:
+                fail("2-peer lockstep+cmd",f"hash mismatch: {cmd_result['hash1']} vs {cmd_result['hash2']}")
+            if cmd_result["alive1"]==cmd_result["alive2"]:
+                ok(f"2-peer lockstep+cmd: same alive count ({cmd_result['alive1']})")
+            else:
+                fail("2-peer lockstep+cmd",f"alive differs: {cmd_result['alive1']} vs {cmd_result['alive2']}")
+            if abs(cmd_result["time1"]-cmd_result["time2"])<0.001:
+                ok(f"2-peer lockstep+cmd: same sim time ({cmd_result['time1']:.4f}s)")
+            else:
+                fail("2-peer lockstep+cmd",f"time differs: {cmd_result['time1']} vs {cmd_result['time2']}")
+        else:
+            fail("2-peer lockstep+cmd","test returned no result")
+
+        # === TEST 21: Console Errors ===
+        print("\n=== TEST 21: Console Errors ===")
         real_errors=[e for e in errors if "CORS" not in e and "Access-Control" not in e]
         if len(real_errors)==0: ok(f"no console errors ({len(errors)} CORS filtered)")
         else:

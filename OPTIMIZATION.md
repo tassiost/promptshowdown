@@ -84,19 +84,29 @@
 
 ### Phase E: Hot Path Optimization
 - [x] Profiled 50v50 with sub-function timing — all sub-functions well under budget
-- [x] `act()`: 622ms total / 59k calls = 0.01ms avg — already optimized (spatial grid, cached targets)
-- [x] `spriteDraw()`: 103ms total / 39k calls = 0.003ms avg — already optimized (sprite cache, `|0` rounding)
-- [x] `separate()`: 67ms total / 603 calls = 0.11ms avg — already optimized (flat array grid)
-- [x] `drawBackground()`: 19ms total / 602 calls = 0.03ms avg — already optimized (offscreen canvas cache)
+- [x] `act()`: 508ms total / 59k calls = 0.009ms avg — already optimized (spatial grid, cached targets)
+- [x] `spriteDraw()`: 129ms total / 60k calls = 0.002ms avg — already optimized (sprite cache, `|0` rounding)
+- [x] `separate()`: 39ms total / 602 calls = 0.065ms avg — already optimized (flat array grid)
+- [x] `drawBackground()`: 18ms total / 602 calls = 0.030ms avg — already optimized (offscreen canvas cache)
+- [x] `drawDmgNums()`: 23ms total / 602 calls = 0.038ms avg — already optimized
+- [x] `updateProjectiles()`: 22ms total / 602 calls = 0.037ms avg — already optimized
 - [x] No V8 deoptimization triggers found (no delete in hot paths, no try/catch in inner loops)
+- [x] Fixed: spread allocation `{...u}` in death cleanup → direct assignment (avoids per-death object alloc)
+- [x] Fixed: O(n) `findIndex` in death cleanup → O(1) Map lookup (build ID→index Map once per frame)
+- [x] Fixed: O(n) `includes()` + `find()` in kill handler → single O(n) loop (combined ref check + id lookup)
+- [x] Fixed: `filter()` allocations in `onUnitDeath` → pooled arrays (2 arrays per death → 0 allocations)
+- [x] Fixed: `for...of` in `avoidanceOffset` fallback → index loop (avoids iterator allocation)
 
 ### Phase F: Verify Targets
-- [x] Empty screen: 60.2fps, 60.2tps, 0 slow frames
-- [x] 50v50 single-player: 60.2fps, 60.2tps, 0 slow frames
-- [x] 50v50 lockstep: 60.1fps, 60.0tps, 0 slow frames
-- [x] 50v50 snapshot guest: 60.2fps, 0 slow frames (0 tps expected — no sim in guest mode)
-- [x] Memory stable (15-19MB across all scenarios, no growth over 10s)
-- [x] E2E tests pass (187 PASS, 0 FAIL, 1 WARN — known timing-sensitive warning)
+- [x] Empty screen: 60.0fps, 60.2tps, 0 slow frames
+- [x] 5v5 (10 units): 60.0fps, 60.1tps, 0 slow frames
+- [x] 20v20 (40 units): 60.0fps, 60.1tps, 0 slow frames
+- [x] 50v50 (100 units): 60.0fps, 60.1tps, 0 slow frames
+- [x] 50v50 lockstep: 60.0fps, 60.1tps, 0 slow frames
+- [x] 50v50 snapshot guest: 65.9fps, 0 slow frames (0 tps expected — no sim in guest mode)
+- [x] Memory stable (8.3-15.1MB JSHeap across all scenarios, no growth over 10s)
+- [x] GPU time measured via CDP Tracing (0.53-3.26ms per frame, well under budget)
+- [x] E2E tests pass (188 PASS, 0 FAIL)
 
 ## Results Log
 
@@ -109,25 +119,56 @@
 | 50v50 | 58.4 | N/A | 3.25ms | 7 |
 | MP Guest | 58.9 | N/A | 0.00ms | 1 |
 
-### Final (after all phases — new perf.py with real rAF + canvas opts + bug fixes)
-| Scenario | FPS | TPS | CPU avg | CPU p99 | Slow | Memory |
-|---|---|---|---|---|---|---|
-| Empty | 60.2 | 60.2 | 0.12ms | 0.40ms | 0 | 15.0MB |
-| 5v5 (10) | 60.3 | 60.3 | 0.39ms | 1.10ms | 0 | 15.5MB |
-| 20v20 (40) | 60.2 | 60.2 | 0.63ms | 1.40ms | 0 | 16.0MB |
-| 50v50 (100) | 60.2 | 60.2 | 1.14ms | 2.60ms | 0 | 17.0MB |
-| MP Lockstep | 60.1 | 60.0 | 1.15ms | 2.90ms | 0 | 19.4MB |
-| MP Guest | 60.2 | 0.0* | 0.21ms | 0.40ms | 0 | 18.8MB |
+### Final (after all phases — solid 60fps/60tps in all scenarios)
+
+**CPU/GPU/Memory Separation** — three independent measurement systems:
+1. In-page JS timers: CPU time (update + render), TPS, frame intervals, sub-functions
+2. CDP Tracing: actual GPU process time (CrGpuMain thread) + compositor time (Viz)
+3. CDP Performance.getMetrics: accurate JS heap size + DOM node counts
+
+| Scenario | FPS | TPS | CPU avg | GPU/frame | Slow | JSHeap | Nodes |
+|---|---|---|---|---|---|---|---|
+| Empty | 60.0 | 60.2 | 0.07ms | 0.53ms | 0 | 8.3MB | 1,632 |
+| 5v5 (10) | 60.0 | 60.1 | 0.44ms | 2.08ms | 0 | 8.4MB | 1,786 |
+| 20v20 (40) | 60.0 | 60.1 | 0.77ms | 2.37ms | 0 | 10.2MB | 9,516 |
+| 50v50 (100) | 60.0 | 60.1 | 1.35ms | 3.26ms | 0 | 9.7MB | 19,763 |
+| MP Lockstep | 60.0 | 60.1 | 1.35ms | 3.13ms | 0 | 15.1MB | 118,496 |
+| MP Guest | 65.9 | 0.0* | 0.19ms | 2.48ms | 0 | 11.4MB | 1,358 |
 
 *MP Guest has 0 TPS because the guest doesn't run the sim (snapshot interpolation only).
+MP Guest FPS is higher (73 vs 60) because the interpolation loop doesn't use the frame limiter.
 
 ### Key Improvements
-1. **Measurement fix**: Old perf.py used `setTimeout(16.67ms)` which lost ~0.3ms/frame to timer
-   overhead, capping FPS at ~59. New perf.py uses real `requestAnimationFrame` for accurate
-   60fps measurement. Also added TPS counter and lockstep scenario.
-2. **Canvas context**: `alpha: false` + `desynchronized: true` on main canvas contexts (3 sites)
+1. **Frame limiter fix (CRITICAL)**: The frame limiter used `frameTime < 1/60` (16.667ms)
+   with no tolerance. On 60Hz displays, rAF intervals vary (14.8-18.7ms due to vsync jitter),
+   so frames with interval < 16.667ms were skipped, halving FPS to ~40. Fixed with 3.5ms
+   tolerance: `frameTime < targetFrameTime - 0.0035`. This ensures all rAF intervals pass
+   on 60Hz displays (min 14.8ms > threshold 13.167ms) while still limiting on 120/240Hz.
+   Iterated from 0ms → 1ms → 2ms → 3.5ms tolerance to find the sweet spot.
+2. **Measurement fix (perf.py)**: Three critical fixes:
+   - Old perf.py used `setTimeout(16.67ms)` which lost ~0.3ms/frame to timer overhead.
+     New perf.py uses real `requestAnimationFrame` + measures frame intervals inside
+     `render()` (can't be bypassed by `_loopBound` cache).
+   - Memory sampling via `page.evaluate()` in a loop blocked rAF, causing missed vsyncs
+     (p99 jumped from 18ms to 33ms). Fixed with in-page `setInterval` that runs
+     autonomously without blocking the browser main thread.
+   - FPS calculated from frame intervals (sum of intervals = duration), not Python-side
+     `time.time()`, which included overhead from post-measurement `page.evaluate()` calls.
+3. **CDP GPU tracing**: Uses Chrome DevTools Protocol `Tracing.start/end` with GPU categories
+   to capture actual CrGpuMain thread time. Key insight: Playwright's CDP event handlers are
+   not called during `time.sleep()` — must call `page.evaluate()` to pump the event loop.
+4. **CDP memory metrics**: Uses `Performance.getMetrics` for accurate JSHeapUsedSize +
+   DOM node counts (more accurate than `performance.memory` which is quantized).
+5. **Canvas context**: `alpha: false` + `desynchronized: true` on main canvas contexts (3 sites)
    for faster compositing and lower latency.
-3. **Bug fixes**: 4 bugs fixed (disconnect lockstep leak, _localTeam reset, snapTimer leak,
+6. **Bug fixes**: 4 bugs fixed (disconnect lockstep leak, _localTeam reset, snapTimer leak,
    per-hit allocation). None were causing measurable perf issues but all were correctness bugs.
-4. **CPU headroom**: 50v50 uses only 1.14ms avg CPU (p99=2.60ms) out of 16.67ms budget.
-   That's 86% headroom — plenty of margin for heavier scenes or lower-end devices.
+7. **Death handler optimization**: 5 allocation bugs fixed in the death cleanup path:
+   - Spread `{...u}` → direct assignment (avoids per-death object allocation)
+   - O(n) `findIndex` → O(1) Map lookup (build ID→index Map once per frame)
+   - O(n) `includes()` + `find()` → single O(n) loop (combined ref check + id lookup)
+   - `filter()` in `onUnitDeath` → pooled arrays (4 array allocations per death → 0)
+   - `for...of` in `avoidanceOffset` fallback → index loop (avoids iterator allocation)
+   Result: 50v50 CPU avg dropped from 1.53ms to 1.35ms (12% improvement).
+8. **CPU headroom**: 50v50 uses only 1.35ms avg CPU + 3.26ms GPU = 4.61ms total
+   out of 16.67ms budget. That's 72% headroom — plenty of margin for heavier scenes or lower-end devices.

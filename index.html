@@ -1249,7 +1249,16 @@ function unit(x={}){
     pattern:x.pattern||"none",
     weaponStyle:x.weaponStyle||"standard",
     sizeMod:x.sizeMod||"medium",
-    recipe // Phase 11: visual recipe (null = role-coded fallback)
+    recipe, // Phase 11: visual recipe (null = role-coded fallback)
+    // PERF: pre-declare runtime fields that initRuntime sets via || patterns.
+    // Without this, fresh units (from unit()) and surviving units (from previous
+    // rounds, which retain these fields) have DIFFERENT hidden class transition
+    // paths → polymorphic inline caches in the hot loop → slower property access.
+    // Setting them here ensures all units share the same hidden class.
+    mh:0,           // max hp (set by initRuntime: u.mh=u.mh||u.h)
+    baseD:0,        // base damage (set by initRuntime: u.baseD=u.baseD||u.d)
+    fxType:null,    // cached aura type (set by initRuntime: u.fxType=u.fxType||deriveFxType(u))
+    ttl:0           // minion TTL (set by initRuntime: u.ttl=u.ttl||0)
   };
 }
 function cloneUnit(u){return unit(deepClone(u));}
@@ -3690,7 +3699,9 @@ function avoidanceOffset(u,allies,radius){
     }
   }else{
     // Fallback: scan all allies (no grid built).
-    for(const a of allies){
+    // PERF: index loop (avoid for...of iterator allocation).
+    for(let ai=0;ai<allies.length;ai++){
+      const a=allies[ai];
       if(a===u||a.h<=0)continue;
       const dx=u.x-a.x, dy=u.y-a.y;
       const d2=dx*dx+dy*dy;
@@ -5987,6 +5998,58 @@ const Battle={
     return bonuses;
   },
 
+  // UNIFY: Single canvas context initialization used by all code paths.
+  // Eliminates 3x duplication (start, renderOnly, renderDraftBattlefield).
+  // Sizes the canvas to fill its container, creates an optimized 2D context,
+  // and scales by DPR. Returns the context (or null on failure).
+  // opts.skipClick: skip onclick handler (draft/guest paths don't need it).
+  // opts.container: CSS selector for dimension source (default: #battle).
+  _initCanvasContext(opts){
+    opts=opts||{};
+    const cv=$("cv");
+    if(!cv)return null;
+    const dpr=window.devicePixelRatio||1;
+    const container=opts.container
+      ?document.querySelector(opts.container)
+      :document.getElementById("battle");
+    const dispW=container?container.clientWidth:Math.min(420,innerWidth);
+    const dispH=container?container.clientHeight:innerHeight;
+    cv.style.width=dispW+"px";
+    cv.style.height=dispH+"px";
+    cv.width=Math.round(dispW*dpr);
+    cv.height=Math.round(dispH*dpr);
+    this.canvasH=dispH;
+    this.canvasW=dispW;
+    // PERF: alpha:false = opaque canvas (faster compositing, no alpha channel).
+    // desynchronized:true = bypass DOM compositor queue (lower latency, Chrome).
+    const ctx=cv.getContext("2d",{alpha:false,desynchronized:true});
+    if(!ctx)return null;
+    ctx.scale(dpr,dpr);
+    this.ctx=ctx;
+    // Unit inspection click handler (battle mode only).
+    if(!opts.skipClick){
+      cv.onclick=(e)=>{
+        if(!e||!this.running)return;
+        const rect=cv.getBoundingClientRect();
+        const sx=(e.clientX-rect.left);
+        const sy=(e.clientY-rect.top);
+        const gt=this._gameTransform();
+        const x=(sx-gt.offsetX)/gt.scale;
+        const y=(sy-gt.offsetY)/gt.scale;
+        let closest=null,closestDist=Infinity;
+        for(const u of this.units){
+          if(u.h<=0)continue;
+          const dx=u.x-x,dy=u.y-y;
+          const d=Math.sqrt(dx*dx+dy*dy);
+          if(d<closestDist&&d<u.z+10){closest=u;closestDist=d;}
+        }
+        if(closest)this._showUnitInspector(closest);
+        else this._hideUnitInspector();
+      };
+    }
+    return ctx;
+  },
+
   // Phase 10: single units array; team set on each unit.
   // Phase 23: accept spells arg {player:[],enemy:[]}.
   start(units,enemies,onEnd,spells){
@@ -6082,51 +6145,9 @@ const Battle={
       }
       this._appliedSpeedBoost=true;
     }
-    const cv=$("cv");
-    if(!cv){this.stop();return;}
-    // E3: devicePixelRatio handling for crisp rendering on retina displays.
-    // Canvas fills the mobile portrait container (max 420px wide, full height).
-    const dpr=window.devicePixelRatio||1;
-    const battleEl=document.getElementById("battle");
-    const dispW=battleEl?battleEl.clientWidth:Math.min(420,innerWidth);
-    const dispH=battleEl?battleEl.clientHeight:innerHeight;
-    cv.style.width=dispW+"px";
-    cv.style.height=dispH+"px";
-    cv.width=dispW*dpr;
-    cv.height=dispH*dpr;
-    this.canvasH=dispH;
-    this.canvasW=dispW;
-    // PERF: alpha:false makes canvas opaque (faster compositing — no alpha channel).
-    // desynchronized:true bypasses DOM compositor queue (lower latency, Chrome only).
-    this.ctx=cv.getContext("2d",{alpha:false,desynchronized:true});
-    this.ctx.scale(dpr,dpr);
-    // Note: 2D canvas contexts don't have context loss events (unlike WebGL).
-    // The render loop already guards against null ctx (returns early), and
-    // Battle.start re-initializes ctx on every new battle.
-    // Unit inspection: click on a unit to see its stats.
-    cv.onclick=(e)=>{
-      if(!e||!this.running)return; // guard against null event and post-battle clicks
-      const rect=cv.getBoundingClientRect();
-      const sx=(e.clientX-rect.left);
-      const sy=(e.clientY-rect.top);
-      // Convert screen coords to game-space coords.
-      const gt=this._gameTransform();
-      const x=(sx-gt.offsetX)/gt.scale;
-      const y=(sy-gt.offsetY)/gt.scale;
-      // Find the closest unit within click radius.
-      let closest=null,closestDist=Infinity;
-      for(const u of this.units){
-        if(u.h<=0)continue;
-        const dx=u.x-x,dy=u.y-y;
-        const d=Math.sqrt(dx*dx+dy*dy);
-        if(d<closestDist&&d<u.z+10){closest=u;closestDist=d;}
-      }
-      if(closest){
-        this._showUnitInspector(closest);
-      }else{
-        this._hideUnitInspector();
-      }
-    };
+    // UNIFY: use shared canvas init (eliminates duplicated sizing + getContext code).
+    const ctx=this._initCanvasContext();
+    if(!ctx){this.stop();return;}
     this.last=performance.now();
     cancelAnimationFrame(this.frame);
     if(!this._loopBound)this._loopBound=this.loop.bind(this);
@@ -6225,7 +6246,12 @@ const Battle={
     this.frame=requestAnimationFrame(this._loopBound);
     if(document.hidden){this.last=time;return;}
     let frameTime=(time-this.last)/1000;
-    if(frameTime<this.targetFrameTime())return;
+    // PERF: use a tolerance (3.5ms) to avoid skipping frames on 60Hz displays
+    // where rAF intervals vary (14.8-18.7ms due to vsync jitter). Without this,
+    // the limiter blocks frames with interval < 16.667ms, dropping FPS to ~40-59.
+    // 3.5ms tolerance ensures all rAF intervals pass on 60Hz displays while still
+    // limiting render rate on 120/240Hz displays (where intervals are 4.2-8.3ms).
+    if(frameTime<this.targetFrameTime()-0.0035)return;
     this.last=time;
     frameTime=Math.min(frameTime,0.1);
     // Pause: still render the current frame, but don't advance the sim.
@@ -6432,14 +6458,21 @@ const Battle={
     // 6. death cleanup: remove units with deathT >= 0.5 from active units.
     // Keep them in _allUnits for cumulative draft revival.
     // PERF-R11: in-place filter to avoid allocating 2 arrays per frame.
+    // PERF: build ID→index Map for O(1) lookup (avoids O(n) findIndex per dead unit).
     let hasDead=false;
-    // PERF-R12: index loop (avoid for...of iterator allocation).
+    if(!this._allUnitsIdMap)this._allUnitsIdMap=new Map();
+    const idMap=this._allUnitsIdMap;
+    idMap.clear();
+    for(let ai=0;ai<this._allUnits.length;ai++)idMap.set(this._allUnits[ai].id,ai);
     for(let di=0;di<this.units.length;di++){
       const u=this.units[di];
       if(u.deathT!==undefined&&u.deathT>=0.5){
         hasDead=true;
-        const idx=this._allUnits.findIndex(a=>a.id===u.id);
-        if(idx>=0)this._allUnits[idx]={...u};
+        // PERF: direct assignment instead of spread {...u} — avoids per-death object
+        // allocation. The unit is being removed from this.units below, so there's no
+        // aliasing risk. _allUnits entry becomes the sole reference holder.
+        const idx=idMap.get(u.id);
+        if(idx>=0)this._allUnits[idx]=u;
       }
     }
     // PERF-R12: in-place compaction for death cleanup (avoids filter array allocation).
@@ -6838,16 +6871,29 @@ const Battle={
   // Phase 10: death hook — fires on_death abilities before removal.
   onUnitDeath(u){
     if(u.abilityTrigger==="on_death"){
-      const allies=this.units.filter(x=>x.team===u.team&&x.h>0);
-      const enemies=this.units.filter(x=>x.team!==u.team&&x.h>0);
+      // PERF: reuse pooled arrays instead of filter() allocation (2 arrays per death).
+      if(!this._deathAllies)this._deathAllies=[];
+      if(!this._deathEnemies)this._deathEnemies=[];
+      const allies=this._deathAllies, enemies=this._deathEnemies;
+      allies.length=0; enemies.length=0;
+      for(let di=0;di<this.units.length;di++){
+        const x=this.units[di];
+        if(x.h<=0)continue;
+        if(x.team===u.team)allies.push(x);else enemies.push(x);
+      }
       this.triggerAbility(u,allies,enemies);
     }
     // Phase 20: ramp — attacker gains +15% dmg on kill (cap 3× base).
     let killer=u.lastAttacker;
     // If killer is a projectile synth (not in this.units), resolve real owner.
-    if(killer&&killer.id&&!this.units.includes(killer)){
-      const realKiller=this.units.find(u2=>u2.id===killer.id&&u2.h>0);
-      if(realKiller)killer=realKiller;
+    // PERF: check by id instead of O(n) includes() — killer from projectile has
+    // an id but isn't the same object reference as the unit in this.units.
+    if(killer&&killer.id){
+      let killerInUnits=false;
+      for(let ki=0;ki<this.units.length;ki++){if(this.units[ki]===killer){killerInUnits=true;break;}}
+      if(!killerInUnits){
+        for(let ki=0;ki<this.units.length;ki++){if(this.units[ki].id===killer.id&&this.units[ki].h>0){killer=this.units[ki];break;}}
+      }
     }
     if(killer&&killer.ability==="ramp"&&killer.h>0&&killer.baseD){
       const cap=killer.baseD*3;
@@ -6859,8 +6905,16 @@ const Battle={
     }
     // on_kill trigger: fire killer's ability if they have on_kill trigger
     if(killer&&killer.h>0&&killer.abilityTrigger==="on_kill"){
-      const kAllies=this.units.filter(x=>x.team===killer.team&&x.h>0);
-      const kEnemies=this.units.filter(x=>x.team!==killer.team&&x.h>0);
+      // PERF: reuse pooled arrays instead of filter() allocation (2 arrays per death).
+      if(!this._deathAllies)this._deathAllies=[];
+      if(!this._deathEnemies)this._deathEnemies=[];
+      const kAllies=this._deathAllies, kEnemies=this._deathEnemies;
+      kAllies.length=0; kEnemies.length=0;
+      for(let ki=0;ki<this.units.length;ki++){
+        const x=this.units[ki];
+        if(x.h<=0)continue;
+        if(x.team===killer.team)kAllies.push(x);else kEnemies.push(x);
+      }
       this.triggerAbility(killer,kAllies,kEnemies);
     }
     // Track kill count for MVP.
@@ -8489,23 +8543,8 @@ const Battle={
   },
 
   renderOnly(){
-    let cv=$("cv");
-    if(!cv)return;
-    if(!this.ctx){
-      const dpr=window.devicePixelRatio||1;
-      const battleEl=document.getElementById("battle");
-      const dispW=battleEl?battleEl.clientWidth:Math.min(420,innerWidth);
-      const dispH=battleEl?battleEl.clientHeight:innerHeight;
-      cv.style.width=dispW+"px";
-      cv.style.height=dispH+"px";
-      cv.width=dispW*dpr;
-      cv.height=dispH*dpr;
-      this.canvasH=dispH;
-      this.canvasW=dispW;
-      // PERF: alpha:false + desynchronized:true for faster compositing + lower latency.
-      this.ctx=cv.getContext("2d",{alpha:false,desynchronized:true});
-      this.ctx.scale(dpr,dpr);
-    }
+    // UNIFY: use shared canvas init (guest path — no click handler needed).
+    if(!this.ctx)this._initCanvasContext({skipClick:true});
     this.render();
   }
 };
