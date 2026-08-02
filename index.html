@@ -4432,8 +4432,9 @@ const SpriteRenderer={
         const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
         const sw=cached.width, sh=cached.height;
         // Cached sprite's origin (unit feet) is at (sw/2, sh-PAD).
-        const dx=u.x - sw/2;
-        const dy=u.y - (sh-SPRITE_CACHE_PAD) + bobY;
+        // PERF-R12: round to integer pixels (avoids sub-pixel anti-aliasing overhead).
+        const dx=(u.x - sw/2)|0;
+        const dy=(u.y - (sh-SPRITE_CACHE_PAD) + bobY)|0;
         // PERF-R12: avoid save/restore — just swap globalAlpha (cheaper than stack push/pop).
         const oldAlpha=c.globalAlpha;
         c.globalAlpha=alpha;
@@ -5174,11 +5175,14 @@ const BattleFX={
     c.globalAlpha=1;
   },
   // Get lunge offset for a unit (for rendering).
+  // PERF-R12: reusable lunge offset buffer (avoids allocation per call).
+  _lungeBuf:{x:0,y:0},
   getLungeOffset(u){
-    if(!u||u.lungeT<=0||!u.lungeDir)return{x:0,y:0};
+    if(!u||u.lungeT<=0||!u.lungeDir){this._lungeBuf.x=0;this._lungeBuf.y=0;return this._lungeBuf;}
     const f=u.lungeT/0.06;
     const dist=4*f;
-    return{x:u.lungeDir.x*dist,y:u.lungeDir.y*dist};
+    this._lungeBuf.x=u.lungeDir.x*dist;this._lungeBuf.y=u.lungeDir.y*dist;
+    return this._lungeBuf;
   },
   // Get spawn scale for a unit (ease-out-back).
   getSpawnScale(u){
@@ -6831,6 +6835,24 @@ const Battle={
     const pass2=this._renderPass2;
     let pass2Len=0;
     // units
+    // PERF-R12: batch all shadows first (all use fillStyle="#000", set once).
+    c.fillStyle="#000";
+    for(let u of this.units){
+      if(!u||u.x===undefined)continue;
+      if(u.h<=0&&u.deathT===undefined)continue;
+      const lunge=BattleFX.getLungeOffset(u);
+      const spawnScale=BattleFX.getSpawnScale(u);
+      const sx=u.x+lunge.x, sy=u.y+lunge.y, sz=u.z*spawnScale;
+      const shadowAlpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5)*0.35:0.35;
+      if(shadowAlpha>0.02){
+        c.globalAlpha=shadowAlpha;
+        c.beginPath();
+        c.ellipse(sx,sy+sz*0.9,sz*0.9,sz*0.35,0,0,Math.PI*2);
+        c.fill();
+      }
+    }
+    c.globalAlpha=1;
+    // Pass 1: sprites + hit flashes (per unit, depth-ordered with lunge).
     for(let u of this.units){
       if(!u||u.x===undefined)continue;
       if(u.h<=0&&u.deathT===undefined)continue;
@@ -6841,16 +6863,6 @@ const Battle={
       u.x=origX+lunge.x;
       u.y=origY+lunge.y;
       u.z=origZ*spawnScale;
-      // Drop shadow — squashed dark ellipse at the unit's feet for grounding.
-      const shadowAlpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5)*0.35:0.35;
-      if(shadowAlpha>0.02){
-        c.globalAlpha=shadowAlpha;
-        c.fillStyle="#000";
-        c.beginPath();
-        c.ellipse(u.x,u.y+u.z*0.9,u.z*0.9,u.z*0.35,0,0,Math.PI*2);
-        c.fill();
-        c.globalAlpha=1;
-      }
       // Phase 11: use SpriteRenderer for units with recipes, fallback otherwise.
       const hasRecipe=!!u.recipe;
       if(hasRecipe){
