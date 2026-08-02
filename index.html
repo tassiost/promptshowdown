@@ -3446,6 +3446,7 @@ function effSpeed(u){
 // within `radius` (default 28px). Falloff is linear: full push at distance 0, none at radius.
 // PERF-R12: write to reusable buffer to avoid {x,y} allocation per call (100× per frame).
 const _avoidBuf={x:0,y:0};
+const _zeroDir={x:0,y:0};
 // PERF-R12: spatial grid for avoidance (avoids O(n²) ally scan).
 const _avoidGrid=new Map();
 const _avoidOffsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
@@ -4429,20 +4430,31 @@ const SpriteRenderer={
     const rot=rm?0:(channels.rot||0);
 
     // PERF-R12: Use pre-rendered sprite cache when possible.
-    // Skip cache for death state (continuous fade), hitReact (visual recoil),
-    // reducedMotion (different channel set), and spawn animation (changes u.z scale).
-    const useCache=state!=="death"&&!(u.hitReact>0)&&!rm&&!(u.spawnT>0);
+    // Skip cache for death state (continuous fade), reducedMotion (different channel set),
+    // and spawn animation (changes u.z scale).
+    // hitReact is now handled in cached path (just a position offset).
+    const useCache=state!=="death"&&!rm&&!(u.spawnT>0);
     if(useCache){
+      // PERF-R12: compute hitReact offset (applied to cached sprite position).
+      let reactX=0,reactY=0;
+      if(u.hitReact>0){
+        const dir=u.hitReactDir||_zeroDir;
+        reactX=dir.x*3*u.hitReact;
+        reactY=dir.y*3*u.hitReact;
+      }
       const frameIdx=Math.min(SPRITE_CACHE_FRAMES-1,Math.floor(t*SPRITE_CACHE_FRAMES));
       const cached=_getCachedSprite(u,state,frameIdx);
       if(cached){
+        // PERF-R12: decrement hitReact only on cache hit (avoids double-decrement on miss).
+        if(u.hitReact>0)u.hitReact-=0.015;
         // Draw the cached sprite image. Enemy flip + scale are baked into cache.
         const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
         const sw=cached.width, sh=cached.height;
         // Cached sprite's origin (unit feet) is at (sw/2, sh-PAD).
         // PERF-R12: round to integer pixels (avoids sub-pixel anti-aliasing overhead).
-        const dx=(u.x - sw/2)|0;
-        const dy=(u.y - (sh-SPRITE_CACHE_PAD) + bobY)|0;
+        // Apply hitReact offset to draw position.
+        const dx=((u.x+reactX) - sw/2)|0;
+        const dy=((u.y+reactY) - (sh-SPRITE_CACHE_PAD) + bobY)|0;
         // PERF-R12: avoid save/restore — just swap globalAlpha (cheaper than stack push/pop).
         const oldAlpha=c.globalAlpha;
         c.globalAlpha=alpha;
@@ -4451,8 +4463,9 @@ const SpriteRenderer={
         // Draw face on top (dynamic — tracks target).
         // PERF-R12: skip face when >30 units (tiny visual detail, expensive transform).
         if(recipe.face!==false&&state!=="death"&&Battle.units.length<=30){
-          const saveY=u.y;
-          u.y=saveY+bobY;
+          const saveY=u.y, saveX=u.x;
+          u.y=saveY+bobY+reactY;
+          u.x=saveX+reactX;
           c.save();
           c.globalAlpha=alpha;
           c.translate(u.x,u.y);
@@ -4461,7 +4474,7 @@ const SpriteRenderer={
           if(u.team==="enemy"){c.translate(u.x,u.y);c.scale(-1,1);c.translate(-u.x,-u.y);}
           this.drawFace(c,u,channels,state);
           c.restore();
-          u.y=saveY;
+          u.y=saveY; u.x=saveX;
         }
         return;
       }
