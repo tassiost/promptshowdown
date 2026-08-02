@@ -3962,8 +3962,14 @@ function _getRecipeId(u){
 }
 
 function _getSpriteCacheKey(u,state,frameIdx){
-  // Include z (rounded) in key — different z values produce different scale sprites.
-  return _getRecipeId(u)+"|z"+(Math.round((u.z||10)*2)/2)+"|"+state+"|"+frameIdx;
+  // PERF-R12: cache key prefix on unit (avoids string concat per call).
+  // Prefix = recipeId + "|z" + zRounded + "|" — only changes when z changes.
+  const zR=Math.round((u.z||10)*2)/2;
+  if(u._spriteKeyZ!==zR){
+    u._spriteKeyZ=zR;
+    u._spriteKeyPrefix=_getRecipeId(u)+"|z"+zR+"|";
+  }
+  return u._spriteKeyPrefix+state+"|"+frameIdx;
 }
 
 function _renderSpriteToCache(u,state,frameIdx){
