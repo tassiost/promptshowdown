@@ -133,8 +133,13 @@ def setup_canvas(page):
 def make_units(page, count_per_side, hp=100, high_hp=False):
     """Create a battle with count_per_side units on each team.
     Mix of ranged (r>80, spawn projectiles) and melee units.
-    High HP so the battle lasts the full profiling window."""
+    High HP so the battle lasts the full profiling window.
+    Uses seeded RNG for deterministic, comparable results across runs."""
     js = """
+        // Seed Math.random for deterministic unit generation (comparable profiling).
+        let _seed=12345;
+        const _origRandom=Math.random;
+        Math.random=function(){_seed=(_seed*1103515245+12345)&0x7fffffff;return _seed/0x7fffffff;};
         const abs=['heal','spawn','explode','poison','ramp','rage','lifesteal','thorns','regen','counter','dodge','splash','slow','shield','blink_strike','frenzy','cleanse','chain_lightning','taunt','executioner'];
         const roles=['frontline','carry','support'];
         const targs=['closest','lowest_hp','enemy_cluster','enemy_frontline','enemy_backline'];
@@ -162,6 +167,8 @@ def make_units(page, count_per_side, hp=100, high_hp=False):
         Battle.onEnd=null;
         Battle.running=true;Battle.last=performance.now();
         cancelAnimationFrame(Battle.frame);Battle.frame=requestAnimationFrame(Battle.loop.bind(Battle));
+        // Restore Math.random (combat uses it for crits, particles, etc.)
+        Math.random=_origRandom;
     """.replace("__N__", str(count_per_side)).replace("__HP__", str(hp))
     page.evaluate("(() => {" + js + "})()")
 

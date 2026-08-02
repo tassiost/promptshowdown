@@ -3427,11 +3427,13 @@ function networkReceive(data){
 // PERF-R11: Math.sqrt is faster than Math.hypot for 2 args.
 function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
 function moveToward(u,t,d){
-  const dx=t.x-u.x, dy=t.y-u.y, dd=Math.hypot(dx,dy);
+  // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+  const dx=t.x-u.x, dy=t.y-u.y, dd=Math.sqrt(dx*dx+dy*dy);
   if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
 }
 function moveAway(u,t,d){
-  const dx=u.x-t.x, dy=u.y-t.y, dd=Math.hypot(dx,dy);
+  // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+  const dx=u.x-t.x, dy=u.y-t.y, dd=Math.sqrt(dx*dx+dy*dy);
   if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
 }
 // Phase 10: effective speed — base * moveSpeedMod, halved if slowed.
@@ -3442,6 +3444,8 @@ function effSpeed(u){
 // D5: soft avoidance — gently push u away from nearby allies so units don't clump.
 // Returns a {x,y} offset (in pixels) to add to u's position. Only considers allies
 // within `radius` (default 28px). Falloff is linear: full push at distance 0, none at radius.
+// PERF-R12: write to reusable buffer to avoid {x,y} allocation per call (100× per frame).
+const _avoidBuf={x:0,y:0};
 function avoidanceOffset(u,allies,radius){
   radius=radius||28;
   const r2=radius*radius;
@@ -3460,11 +3464,12 @@ function avoidanceOffset(u,allies,radius){
   }
   // Scale the accumulated push by u's effective speed so fast units separate faster.
   const mag=Math.hypot(ax,ay);
-  if(mag<0.001)return {x:0,y:0};
+  if(mag<0.001){_avoidBuf.x=0;_avoidBuf.y=0;return _avoidBuf;}
   // Cap the push to a fraction of unit speed per tick (avoids jitter when stationary).
   const maxPush=effSpeed(u)*0.4;
   const scale=Math.min(mag,maxPush)/mag;
-  return {x:ax*scale, y:ay*scale};
+  _avoidBuf.x=ax*scale; _avoidBuf.y=ay*scale;
+  return _avoidBuf;
 }
 function closestEnemy(u,enemies){
   let best=null,bd=Infinity;
@@ -3627,6 +3632,64 @@ const TARGETING={
   random:(u,enemies,allies)=>{const alive=enemies.filter(e=>e.h>0);return alive.length?alive[F(R()*alive.length)]:null;},
   self:(u,enemies,allies)=>u,
 };
+
+// PERF-R12: Per-frame targeting cache for team-level targets.
+// Many targeting functions (lowest_hp, highest_hp, enemy_frontline, enemy_backline,
+// enemy_cluster, enemy_carry, enemy_support) don't depend on u — they return the same
+// result for all units on the same team. Cache them per (team, targetingType) per frame.
+// This eliminates 49 redundant computations per team per frame (50 units → 1 computation).
+let _targetCache={};
+function _getCachedTarget(team,targetingKey,enemies,allies){
+  const k=team+"|"+targetingKey;
+  if(k in _targetCache)return _targetCache[k];
+  let result=null;
+  switch(targetingKey){
+    case "lowest_hp":result=lowestBy(enemies,e=>e.h);break;
+    case "highest_hp":result=highestBy(enemies,e=>e.h);break;
+    case "enemy_carry":result=enemies.find(e=>e.h>0&&e.role==="carry")||closestEnemy({x:0,y:0},enemies);break;
+    case "enemy_support":result=enemies.find(e=>e.h>0&&e.role==="support")||closestEnemy({x:0,y:0},enemies);break;
+    case "enemy_backline":{
+      const alive=enemies.filter(e=>e.h>0);
+      if(!alive.length)break;
+      const backY=alive[0].team==="player"?Math.max(...alive.map(e=>e.y)):Math.min(...alive.map(e=>e.y));
+      result=alive.reduce((b,e)=>Math.abs(e.y-backY)<Math.abs(b.y-backY)?e:b,alive[0]);
+      break;
+    }
+    case "enemy_frontline":{
+      const alive=enemies.filter(e=>e.h>0);
+      if(!alive.length)break;
+      const frontY=alive[0].team==="player"?Math.min(...alive.map(e=>e.y)):Math.max(...alive.map(e=>e.y));
+      result=alive.reduce((b,e)=>Math.abs(e.y-frontY)<Math.abs(b.y-frontY)?e:b,alive[0]);
+      break;
+    }
+    case "enemy_cluster":{
+      const alive=enemies.filter(e=>e.h>0);
+      if(!alive.length)break;
+      const cellSize=80,grid=new Map();
+      for(const e of alive){
+        const k2=Math.floor(e.x/cellSize)+","+Math.floor(e.y/cellSize);
+        if(!grid.has(k2))grid.set(k2,0);
+        grid.set(k2,grid.get(k2)+1);
+      }
+      let best=alive[0],bestCount=0;
+      for(const e of alive){
+        const cx=Math.floor(e.x/cellSize),cy=Math.floor(e.y/cellSize);
+        let count=0;
+        for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+          const c=grid.get((cx+dx)+","+(cy+dy));
+          if(c)count+=c;
+        }
+        if(count>bestCount){bestCount=count;best=e;}
+      }
+      result=best;
+      break;
+    }
+  }
+  _targetCache[k]=result;
+  return result;
+}
+// Cache keys for team-level targeting (result doesn't depend on u).
+const _TEAM_LEVEL_TARGETS=new Set(["lowest_hp","highest_hp","enemy_carry","enemy_support","enemy_backline","enemy_frontline","enemy_cluster"]);
 
 const MOVEMENT={
   chase:(u,target,dt)=>{if(target&&target.h>0)moveToward(u,target,effSpeed(u)*dt);},
@@ -4945,9 +5008,12 @@ const BattleFX={
   onAttack(u,target){
     if(!target)return;
     const dx=target.x-u.x,dy=target.y-u.y;
-    const d=Math.hypot(dx,dy)||1;
+    // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+    const d=Math.sqrt(dx*dx+dy*dy)||1;
     u.lungeT=0.06; // 60ms
-    u.lungeDir={x:dx/d,y:dy/d};
+    // PERF-R12: reuse lungeDir object (avoid {x,y} allocation per attack).
+    if(!u.lungeDir)u.lungeDir={x:0,y:0};
+    u.lungeDir.x=dx/d;u.lungeDir.y=dy/d;
   },
   // Screen shake: ±px transform with decay.
   shake(amount){
@@ -5782,6 +5848,9 @@ const Battle={
       if(u.h<=0)continue;
       if(u.team==="player")players.push(u);else enemies.push(u);
     }
+    // PERF-R12: clear per-frame targeting cache (team-level targets).
+    // Create new object (cheaper than delete which deoptimizes hidden class).
+    _targetCache={};
     // PERF-R11: cache taunters per frame (avoids O(n) find per unit).
     const playerTaunter=players.find(e=>e.ability==="taunt");
     const enemyTaunter=enemies.find(e=>e.ability==="taunt");
@@ -5917,7 +5986,13 @@ const Battle={
       targetEnemies=this._tauntArr;
     }
     const targetFn=TARGETING[u.targeting];
-    const target=targetFn?targetFn(u,targetEnemies,allies):null;
+    // PERF-R12: use per-frame cache for team-level targets (don't depend on u).
+    let target;
+    if(targetFn&&_TEAM_LEVEL_TARGETS.has(u.targeting)){
+      target=_getCachedTarget(u.team,u.targeting,targetEnemies,allies);
+    }else{
+      target=targetFn?targetFn(u,targetEnemies,allies):null;
+    }
     u.target=target; // Phase 24f: store target for eye tracking
     const moveFn=MOVEMENT[u.movement];
     if(moveFn)moveFn(u,target,dt);
@@ -5952,7 +6027,11 @@ const Battle={
       // GripOffset is in unscaled sprite space; apply the sprite scale factor
       // so the spawn point matches the rendered weapon position.
       let wx=attacker.x,wy=attacker.y;
-      const weaponShape=attacker.recipe?.shapes?.find(s=>s.parentJoint);
+      // PERF-R12: cache weapon shape on unit (avoid find() per attack).
+      if(!attacker._weaponShape){
+        attacker._weaponShape=attacker.recipe?.shapes?.find(s=>s.parentJoint)||null;
+      }
+      const weaponShape=attacker._weaponShape;
       const spriteScale=(attacker.z||10)/10*1.8;
       if(weaponShape?.gripOffset){
         const side=attacker.team==="player"?1:-1;
@@ -5961,7 +6040,8 @@ const Battle={
       }
       const forward=4*spriteScale;
       const dx=target.x-attacker.x,dy=target.y-attacker.y;
-      const d=Math.hypot(dx,dy)||1;
+      // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
+      const d=Math.sqrt(dx*dx+dy*dy)||1;
       const sx=wx+(dx/d)*forward;
       const sy=wy+(dy/d)*forward;
       this.projectiles.push({
@@ -6261,6 +6341,8 @@ const Battle={
     if(!this.projectiles.length)return;
     // PERF-R12: build unit lookup Map once per frame (avoids O(n) find per projectile).
     if(!this._unitIdMap)this._unitIdMap=new Map();
+    if(!this._projPool)this._projPool=[];
+    if(!this._projTrailPool)this._projTrailPool=[];
     const idMap=this._unitIdMap;
     idMap.clear();
     for(const u of this.units)idMap.set(u.id,u);
@@ -6344,6 +6426,7 @@ const Battle={
   // J2: Spatial partitioning via uniform grid hash — O(n) instead of O(n²).
   // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
   // PERF-R12: hoist offsets array outside function (avoid per-frame allocation).
+  // PERF-R12: pool cell arrays to avoid per-frame [] allocations (one per cell).
   _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
   separate(all){
     const cellSize=60;
@@ -6461,20 +6544,33 @@ const Battle={
       // Noise texture overlay — tiled faint grain for organic feel.
       const noise=this._getNoiseCanvas();
       if(noise){
-        const prevA=c.globalAlpha;
-        c.globalAlpha=0.5;
-        const pat=c.createPattern(noise,"repeat");
-        if(pat){c.fillStyle=pat;c.fillRect(0,0,w,h);}
-        c.globalAlpha=prevA;
+        // PERF-R12: cache pattern (only depends on noise canvas, not per-frame state).
+        if(!this._bgNoisePat||this._bgNoiseSrc!==noise){
+          this._bgNoisePat=c.createPattern(noise,"repeat");
+          this._bgNoiseSrc=noise;
+        }
+        if(this._bgNoisePat){
+          const prevA=c.globalAlpha;
+          c.globalAlpha=0.5;
+          c.fillStyle=this._bgNoisePat;
+          c.fillRect(0,0,w,h);
+          c.globalAlpha=prevA;
+        }
       }
       // Arena-colored radial glow at center.
       const arena=G.arenas?.[G.save?.arena||0];
       if(arena){
-        const rg=c.createRadialGradient(w/2,h*0.45,0,w/2,h*0.45,w*0.6);
-        const ac=sanitizeHex(arena.c);
-        rg.addColorStop(0,ac+"10");
-        rg.addColorStop(1,"rgba(0,0,0,0)");
-        c.fillStyle=rg;
+        // PERF-R12: cache radial gradient (only depends on w/h/arena, not per-frame state).
+        const rgCacheKey=w+"x"+h+"_"+(arena.c||"");
+        if(!this._bgArenaGrad||this._bgArenaGradKey!==rgCacheKey){
+          this._bgArenaGradKey=rgCacheKey;
+          const rg=c.createRadialGradient(w/2,h*0.45,0,w/2,h*0.45,w*0.6);
+          const ac=sanitizeHex(arena.c);
+          rg.addColorStop(0,ac+"10");
+          rg.addColorStop(1,"rgba(0,0,0,0)");
+          this._bgArenaGrad=rg;
+        }
+        c.fillStyle=this._bgArenaGrad;
         c.fillRect(0,0,w,h);
       }
       // Ground line — subtle horizontal band where units stand.
@@ -6488,14 +6584,16 @@ const Battle={
       c.lineTo(w,grads.groundY);
       c.stroke();
       // Decorative ground dots — sparse texture.
+      // PERF-R12: batch all dots into one beginPath/fill (12 arcs → 1 draw call).
       c.fillStyle=theme.accent+"20";
+      c.beginPath();
       for(let i=0;i<12;i++){
         const gx=(i*37+13)%w;
         const gy=grads.groundY+((i*23+7)%30)-5;
-        c.beginPath();
+        c.moveTo(gx+1.5,gy);
         c.arc(gx,gy,1.5,0,Math.PI*2);
-        c.fill();
       }
+      c.fill();
       // Parallax midground — silhouette ridge that drifts with screen shake.
       const shakeX=this.shakeAmount||0;
       const mgY=grads.groundY-30;

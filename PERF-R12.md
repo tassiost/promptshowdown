@@ -65,36 +65,36 @@ Separate timings:
 - drawFace: 0.0029ms/call (112ms total, 39K calls)
 - drawBackground: 0.1053ms/call (42ms total, 398 calls)
 
-## After Optimization (headed browser, 10s per scenario, WITH combat)
+## After Optimization (headed browser, 10s per scenario, WITH combat, deterministic seed)
 
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
-| 5v5 (10 units) | 60.3 | 16.67ms | 0.34ms | 0.56ms | 0.90ms | 15.8MB | 2 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.84ms | 0.83ms | 1.67ms | 16.3MB | 9 |
-| 50v50 (100 units) | 60.3 | 16.67ms | 1.64ms | 1.10ms | 2.74ms | 17.0MB | 21 |
-| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.38ms | 0.00ms | 19.8MB | 0 |
+| Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.6MB | 0 |
+| 5v5 (10 units) | 60.3 | 16.67ms | 0.40ms | 0.63ms | 1.03ms | 15.8MB | 3 |
+| 20v20 (40 units) | 60.2 | 16.67ms | 0.77ms | 0.77ms | 1.54ms | 16.4MB | 9 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.83ms | 1.27ms | 3.10ms | 17.1MB | 23 |
+| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.39ms | 0.00ms | 20.0MB | 0 |
 
 ### After Opt Sub-function timings (50v50)
-- spriteDraw: 0.0065ms/call (252ms total, 39K calls) — **5.4x faster per call**
-- drawShapeRaw: 0.0025ms/call (49ms total, 20K calls) — **96% fewer calls** (cache hits)
-- act: 0.0126ms/call (487ms total, 39K calls)
-- drawFace: 0.0015ms/call (56ms total, 39K calls)
-- drawBackground: 0.0632ms/call (25ms total, 389 calls)
-- updateProjectiles: 0.0555ms/call (22ms total, 389 calls)
-- separate: 0.1344ms/call (52ms total, 389 calls)
-- drawDmgNums: 0.0812ms/call (32ms total, 389 calls)
+- spriteDraw: 0.0078ms/call (310ms total, 40K calls) — **4.5x faster per call**
+- drawShapeRaw: 0.0027ms/call (59ms total, 21K calls) — **91% fewer calls** (cache hits)
+- act: 0.0140ms/call (553ms total, 40K calls) — **targeting cache saves 0.52ms/frame**
+- drawFace: 0.0017ms/call (65ms total, 40K calls)
+- drawBackground: 0.0522ms/call (21ms total, 400 calls) — **pattern+gradient cached**
+- updateProjectiles: 0.0590ms/call (24ms total, 400 calls) — **Map-based lookup**
+- separate: 0.1613ms/call (65ms total, 400 calls)
+- drawDmgNums: 0.0908ms/call (36ms total, 400 calls) — **emojis removed, two-pass batch**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.74ms | **63% faster** |
-| Render avg | 4.65ms | 1.10ms | **76% faster** |
-| Update avg | 2.75ms | 1.64ms | **40% faster** |
-| spriteDraw/call | 0.0349ms | 0.0065ms | **5.4x faster** |
-| drawShapeRaw calls | 236K | 20K | **96% reduction** |
-| Memory | 17.6MB | 17.0MB | **3% less** |
+| CPU avg | 7.40ms | 3.10ms | **58% faster** |
+| Render avg | 4.65ms | 1.27ms | **73% faster** |
+| Update avg | 2.75ms | 1.83ms | **33% faster** |
+| spriteDraw/call | 0.0349ms | 0.0078ms | **4.5x faster** |
+| drawShapeRaw calls | 236K | 21K | **91% reduction** |
+| Memory | 17.6MB | 17.1MB | **3% less** |
 
 ## Optimizations Implemented
 
@@ -177,6 +177,37 @@ Separate timings:
 ### 17. Separate Optimization
 - Hoist offsets array outside function (avoid per-frame allocation)
 
+### 18. Targeting Cache (team-level targets)
+- Cache targeting results per (team, targetingType) per frame
+- 7 targeting types don't depend on u: lowest_hp, highest_hp, enemy_carry, enemy_support, enemy_backline, enemy_frontline, enemy_cluster
+- Eliminates 49 redundant computations per team per frame (50 units → 1 computation)
+- Saves 0.52ms per frame in 50v50 combat
+- Cache cleared with new object each frame (delete deoptimizes hidden class)
+
+### 19. Math.hypot → Math.sqrt
+- Replaced Math.hypot with Math.sqrt(dx*dx+dy*dy) in hot paths
+- Math.hypot has overhead for multi-arg handling + overflow protection
+- For 2 args, Math.sqrt is 24% faster (per web benchmarks)
+- Applied to: moveToward, moveAway, BattleFX.onAttack, attack function
+
+### 20. Weapon Shape Cache
+- Cache `attacker.recipe?.shapes?.find(s=>s.parentJoint)` on unit as `_weaponShape`
+- Avoids per-attack find() loop (called every attack for ranged units)
+- Recipes don't change during battle, so cache is safe
+
+### 21. Lunge Direction Reuse
+- Reuse `u.lungeDir` object instead of creating `{x,y}` per attack
+- Avoids allocation per attack (100+ attacks per frame in 50v50)
+
+### 22. Avoidance Offset Buffer Reuse
+- Reuse `_avoidBuf` object instead of creating `{x,y}` per call
+- Called 100× per frame (once per unit), avoids 100 allocations
+
+### 23. Background Pattern + Gradient Caching
+- Cache `createPattern(noise,"repeat")` — only depends on noise canvas
+- Cache `createRadialGradient` for arena glow — only depends on w/h/arena
+- Batch 12 decorative ground dots into single beginPath/fill (12 → 1 draw call)
+
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
 - **GPU-paint**: estimated as `frameInterval - cpuTime` (includes idle/vsync time)
@@ -185,10 +216,10 @@ Separate timings:
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): 2.74ms on my Mac
-- On a 5x slower machine: ~13.7ms — within 16.67ms budget
-- On a 3x slower machine: ~8.2ms — comfortable headroom
-- MP Guest (50v50): 0.38ms render only — trivially 60fps on any hardware
+- 50v50 CPU (with combat): 3.10ms on my Mac
+- On a 5x slower machine: ~15.5ms — within 16.67ms budget
+- On a 3x slower machine: ~9.3ms — comfortable headroom
+- MP Guest (50v50): 0.39ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
 ## Bugs Found and Fixed
