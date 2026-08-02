@@ -6835,7 +6835,7 @@ const Battle={
     const pass2=this._renderPass2;
     let pass2Len=0;
     // units
-    // PERF-R12: batch all shadows first (all use fillStyle="#000", set once).
+    // PERF-R12: batch all shadows (fillStyle="#000" set once, varying alpha per shadow).
     c.fillStyle="#000";
     for(let u of this.units){
       if(!u||u.x===undefined)continue;
@@ -6972,13 +6972,17 @@ const Battle={
       const e=pass2[i];
       c.fillRect(e.x-18,e.spriteTop+8,36,5);
     }
-    // Group 2: Borders by team (strokeRect).
+    // Group 2: Borders by team (batched — 2 strokeStyle sets instead of N).
     c.lineWidth=1;
+    c.strokeStyle=TEAM_COLORS.player;
     for(let i=0;i<pass2Len;i++){
       const e=pass2[i];
-      const u=e.u;
-      c.strokeStyle=TEAM_COLORS[u.team]||"#888";
-      c.strokeRect(e.x-18,e.spriteTop+8,36,5);
+      if(e.u.team==="player")c.strokeRect(e.x-18,e.spriteTop+8,36,5);
+    }
+    c.strokeStyle=TEAM_COLORS.enemy;
+    for(let i=0;i<pass2Len;i++){
+      const e=pass2[i];
+      if(e.u.team==="enemy")c.strokeRect(e.x-18,e.spriteTop+8,36,5);
     }
     // Group 3: Ghost bars (rgba(255,255,255,0.25)) — only units with ghost > hp.
     c.fillStyle="rgba(255,255,255,0.25)";
