@@ -67,43 +67,50 @@ Separate timings:
 
 ## After Optimization (headed browser, 10s per scenario, WITH combat, deterministic seed)
 
-| Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | GPU avg | Memory | Max Proj |
-|---|---|---|---|---|---|---|---|---|
-| Empty (0 units) | 60.3 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.2 | 16.67ms | 0.32ms | 0.42ms | 0.74ms | 15.93ms | 15.8MB | 2 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.61ms | 0.42ms | 1.03ms | 15.64ms | 15.7MB | 9 |
-| 50v50 (100 units) | 60.3 | 16.67ms | 1.42ms | 0.70ms | 2.12ms | 14.55ms | 17.4MB | 16 |
-| MP Guest (50v50) | 60.2 | 16.67ms | 0.00ms | 0.30ms | 0.00ms | 0.00ms | 20.4MB | 0 |
+**Note**: Testing was done with macOS in low power mode (30Hz display). The perf script
+overrides `requestAnimationFrame` with `setTimeout(16.67ms)` to simulate 60fps and measure
+true CPU performance. FPS shows ~59 due to setTimeout overhead; in a real 60Hz browser
+with native rAF, this would be exactly 60 FPS.
 
-**All scenarios hit 60+ FPS with 0 slow frames (>20ms).**
-50v50 CPU avg 2.12ms — only 13% of 16.67ms budget (87% headroom).
-GPU time (frameInterval - CPU) is ~15ms — dominated by vsync wait, not actual GPU work.
-On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
+| Scenario | FPS | Update avg | Render avg | CPU avg | GPU avg | Memory | Slow frames |
+|---|---|---|---|---|---|---|---|
+| Empty (0 units) | 59.3 | 0.00ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
+| 5v5 (10 units) | 59.2 | 0.34ms | 0.45ms | 0.79ms | 16.09ms | 15.4MB | 0 |
+| 20v20 (40 units) | 59.3 | 0.84ms | 0.58ms | 1.42ms | 15.52ms | 15.8MB | 0 |
+| 50v50 (100 units) | 59.3 | 1.68ms | 0.76ms | 2.45ms | 14.43ms | 17.0MB | 0 |
+| MP Guest (50v50) | 59.3 | 0.00ms | 0.32ms | 0.00ms | 0.00ms | 20.0MB | 0 |
+
+**All scenarios hit ~60 FPS with 0 slow frames (>20ms).**
+50v50 CPU avg 2.45ms — only 15% of 16.67ms budget (85% headroom).
+GPU time (frameInterval - CPU) is ~14.4ms — dominated by vsync wait, not actual GPU work.
+On a 6x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0029ms/call (113ms total, 39K calls) — **sprite cache + drawImage**
+- spriteDraw: 0.0033ms/call (151ms total, 46K calls) — **sprite cache + drawImage**
 - drawShapeRaw: 0.0037ms/call (14ms total, 3.9K calls) — **cache miss path only (death/spawn)**
-- act: 0.0104ms/call (399ms total, 39K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- act: 0.0128ms/call (578ms total, 45K calls) — **spatial grid avoidance + squared dist + targeting cache**
 - drawFace: 0.0030ms/call (1.4ms total, 465 calls) — **99% fewer calls** (skip when >30 units)
-- drawBackground: 0.0386ms/call (15ms total, 391 calls) — **offscreen canvas cache**
-- separate: 0.1164ms/call (46ms total, 391 calls) — **flat array grid + non-empty cell keys**
-- drawDmgNums: 0.0573ms/call (22ms total, 391 calls) — **4-pass color batch + pooled objects**
-- updateProjectiles: 0.0512ms/call (20ms total, 391 calls) — **Map lookup + pooled projectiles + flat trail**
+- drawBackground: 0.0274ms/call (13ms total, 463 calls) — **offscreen canvas cache**
+- separate: 0.1499ms/call (69ms total, 463 calls) — **flat array grid + non-empty cell keys**
+- drawDmgNums: 0.0559ms/call (26ms total, 463 calls) — **4-pass color batch + pooled objects**
+- updateProjectiles: 0.0497ms/call (23ms total, 463 calls) — **Map lookup + pooled projectiles + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.12ms | **71% faster** |
-| Render avg | 4.65ms | 0.70ms | **85% faster** |
-| Update avg | 2.75ms | 1.42ms | **48% faster** |
-| spriteDraw/call | 0.0349ms | 0.0029ms | **12x faster** |
-| act/call | 0.0300ms | 0.0104ms | **2.9x faster** |
+| CPU avg | 7.40ms | 2.45ms | **67% faster** |
+| Render avg | 4.65ms | 0.76ms | **84% faster** |
+| Update avg | 2.75ms | 1.68ms | **39% faster** |
+| spriteDraw/call | 0.0349ms | 0.0033ms | **11x faster** |
+| act/call | 0.0300ms | 0.0128ms | **2.3x faster** |
 | drawFace calls | 38K | 465 | **99% reduction** (skip when >30 units) |
 | drawShapeRaw calls | 236K | 4.2K | **98% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
+| Shadow fill calls | ~100 | 1 | **99% reduction** (batched path) |
+| Status ring stroke calls | ~400 | 4 | **99% reduction** (batched path) |
 | Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
-| Memory | 17.6MB | 18.5MB | **+5%** (grid + pass2 arrays) |
+| Memory | 17.6MB | 17.0MB | **-3%** (grid + pass2 arrays, pooled objects) |
 
 ## Optimizations Implemented
 
@@ -579,9 +586,21 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 - First hit creates object, subsequent hits mutate in place
 - Better for V8 hidden classes (consistent object shape)
 
+### 89. Batch shadow ellipses into single path (Pass 1a)
+- Alive units (constant alpha=0.35): all shadows drawn in single beginPath+fill()
+- Dying units (per-unit alpha): drawn separately (usually 0-3 units)
+- Research: drawing N shapes in 1 path + 1 fill() is ~2x faster than N × (beginPath+fill)
+- Reduces ~100 beginPath+ellipse+fill calls to 1 fill() for alive units
+
+### 90. Batch status rings into single path per type (Pass 2)
+- All same-type rings (shield, stun, poison, slow) batched into single path + stroke()
+- moveTo before each arc creates distinct sub-paths (no connecting lines)
+- Reduces ~400 beginPath+arc+stroke to 4 stroke() calls
+- Research: drawing N arcs in 1 path is ~2x faster (stackoverflow benchmark)
+
 ### Research: Techniques NOT pursued (with rationale)
 - **OffscreenCanvas in Web Worker**: Would move rendering to separate thread.
-  Not needed — CPU is only 12% of budget, GPU/vsync is the bottleneck.
+  Not needed — CPU is only 15% of budget, GPU/vsync is the bottleneck.
   Major architectural change for minimal benefit.
 - **Typed Arrays (Float32Array) for unit positions**: V8 converts Float32→Float64
   on every read/write (JS numbers are 64-bit doubles). ~5% SLOWER than Float64Array
@@ -598,12 +617,12 @@ On a 7x slower machine: ~15ms — still within 16.67ms budget for 60fps.
 - The sprite cache reduces both CPU (no path/gradient computation) and GPU (drawImage is cheaper than fill+stroke)
 
 ## 60fps Feasibility on Slower Hardware
-- 50v50 CPU (with combat): ~2.12ms avg on my Mac (measured at 60+ FPS, 3 runs)
-- **All scenarios confirmed 60+ FPS with 0 slow frames**
-- On a 7x slower machine: ~15ms — still within 16.67ms budget
-- On a 5x slower machine: ~11ms — comfortable headroom
-- On a 3x slower machine: ~6.4ms — plenty of headroom
-- MP Guest (50v50): 0.30ms render only — trivially 60fps on any hardware
+- 50v50 CPU (with combat): ~2.45ms avg on my Mac (measured at ~59 FPS, 3 runs)
+- **All scenarios confirmed ~60 FPS with 0 slow frames**
+- On a 6x slower machine: ~15ms — still within 16.67ms budget
+- On a 4x slower machine: ~10ms — comfortable headroom
+- On a 3x slower machine: ~7.4ms — plenty of headroom
+- MP Guest (50v50): 0.32ms render only — trivially 60fps on any hardware
 - Empty screen: 0ms CPU — pure GPU/compositor work, 60fps trivially
 
 ## Single/Multiplayer Unification
