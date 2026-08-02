@@ -4455,7 +4455,7 @@ const SpriteRenderer={
       bobY=rm?0:(hasBob?Math.sin(t*Math.PI*2)*2:0);
       alpha=hasAlpha?(prev.alpha||0)+(alphaCh-(prev.alpha||0))*f:1;
       rot=rm?0:(hasRot?(prev.rot||0)+(rotCh-(prev.rot||0))*f:0);
-      channels=null; // not needed for cache path
+      channels=null; // will be recomputed on cache miss (rare)
     }else{
       channels=this.interpolate(keyframes,t);
       bobY=rm?0:(channels.bob?Math.sin(t*Math.PI*2)*2:0);
@@ -4515,6 +4515,9 @@ const SpriteRenderer={
     }
 
     // Fallback: full per-frame rendering (death, reducedMotion, hitReact, or cache miss).
+    // PERF-R12: if fast path was taken (channels=null), recompute full channels now.
+    // This only happens on cache miss (first frame per unique sprite) — rare.
+    if(channels===null)channels=this.interpolate(keyframes,t);
     c.save();
     c.globalAlpha=alpha;
     // D5: scale sprite by z so limbs are visible (shapes are designed for z=10).
