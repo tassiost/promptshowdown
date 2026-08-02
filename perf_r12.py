@@ -88,6 +88,32 @@ window._perf = {
     }
     requestAnimationFrame(tick);
 })();
+// PERF-R12: Override requestAnimationFrame to bypass vsync throttling (low power mode).
+// In low power mode, macOS throttles rAF to 30Hz. We use setTimeout(16.67ms) to
+// simulate 60fps and measure true CPU performance.
+(function() {
+    const _origRAF = window.requestAnimationFrame;
+    const _origCancel = window.cancelAnimationFrame;
+    const timers = new Map();
+    let nextId = 1;
+    window.requestAnimationFrame = function(cb) {
+        const id = nextId++;
+        const timer = setTimeout(function() {
+            timers.delete(id);
+            cb(performance.now());
+        }, 1000/60);
+        timers.set(id, timer);
+        return id;
+    };
+    window.cancelAnimationFrame = function(id) {
+        if (timers.has(id)) {
+            clearTimeout(timers.get(id));
+            timers.delete(id);
+        } else {
+            _origCancel(id);
+        }
+    };
+})();
 """
 
 def start_server():
