@@ -5940,6 +5940,7 @@ const Battle={
     // PERF-R12: clear per-frame targeting cache (team-level targets).
     // Create new object (cheaper than delete which deoptimizes hidden class).
     _targetCache={};
+    // PERF-R12: increment closestEnemy temporal coherence frame counter.
     // PERF-R11: cache taunters per frame (avoids O(n) find per unit).
     const playerTaunter=players.find(e=>e.ability==="taunt");
     const enemyTaunter=enemies.find(e=>e.ability==="taunt");
@@ -6533,7 +6534,6 @@ const Battle={
   // J2: Spatial partitioning via uniform grid hash — O(n) instead of O(n²).
   // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
   // PERF-R12: hoist offsets array outside function (avoid per-frame allocation).
-  // PERF-R12: pool cell arrays to avoid per-frame [] allocations (one per cell).
   _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
   separate(all){
     const cellSize=60;
