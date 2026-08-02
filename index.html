@@ -4095,6 +4095,8 @@ const SpriteRenderer={
   },
 
   // Unified shape draw/stroke with parentJoint + own joint support.
+  // PERF-R12: reusable lightweight uLocal buffer (only x,y needed by drawShapeRaw/_applyJoint).
+  _uLocalBuf:{x:0,y:0},
   _drawOne(c,shape,channels,u,isStroke){
     const raw=(isStroke?this._strokeShapeRaw:this._drawShapeRaw).bind(this);
     const parent=shape.parentJoint;
@@ -4102,7 +4104,13 @@ const SpriteRenderer={
     if(!parent&&!joint){raw(c,shape,u);return;}
     // When parented, the weapon is drawn at the unit's position + gripOffset (the hand)
     // in the parent-rotated frame. The parent pivot is the shoulder.
-    const uLocal=parent?{...u,x:u.x+(shape.gripOffset?.x||0),y:u.y+(shape.gripOffset?.y||0)}:u;
+    // PERF-R12: only x,y are needed downstream — avoid {...u} spread (copies ~30 props).
+    let uLocal=u;
+    if(parent){
+      uLocal=this._uLocalBuf;
+      uLocal.x=u.x+(shape.gripOffset?.x||0);
+      uLocal.y=u.y+(shape.gripOffset?.y||0);
+    }
     c.save();
     if(parent) this._applyJoint(c,shape,channels,u,parent,shape.parentPivot);
     if(joint){
