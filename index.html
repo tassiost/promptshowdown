@@ -7018,9 +7018,11 @@ const Battle={
     // PERF-R12: two-pass render for color batching.
     // Pass 1: shadows + sprites + hit flashes (per unit, depth-ordered with lunge).
     // Pass 2: status rings + HP bars + names (batched by color, original position).
+    // PERF-R12: cache this.time (accessed 12+ times in render, avoid repeated property access).
+    const time=this.time;
     const manyUnits=Battle.units.length>30;
     const manyUnitsR=manyUnits;
-    const ringPulse=manyUnitsR?1:1+0.04*Math.sin(this.time*6);
+    const ringPulse=manyUnitsR?1:1+0.04*Math.sin(time*6);
     // Collect Pass 2 data during Pass 1 (avoid second iteration over units).
     // PERF-R12: reuse arrays to avoid per-frame allocation.
     if(!this._renderPass2)this._renderPass2=[];
@@ -7107,10 +7109,10 @@ const Battle={
     for(let i=0;i<pass2Len;i++){
       const e=pass2[i];
       const u=e.u;
-      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(this.time*5);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(this.time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
-      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(this.time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.shieldActive>0){c.strokeStyle="#fff";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.8:0.7+0.3*Math.sin(time*5);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=manyUnitsR?0.7:0.6+0.4*Math.sin(time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+      if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=manyUnitsR?0.6:0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
       if(u.abFlash>0){
         const t=1-u.abFlash/0.4;
         c.globalAlpha=Math.max(0,1-t);
@@ -7145,7 +7147,7 @@ const Battle={
         }
       }
       // Low-HP warning: pulsing red glow when HP < 25%.
-      const pulse=Math.sin(this.time*8)*0.5+0.5;
+      const pulse=Math.sin(time*8)*0.5+0.5;
       for(let i=0;i<pass2Len;i++){
         const e=pass2[i];
         const u=e.u;
@@ -7261,7 +7263,7 @@ const Battle={
         c.beginPath();c.arc(5,0,3,0,Math.PI*2);c.fill();
       }else if(wt==="staff"||wt==="wand"||wt==="orb"){
         // Magic bolt: pulsating orb + energy aura.
-        const pulse=1+0.2*Math.sin(this.time*15);
+        const pulse=1+0.2*Math.sin(time*15);
         c.globalCompositeOperation="lighter";
         c.globalAlpha=0.3;c.fillStyle=accent;
         c.beginPath();c.arc(0,0,8*pulse,0,Math.PI*2);c.fill(); // outer aura
@@ -7272,7 +7274,7 @@ const Battle={
         // Sparkle particles around bolt.
         c.globalAlpha=0.4;c.strokeStyle=accent;c.lineWidth=1;
         for(let s=0;s<3;s++){
-          const sa=this.time*8+s*Math.PI*2/3;
+          const sa=time*8+s*Math.PI*2/3;
           c.beginPath();c.moveTo(0,0);c.lineTo(Math.cos(sa)*6,Math.sin(sa)*6);c.stroke();
         }
       }else if(wt==="rifle"){
@@ -7285,7 +7287,7 @@ const Battle={
       }else if(wt==="breath"){
         // Dragon breath: fireball with flickering flame particles.
         c.globalCompositeOperation="lighter";
-        const flick=0.8+0.2*Math.sin(this.time*20+p.x*0.1);
+        const flick=0.8+0.2*Math.sin(time*20+p.x*0.1);
         c.globalAlpha=0.4;c.fillStyle="#f80";
         c.beginPath();c.arc(0,0,7*flick,0,Math.PI*2);c.fill();
         c.globalAlpha=0.6;c.fillStyle="#fc4";
@@ -7322,7 +7324,7 @@ const Battle={
     // Phase 23: draw persistent spell zones.
     for(let zi=0;zi<this.zones.length;zi++){
       const z=this.zones[zi];
-      const pulse=0.2+0.1*Math.sin(this.time*4);
+      const pulse=0.2+0.1*Math.sin(time*4);
       // PERF-R12: use hoisted ZONE_FX_COLORS constant (avoid per-zone object allocation).
       const color=ZONE_FX_COLORS[z.spec.fxType]||"#fa4";
       c.save();
@@ -7338,7 +7340,7 @@ const Battle={
       c.strokeStyle=color;
       c.lineWidth=1.5;
       for(let ring=0;ring<3;ring++){
-        const rr=z.radius*(0.3+ring*0.25)*(1+0.08*Math.sin(this.time*3+ring*1.2));
+        const rr=z.radius*(0.3+ring*0.25)*(1+0.08*Math.sin(time*3+ring*1.2));
         c.beginPath();
         c.arc(z.x,z.y,rr,0,Math.PI*2);
         c.stroke();
