@@ -44,6 +44,7 @@ Serve over HTTP: `python3 -m http.server 8765` → `http://localhost:8765/index.
 
 ## Skills (Invoke for Detailed Knowledge)
 
+- **`/coding-workflow`** — Full dev workflow: quick start, verification, commit style (auto-invoked)
 - **`/battle-rules`** — Battle system: movement, abilities, spells, kill attribution,
   targeting, avoidance, weapons, draft system
 - **`/system-rules`** — P2P sync, save/import, security, forge, init, PWA, audio, quests
@@ -54,6 +55,7 @@ Serve over HTTP: `python3 -m http.server 8765` → `http://localhost:8765/index.
 
 ## Documentation
 
+- **[docs/FILE_MAP.md](docs/FILE_MAP.md)** — Line-by-line map of index.html (where everything lives)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Full system architecture
 - **[PERF-R12.md](PERF-R12.md)** — Performance optimization details (90 optimizations)
 - **[BUGS.md](BUGS.md)** — Bug hunt log (213 bugs found and fixed)

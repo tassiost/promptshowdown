@@ -1,0 +1,5 @@
+# Python dependencies for testing and profiling
+# Install: pip install -r requirements.txt
+# Then:   python3 -m playwright install chromium
+
+playwright>=1.40,<2.0

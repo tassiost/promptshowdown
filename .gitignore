@@ -14,3 +14,16 @@ index.original.html
 
 # Node (only if you later add tooling)
 node_modules/
+
+# Local AI agent config (personal preferences, not shared)
+AGENTS.local.md
+*.local
+
+# Playwright test artifacts
+playwright-report/
+test-results/
+perf_results.json
+
+# Python
+__pycache__/
+*.pyc

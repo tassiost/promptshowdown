@@ -101,12 +101,26 @@ Summarize findings:
 - **E2E results**: pass/fail counts
 - **Recommendations**: what to fix first, ordered by severity
 
+## Bug Hunt Session Format
+
+When doing a dedicated bug hunt session, create a `archive/bug-hunt/BUG_HUNT_SESSION_N.md`
+file with:
+- Date and scope
+- Bugs found (with ID, severity, area, reproduction steps)
+- Fixes applied (if any — normally bugs are only identified, not fixed, in this skill)
+- Tests added (if any)
+- Remaining issues
+
+This creates a historical record that future sessions can reference to avoid re-finding
+the same bugs.
+
 ## Important Rules
 
 - **Do NOT fix bugs in this skill.** Only identify and report them. The user will decide
   what to fix and can ask you to fix specific bugs in a follow-up.
 - **Do NOT modify `index.html`** during the bug hunt. Read-only analysis.
-- **Check AGENTS.md** for the project's engineering rules before reporting something as a
+- **Check AGENTS.md** for the project's critical invariants before reporting something as a
   bug — it might be an intentional design decision documented there.
 - **Use the /battle-rules, /system-rules, and /render-rules skills** for detailed knowledge
   about specific subsystems when analyzing code in those areas.
+- **Check `docs/FILE_MAP.md`** to find the right line ranges for the subsystem you're analyzing.

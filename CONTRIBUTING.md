@@ -52,14 +52,14 @@ All game code lives in `index.html`. No build step, no bundler, no framework. Va
 
 ### CSS
 
-- Use CSS variables defined in `:root` (lines 13-25) — purple/gold Draft Showdown palette
+- Use CSS variables defined in `:root` (search for `:root` in index.html) — purple/gold Draft Showdown palette
 - Use existing component classes (`.btn`, `.card`, `.pill`, `.detail`, `.group`, `.spellBtn`)
 - Avoid inline styles unless one-off positioning
 - Prefer `var(--accent)` (purple) or `var(--gold)` over hardcoded colors
 
 ### Adding a new screen
 
-1. Add HTML in the screens section (lines 101-243):
+1. Add HTML in the screens section (search for `<div class="screen"` in index.html):
 ```html
 <div class="screen" id="myScreen">
 <h2>My Screen</h2>
@@ -90,7 +90,7 @@ myScreen(){
 
 1. Add to `ENUM_FIELDS.bodyPlan` array (currently 28 body plans)
 2. Add to `FIELD_PROMPTS.bodyPlan` description
-3. Define shapes in `BODY_PLANS` (lines 700-800)
+3. Define shapes in `BODY_PLANS` (search for `const BODY_PLANS` in index.html)
 4. Add joints to `SpriteRenderer.JOINT_ANGLES` if new joints needed
 5. Test via forge
 
