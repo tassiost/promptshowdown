@@ -6368,7 +6368,9 @@ const Battle={
     if(attacker.ability==="slow")target.slow=Math.max(target.slow,1.0);
     // splash: AoE damage to enemies near target (50% damage)
     if(attacker.ability==="splash"){
-      for(let e of enemies){
+      // PERF-R12: index loop (avoid for...of iterator allocation).
+      for(let ei=0;ei<enemies.length;ei++){
+        const e=enemies[ei];
         if(e!==target&&e.h>0&&dist(target,e)<40){const splashDmg=dmg*0.5;e.h-=splashDmg;if(e.h<0)e.h=0;e.lastAttacker=attacker;if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=splashDmg;}
       }
     }
@@ -6382,11 +6384,13 @@ const Battle={
   },
 
   // Phase 10: triggered abilities (heal, spawn, explode, heal_burst, shield).
+  // PERF-R12: hoist abColors map (avoid per-trigger object allocation).
+  _abColors:{heal:"#34d399",spawn:"#fbbf24",explode:"#fb7185",heal_burst:"#34d399",shield:"#60a5fa",
+    blink_strike:"#a78bfa",frenzy:"#fb923c",cleanse:"#34d399",chain_lightning:"#4af",counter:"#a78bfa",
+    taunt:"#fb7185",regen:"#34d399",executioner:"#fb7185"},
   triggerAbility(u,allies,enemies){
     // Ability activation flash: colored ring around the unit.
-    const abColors={heal:"#34d399",spawn:"#fbbf24",explode:"#fb7185",heal_burst:"#34d399",shield:"#60a5fa",
-      blink_strike:"#a78bfa",frenzy:"#fb923c",cleanse:"#34d399",chain_lightning:"#4af",counter:"#a78bfa",
-      taunt:"#fb7185",regen:"#34d399",executioner:"#fb7185"};
+    const abColors=this._abColors;
     u.abFlash=0.4;
     u.abFlashColor=abColors[u.ability]||"#fff";
     // Log ability activation to kill feed (skip "none" ability).
@@ -6416,14 +6420,22 @@ const Battle={
         break;
       }
       case "explode":{
-        for(let e of enemies.filter(e=>e.h>0&&dist(u,e)<60))this.takeDamage(u,e,enemies);
+        // PERF-R12: index loop with inline filter (avoid filter allocation + for...of).
+        for(let ei=0;ei<enemies.length;ei++){
+          const e=enemies[ei];
+          if(e.h>0&&dist(u,e)<60)this.takeDamage(u,e,enemies);
+        }
         u.abCool=5.0;
         this.log(u.n+" explodes!");
         GameAudio.sfx("explode"); // Phase 30
         break;
       }
       case "heal_burst":{
-        for(let a of allies.filter(a=>a.h>0&&dist(u,a)<60))a.h=Math.min(a.mh,a.h+u.d*2);
+        // PERF-R12: index loop with inline filter (avoid filter allocation + for...of).
+        for(let ai=0;ai<allies.length;ai++){
+          const a=allies[ai];
+          if(a.h>0&&dist(u,a)<60)a.h=Math.min(a.mh,a.h+u.d*2);
+        }
         u.abCool=4.0;
         this.log(u.n+" heal burst!");
         GameAudio.sfx("heal"); // Phase 30
@@ -6456,8 +6468,10 @@ const Battle={
         break;
       }
       case "cleanse":{
-        for(let a of allies.filter(a=>a.h>0&&dist(u,a)<80)){
-          a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;
+        // PERF-R12: index loop with inline filter (avoid filter allocation + for...of).
+        for(let ai=0;ai<allies.length;ai++){
+          const a=allies[ai];
+          if(a.h>0&&dist(u,a)<80){a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;}
         }
         u.abCool=5.0;
         this.log(u.n+" cleanses allies!");
