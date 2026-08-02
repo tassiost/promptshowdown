@@ -3806,8 +3806,8 @@ const ATTACK_CONDITIONS={
 
 const ABILITY_TRIGGERS={
   on_cooldown:(u,allies,enemies)=>u.abCool<=0,
-  when_ally_hurt:(u,allies,enemies)=>allies.some(a=>a!==u&&a.h>0&&a.h<a.mh*0.5)&&u.abCool<=0,
-  when_surrounded:(u,allies,enemies)=>enemies.filter(e=>e.h>0&&dist(u,e)<60).length>=2&&u.abCool<=0,
+  when_ally_hurt:(u,allies,enemies)=>{if(u.abCool>0)return false;for(let i=0;i<allies.length;i++){const a=allies[i];if(a!==u&&a.h>0&&a.h<a.mh*0.5)return true;}return false;},
+  when_surrounded:(u,allies,enemies)=>{if(u.abCool>0)return false;let count=0;for(let i=0;i<enemies.length;i++){const e=enemies[i];if(e.h<=0)continue;const dx=u.x-e.x,dy=u.y-e.y;if(dx*dx+dy*dy<3600){count++;if(count>=2)return true;}}return false;},
   on_low_hp:(u,allies,enemies)=>u.h<u.mh*0.3&&u.abCool<=0,
   on_death:(u,allies,enemies)=>false,  // handled in onUnitDeath()
   on_first_hit:(u,allies,enemies)=>u.hasBeenHit&&!u.firstHitUsed,
@@ -6536,7 +6536,7 @@ const Battle={
   // PERF-R12: pool cell arrays to avoid per-frame [] allocations (one per cell).
   _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
   separate(all){
-    const cellSize=60;
+    const cellSize=50;
     const grid=this._sepGrid||(this._sepGrid=new Map());
     grid.clear();
     // Bin units into cells with numeric keys (faster than string concat).
