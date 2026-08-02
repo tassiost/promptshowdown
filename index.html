@@ -4975,6 +4975,16 @@ function fxTypeFreq(fxType){
 }
 
 const MAX_PARTICLES=60;
+// PERF-R12: particle pool — reuse dead particles to avoid GC pressure.
+// Particles are created/destroyed frequently (every hit, aura tick, spell).
+const _particlePool=[];
+function _spawnParticle(x,y,vx,vy,life,maxLife,c,r){
+  const p=_particlePool.length?_particlePool.pop():{};
+  p.x=x;p.y=y;p.vx=vx;p.vy=vy;p.life=life;p.maxLife=maxLife;p.c=c;p.r=r;
+  Battle.particles.push(p);
+}
+// PERF-R12: return dead particles to pool during compaction.
+function _recycleParticle(p){_particlePool.push(p);}
 // Phase 24e: derive elemental fxType from unit attributes for auras.
 const AURA_MAP={
   fire:"#f64", frost:"#6cf", poison:"#6f4", lightning:"#ff4",
@@ -5005,14 +5015,7 @@ const BattleFX={
     for(let i=0;i<n;i++){
       const a=Math.random()*Math.PI*2;
       const v=speed*(0.5+Math.random()*0.5);
-      Battle.particles.push({
-        x,y,
-        vx:Math.cos(a)*v,vy:Math.sin(a)*v,
-        life:0.3+Math.random()*0.2,
-        maxLife:0.5,
-        c:color,
-        r:2+Math.random()*2
-      });
+      _spawnParticle(x,y,Math.cos(a)*v,Math.sin(a)*v,0.3+Math.random()*0.2,0.5,color,2+Math.random()*2);
     }
   },
   // Hit flash: unit flashes white briefly.
@@ -5063,12 +5066,7 @@ const BattleFX={
     for(let i=0;i<n;i++){
       const a=Math.random()*Math.PI*2;
       const r=z.radius*(0.7+Math.random()*0.3);
-      Battle.particles.push({
-        x:z.x+Math.cos(a)*r,y:z.y+Math.sin(a)*r,
-        vx:0,vy:-10-Math.random()*10,
-        life:0.4+Math.random()*0.2,maxLife:0.6,
-        c:color,r:2+Math.random()*2
-      });
+      _spawnParticle(z.x+Math.cos(a)*r,z.y+Math.sin(a)*r,0,-10-Math.random()*10,0.4+Math.random()*0.2,0.6,color,2+Math.random()*2);
     }
   },
   // Phase 24e: persistent unit aura — per-frame particle emitter driven by fxType.
@@ -5130,7 +5128,7 @@ const BattleFX={
         vx=(Math.random()-0.5)*20; vy=(Math.random()-0.5)*20;
         life=0.15+Math.random()*0.1; r=1+Math.random();
       }
-      Battle.particles.push({x:px,y:py,vx,vy,life,maxLife:life,c:color,r});
+      _spawnParticle(px,py,vx,vy,life,life,color,r);
     }
   },
   // Spawn pop-in: scale 0->1 ease-out-back.
@@ -5172,11 +5170,7 @@ const BattleFX={
       const steps=Math.min(5,Math.floor(d/20));
       for(let i=0;i<steps;i++){
         const t=i/steps;
-        Battle.particles.push({
-          x:u.x+dx*t,y:u.y+dy*t,
-          vx:0,vy:0,life:0.15+t*0.05,maxLife:0.2,
-          c:u.c,r:2
-        });
+        _spawnParticle(u.x+dx*t,u.y+dy*t,0,0,0.15+t*0.05,0.2,u.c,2);
       }
     }else if(fxType==="flash"){
       // Staff flash: bright particle burst at unit position.
@@ -5198,12 +5192,15 @@ const BattleFX={
         p.life-=dt;
       }
       // PERF-R12: in-place compaction instead of filter (avoids array allocation + GC).
+      // PERF-R12: recycle dead particles to pool (reuse objects, avoid GC).
       let wp=0;
       for(let pi=0;pi<Battle.particles.length;pi++){
         const p=Battle.particles[pi];
         if(p.life>0&&!isNaN(p.x)&&!isNaN(p.y)){
           if(wp!==pi)Battle.particles[wp]=p;
           wp++;
+        }else{
+          _recycleParticle(p);
         }
       }
       Battle.particles.length=wp;
@@ -5747,6 +5744,8 @@ const Battle={
     // PERF-R12: clear projectile pool on battle start (avoid stale projectiles).
     if(this._projPool)this._projPool.length=0;
     this.particles=[];     // Phase 17: clear particles
+    // PERF-R12: clear particle pool on battle start (avoid stale particles).
+    _particlePool.length=0;
     this.shakeAmount=0;    // Phase 17: reset shake
     this.roundFlash=null;  // Phase 17: reset round flash
     this.recentCrits=[];   // Phase 17: clear crit tracking
@@ -5754,6 +5753,8 @@ const Battle={
     this._processedCrits=null; // Phase 17: clear processed crit tracking
     this.deathLog=[];      // Phase 16: clear death order log
     this.damageNums=[];    // clear floating damage numbers
+    // PERF-R12: clear damage number pool on battle start (avoid stale objects).
+    if(this._dmgPool)this._dmgPool.length=0;
     this.paused=false;     // reset pause flag
     // Phase 23: init spells + zones.
     this.spells=[];
@@ -6494,20 +6495,17 @@ const Battle={
       if(bp==="golem"||bp==="construct"){
         // Shatter: spawn colored rect particles.
         for(let i=0;i<Math.min(8,dBudget);i++){
-          Battle.particles.push({x:u.x+(Math.random()-0.5)*20,y:u.y+(Math.random()-0.5)*20,
-            vx:(Math.random()-0.5)*80,vy:-30-Math.random()*40,life:0.5,maxLife:0.6,c:u.c,r:3+Math.random()*3});
+          _spawnParticle(u.x+(Math.random()-0.5)*20,u.y+(Math.random()-0.5)*20,(Math.random()-0.5)*80,-30-Math.random()*40,0.5,0.6,u.c,3+Math.random()*3);
         }
       }else if(bp==="ghost"||bp==="wraith"||bp==="undead"){
         // Dissolve: fade + rise particles.
         for(let i=0;i<Math.min(6,dBudget);i++){
-          Battle.particles.push({x:u.x+(Math.random()-0.5)*15,y:u.y+(Math.random()-0.5)*15,
-            vx:0,vy:-20-Math.random()*15,life:0.6,maxLife:0.7,c:u.c,r:2+Math.random()*2});
+          _spawnParticle(u.x+(Math.random()-0.5)*15,u.y+(Math.random()-0.5)*15,0,-20-Math.random()*15,0.6,0.7,u.c,2+Math.random()*2);
         }
       }else if(bp==="blob"||bp==="slime"||bp==="monopod"){
         // Flatten: quick scale Y to 0 is handled by death animation; spawn puddle particles.
         for(let i=0;i<Math.min(5,dBudget);i++){
-          Battle.particles.push({x:u.x+(Math.random()-0.5)*18,y:u.y+5,
-            vx:(Math.random()-0.5)*20,vy:0,life:0.4,maxLife:0.5,c:u.c,r:4+Math.random()*2});
+          _spawnParticle(u.x+(Math.random()-0.5)*18,u.y+5,(Math.random()-0.5)*20,0,0.4,0.5,u.c,4+Math.random()*2);
         }
       }
     }
@@ -7391,12 +7389,19 @@ const Battle={
   spawnDmgNum(x,y,val,team,crit,type){
     if(typeof x!=="number"||typeof y!=="number"||isNaN(x)||isNaN(y))return;
     if(!this.damageNums)this.damageNums=[];
+    if(!this._dmgPool)this._dmgPool=[];
     // PERF-R12: precompute display text + isHeal flag at spawn (avoids per-draw checks).
     const t=type||"normal";
     const isHeal=typeof val==="string"&&val.charAt(0)==="+";
     const txt=t==="ability"?"*"+val:t==="spell"?"~"+val:t==="poison"?"p"+val:""+val;
-    this.damageNums.push({x:x+Q(-6,6),y,life:0.8,val,txt,team,crit:!!crit,type:t,vy:-40,isHeal});
-    if(this.damageNums.length>40)this.damageNums.shift();
+    // PERF-R12: pool damage numbers (avoid per-hit object allocation + GC).
+    const d=this._dmgPool.length?this._dmgPool.pop():{};
+    d.x=x+Q(-6,6);d.y=y;d.life=0.8;d.val=val;d.txt=txt;d.team=team;d.crit=!!crit;d.type=t;d.vy=-40;d.isHeal=isHeal;
+    this.damageNums.push(d);
+    if(this.damageNums.length>40){
+      // PERF-R12: recycle shifted-out damage number instead of discarding.
+      this._dmgPool.push(this.damageNums.shift());
+    }
   },
 
   // Update + render floating damage numbers.
@@ -7410,11 +7415,16 @@ const Battle={
       d.vy+=60*dt; // slight deceleration
     }
     // PERF-R12: in-place compaction instead of filter (avoids array allocation + GC).
+    // PERF-R12: recycle expired damage numbers to pool (reuse objects, avoid GC).
+    if(!this._dmgPool)this._dmgPool=[];
     let w=0;
     for(let i=0;i<this.damageNums.length;i++){
-      if(this.damageNums[i].life>0){
-        if(w!==i)this.damageNums[w]=this.damageNums[i];
+      const d=this.damageNums[i];
+      if(d.life>0){
+        if(w!==i)this.damageNums[w]=d;
         w++;
+      }else{
+        this._dmgPool.push(d);
       }
     }
     this.damageNums.length=w;
