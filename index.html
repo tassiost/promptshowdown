@@ -5054,10 +5054,7 @@ const BattleFX={
   // Phase 24e: persistent unit aura — per-frame particle emitter driven by fxType.
   unitAura(u,dt){
     if(u.h<=0||u.deathT!==undefined)return;
-    // Phase 32: skip auras in low/minimal quality or reduced motion.
-    const q=G.qualityTier?.()||"high";
-    if(q==="low"||q==="minimal")return;
-    if(G.save?.settings?.reducedMotion)return;
+    // PERF-R12: quality/reducedMotion already checked by caller (update loop).
     // Phase 25: prefer recipe.auraColor, then deriveFxType.
     let fxType=u.fxType||deriveFxType(u);
     let color=u.recipe&&u.recipe.auraColor?u.recipe.auraColor:AURA_MAP[fxType];
@@ -5067,7 +5064,9 @@ const BattleFX={
     }
     if(!color)return;
     // Spawn 1-2 particles per frame, capped by MAX_PARTICLES.
-    const budget=MAX_PARTICLES-(Battle.particles?.length||0);
+    // PERF-R12: cache particles array reference (avoid 100× optional chaining per frame).
+    const particles=Battle.particles;
+    const budget=MAX_PARTICLES-(particles?particles.length:0);
     if(budget<=0)return;
     const count=Math.min(2,budget);
     const auraType=u.recipe?.aura||fxType||"none";
