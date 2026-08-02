@@ -3542,12 +3542,14 @@ function closestEnemy(u,enemies){
 }
 function lowestBy(arr,fn){
   let best=null,bv=Infinity;
-  for(const x of arr){if(x.h<=0)continue;const v=fn(x);if(v<bv){bv=v;best=x;}}
+  // PERF-R12: index loop (avoid for...of iterator allocation).
+  for(let i=0;i<arr.length;i++){const x=arr[i];if(x.h<=0)continue;const v=fn(x);if(v<bv){bv=v;best=x;}}
   return best;
 }
 function highestBy(arr,fn){
   let best=null,bv=-Infinity;
-  for(const x of arr){if(x.h<=0)continue;const v=fn(x);if(v>bv){bv=v;best=x;}}
+  // PERF-R12: index loop (avoid for...of iterator allocation).
+  for(let i=0;i<arr.length;i++){const x=arr[i];if(x.h<=0)continue;const v=fn(x);if(v>bv){bv=v;best=x;}}
   return best;
 }
 
@@ -6295,7 +6297,13 @@ const Battle={
     if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=dmg;
     // Track battle stats for real-time overlay.
     if(this._battleStats){
-      if(attacker.team==="player"){this._battleStats.playerDmg+=dmg;this._battleStats.dmgWindow.push({t:this.time,dmg});}
+      if(attacker.team==="player"){this._battleStats.playerDmg+=dmg;
+        // PERF-R12: use flat array for dmgWindow (avoid per-hit object allocation).
+        if(!this._dmgWinPool)this._dmgWinPool=[];
+        const dw=this._dmgWinPool.length?this._dmgWinPool.pop():[0,0];
+        dw[0]=this.time;dw[1]=dmg;
+        this._battleStats.dmgWindow.push(dw);
+      }
       else{this._battleStats.enemyDmg+=dmg;}
       // Track biggest hit for battle highlights.
       if(!this._highlights)this._highlights={biggestHit:0,biggestHitBy:null,biggestHitTarget:null};
@@ -7671,8 +7679,22 @@ const Battle={
     const s=this._battleStats;
     // Calculate current DPS (damage in last 3 seconds).
     const now=this.time;
-    s.dmgWindow=s.dmgWindow.filter(d=>now-d.t<3);
-    const recentDmg=s.dmgWindow.reduce((sum,d)=>sum+d.dmg,0);
+    // PERF-R12: in-place compaction of flat dmgWindow (avoid filter array allocation).
+    // PERF-R12: recycle expired entries to pool (reuse arrays, avoid GC).
+    if(!this._dmgWinPool)this._dmgWinPool=[];
+    const dw=s.dmgWindow;
+    let dwW=0;
+    for(let i=0;i<dw.length;i++){
+      if(now-dw[i][0]<3){
+        if(dwW!==i)dw[dwW]=dw[i];
+        dwW++;
+      }else{
+        this._dmgWinPool.push(dw[i]);
+      }
+    }
+    dw.length=dwW;
+    let recentDmg=0;
+    for(let i=0;i<dw.length;i++)recentDmg+=dw[i][1];
     const dps=Math.round(recentDmg/3);
     if(dps>s.peakDPS)s.peakDPS=dps;
     const playerAlive=this.units.filter(u=>u.team==="player"&&u.h>0).length;
