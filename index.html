@@ -6536,7 +6536,7 @@ const Battle={
   // PERF-R12: pool cell arrays to avoid per-frame [] allocations (one per cell).
   _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
   separate(all){
-    const cellSize=50;
+    const cellSize=60;
     const grid=this._sepGrid||(this._sepGrid=new Map());
     grid.clear();
     // Bin units into cells with numeric keys (faster than string concat).
