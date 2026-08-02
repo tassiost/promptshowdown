@@ -70,34 +70,34 @@ Separate timings:
 | Scenario | FPS | Frame avg | Update avg | Render avg | CPU avg | Memory | Max Proj |
 |---|---|---|---|---|---|---|---|
 | Empty (0 units) | 60.2 | 16.67ms | 0.00ms | 0.00ms | 0.00ms | 14.5MB | 0 |
-| 5v5 (10 units) | 60.2 | 16.67ms | 0.37ms | 0.45ms | 0.82ms | 15.8MB | 2 |
-| 20v20 (40 units) | 60.2 | 16.67ms | 0.74ms | 0.52ms | 1.27ms | 16.8MB | 8 |
-| 50v50 (100 units) | 60.2 | 16.67ms | 1.37ms | 0.64ms | 2.01ms | 19.0MB | 21 |
-| MP Guest (50v50) | 60.3 | 16.67ms | 0.00ms | 0.30ms | 0.00ms | 20.9MB | 0 |
+| 5v5 (10 units) | 60.2 | 16.66ms | 0.37ms | 0.44ms | 0.81ms | 15.7MB | 2 |
+| 20v20 (40 units) | 60.1 | 16.67ms | 0.71ms | 0.47ms | 1.19ms | 16.5MB | 8 |
+| 50v50 (100 units) | 60.3 | 16.67ms | 1.41ms | 0.61ms | 2.02ms | 18.5MB | 18 |
+| MP Guest (50v50) | 60.2 | 16.66ms | 0.00ms | 0.26ms | 0.00ms | 21.6MB | 0 |
 
 Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.0ms).
 
 ### After Opt Sub-function timings (50v50, representative run)
-- spriteDraw: 0.0026ms/call (96ms total, 38K calls) — **13.4x faster per call**
-- drawShapeRaw: 0.0035ms/call (12ms total, 3.5K calls) — **99% fewer calls** (hitReact now cached)
-- act: 0.0104ms/call (390ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
-- drawFace: 0.0026ms/call (1ms total, 428 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
-- drawBackground: 0.0346ms/call (13ms total, 381 calls) — **offscreen canvas cache (static layers)**
-- separate: 0.1052ms/call (40ms total, 381 calls) — **spatial grid + cellSize=40 + hoisted aSep**
-- drawDmgNums: 0.0567ms/call (22ms total, 381 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text**
-- updateProjectiles: 0.0501ms/call (19ms total, 381 calls) — **Map-based lookup + squared dist + flat trail**
+- spriteDraw: 0.0024ms/call (91ms total, 38K calls) — **14.5x faster per call**
+- drawShapeRaw: 0.0033ms/call (10ms total, 2.8K calls) — **99% fewer calls** (hitReact now cached)
+- act: 0.0102ms/call (387ms total, 38K calls) — **spatial grid avoidance + squared dist + targeting cache**
+- drawFace: 0.0038ms/call (1ms total, 339 calls) — **99% fewer calls** (skip when >30 units + hitReact cached)
+- drawBackground: 0.0298ms/call (11ms total, 382 calls) — **offscreen canvas cache + bg particle fillStyle batch**
+- separate: 0.1325ms/call (51ms total, 382 calls) — **spatial grid + hoisted aSep**
+- drawDmgNums: 0.0565ms/call (22ms total, 382 calls) — **4-pass color batch + skip strokeText when >15 + precomputed text**
+- updateProjectiles: 0.0474ms/call (18ms total, 382 calls) — **Map-based lookup + squared dist + flat trail**
 
 ## Improvement Summary (50v50 scenario, WITH combat)
 
 | Metric | Before | After | Improvement |
 |---|---|---|---|
-| CPU avg | 7.40ms | 2.01ms | **73% faster** |
-| Render avg | 4.65ms | 0.64ms | **86% faster** |
-| Update avg | 2.75ms | 1.37ms | **50% faster** |
-| spriteDraw/call | 0.0349ms | 0.0026ms | **13.4x faster** |
-| act/call | 0.0300ms | 0.0104ms | **2.9x faster** |
-| drawFace calls | 38K | 428 | **99% reduction** (skip when >30 units) |
-| drawShapeRaw calls | 236K | 3.5K | **99% reduction** (cache hits) |
+| CPU avg | 7.40ms | 2.02ms | **73% faster** |
+| Render avg | 4.65ms | 0.61ms | **87% faster** |
+| Update avg | 2.75ms | 1.41ms | **49% faster** |
+| spriteDraw/call | 0.0349ms | 0.0024ms | **14.5x faster** |
+| act/call | 0.0300ms | 0.0102ms | **2.9x faster** |
+| drawFace calls | 38K | 339 | **99% reduction** (skip when >30 units) |
+| drawShapeRaw calls | 236K | 2.8K | **99% reduction** (cache hits) |
 | HP bar fillStyle changes | ~500 | 7 | **99% reduction** (color batching) |
 | Math.sqrt calls | ~600 | ~400 | **33% reduction** (squared dist) |
 | Memory | 17.6MB | 18.5MB | **+5%** (grid + pass2 arrays) |
@@ -361,6 +361,16 @@ Note: 50v50 CPU varies 1.95-2.10ms across runs due to combat randomness (avg ~2.
 - when_surrounded: avoid filter() allocation, use squared dist, early exit on abCool>0
 - when_ally_hurt: early exit on abCool>0, manual loop instead of some()
 - Eliminates array allocation + Math.sqrt per trigger check
+
+### 53. Batch bg particle fillStyle (set once)
+- All bg particles use theme.ambient color — set fillStyle once instead of per-particle
+- Per-particle alpha still varies (globalAlpha)
+- drawBackground: 13ms to 11ms (15% faster)
+
+### 54. Skip battle particle halo when >30 particles
+- Halo is a bloom visual effect (larger, fainter circle per particle)
+- Skip when >30 particles to halve arc count (114 to 57 arcs)
+- Particles are small and fast-moving — halo is barely visible
 
 ## CPU vs GPU Separation
 - **CPU-JS**: measured via `performance.now()` around `update()` and `render()`
