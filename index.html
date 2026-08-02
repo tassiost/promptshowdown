@@ -3454,7 +3454,8 @@ const _avoidFlatGen=new Int32Array(_avoidGridW*_avoidGridH);
 const _avoidFlatUnits=new Array(_avoidGridW*_avoidGridH);
 for(let _i=0;_i<_avoidGridW*_avoidGridH;_i++)_avoidFlatUnits[_i]=[];
 let _avoidGen=0;
-const _avoidOffsets=[[0,0],[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+// PERF-R12: flattened offsets (avoid nested array indexing [oi][0]/[oi][1]).
+const _avoidOffsetsFlat=[0,0, 1,0, -1,0, 0,1, 0,-1, 1,1, 1,-1, -1,1, -1,-1];
 function _buildAvoidGrid(units){
   // PERF-R12: increment generation by 2 (one per team).
   _avoidGen+=2;
@@ -3484,9 +3485,8 @@ function avoidanceOffset(u,allies,radius){
   if(gen>0){
     const cx=Math.floor(u.x/30)+1;
     const cy=Math.floor(u.y/30)+1;
-    for(let oi=0;oi<9;oi++){
-      const off=_avoidOffsets[oi];
-      const ncx=cx+off[0],ncy=cy+off[1];
+    for(let oi=0;oi<18;oi+=2){
+      const ncx=cx+_avoidOffsetsFlat[oi],ncy=cy+_avoidOffsetsFlat[oi+1];
       if(ncx<0||ncx>=_avoidGridW||ncy<0||ncy>=_avoidGridH)continue;
       const idx=ncy*_avoidGridW+ncx;
       if(_avoidFlatGen[idx]!==gen)continue;
