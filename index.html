@@ -5169,6 +5169,8 @@ const BattleFX={
     // Additive blending for energy/glow feel — overlapping particles brighten.
     const prev=c.globalCompositeOperation;
     c.globalCompositeOperation="lighter";
+    // PERF-R12: skip halo when many particles (bloom is visual nicety, doubles arc count).
+    const doHalo=Battle.particles.length<=30;
     for(const p of Battle.particles){
       const a=Math.max(0,p.life/p.maxLife);
       c.globalAlpha=a;
@@ -5176,11 +5178,13 @@ const BattleFX={
       c.beginPath();
       c.arc(p.x,p.y,p.r,0,Math.PI*2);
       c.fill();
-      // Soft glow halo — larger, fainter circle for bloom effect.
-      c.globalAlpha=a*0.3;
-      c.beginPath();
-      c.arc(p.x,p.y,p.r*2.2,0,Math.PI*2);
-      c.fill();
+      if(doHalo){
+        // Soft glow halo — larger, fainter circle for bloom effect.
+        c.globalAlpha=a*0.3;
+        c.beginPath();
+        c.arc(p.x,p.y,p.r*2.2,0,Math.PI*2);
+        c.fill();
+      }
     }
     c.globalAlpha=1;
     c.globalCompositeOperation=prev;
