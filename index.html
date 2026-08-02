@@ -6493,12 +6493,16 @@ const Battle={
         for(let f of foes){
           const fdx=f.x-p.tx, fdy=f.y-p.ty;
           if(fdx*fdx+fdy*fdy<=(22+f.z)*(22+f.z)){
-            // Synthetic attacker carrying projectile properties.
-            const synth={n:p.n,d:p.d,ability:p.ability,crit:p.crit,team:p.team,id:p.owner,
-              c:p.c,r:0,x:p.tx,y:p.ty,h:1,mh:1,role:p.role,baseD:p.baseD,dmgDealt:0};
+            // PERF-R12: reuse synth object (avoid per-hit allocation).
+            // Synth is used synchronously by takeDamage — not stored anywhere.
+            const synth=this._projSynth||(this._projSynth={});
+            synth.n=p.n;synth.d=p.d;synth.ability=p.ability;synth.crit=p.crit;synth.team=p.team;
+            synth.id=p.owner;synth.c=p.c;synth.r=0;synth.x=p.tx;synth.y=p.ty;
+            synth.role=p.role;synth.baseD=p.baseD;synth.dmgDealt=0;
             // For lifesteal on ranged units, heal the real owner instead of synth.
             const owner=idMap.get(p.owner);
             if(owner&&owner.h>0){synth.h=owner.h;synth.mh=owner.mh;synth.d=owner.d;synth.baseD=owner.baseD;}
+            else{synth.h=1;synth.mh=1;}
             this.takeDamage(synth,f,foes);
             if(owner){
               if(synth.h>owner.h)owner.h=synth.h; // lifesteal
