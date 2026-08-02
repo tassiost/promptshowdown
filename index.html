@@ -5495,25 +5495,40 @@ const Spell={
   // Phase 23: check trigger conditions each frame.
   checkTriggers(battle,dt){
     if(!battle.spells)return;
-    for(const entry of battle.spells){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let si=0;si<battle.spells.length;si++){
+      const entry=battle.spells[si];
       if(entry.fired&&entry.spec.trigger!=="periodic_5s")continue;
       const team=entry.team;
-      const allies=battle.units.filter(u=>u.h>0&&u.team===team);
-      const enemies=battle.units.filter(u=>u.h>0&&u.team!==team);
+      // PERF-R12: build allies/enemies arrays once per spell check (avoid 2× filter).
+      // Most triggers only need a boolean check, so we can short-circuit.
       let fire=false;
       switch(entry.spec.trigger){
         case "battle_start":fire=battle.time<0.1;break;
         case "on_first_contact":{
+          // PERF-R12: single-pass contact check (avoid building allies/enemies arrays).
           fire=false;
-          outer:for(const a of allies){
-            for(const e of enemies){
+          outer:for(let ui=0;ui<battle.units.length;ui++){
+            const a=battle.units[ui];
+            if(a.h<=0||a.team!==team)continue;
+            for(let ei=0;ei<battle.units.length;ei++){
+              const e=battle.units[ei];
+              if(e.h<=0||e.team===team)continue;
               if((a.x-e.x)*(a.x-e.x)+(a.y-e.y)*(a.y-e.y)<6400){fire=true;break outer;}
             }
           }
           break;
         }
         case "delayed_3s":fire=battle.time>=3;break;
-        case "when_ally_hurt":fire=allies.some(a=>a.h<a.mh*0.5);break;
+        case "when_ally_hurt":{
+          // PERF-R12: single-pass check (avoid filter + some).
+          fire=false;
+          for(let ui=0;ui<battle.units.length;ui++){
+            const a=battle.units[ui];
+            if(a.h>0&&a.team===team&&a.h<a.mh*0.5){fire=true;break;}
+          }
+          break;
+        }
         case "periodic_5s":
           if(battle.time-(entry.lastFire||0)>=5){fire=true;entry.lastFire=battle.time;}
           break;
