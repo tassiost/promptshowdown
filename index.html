@@ -689,6 +689,65 @@ window.addEventListener("unhandledrejection",e=>{
   showError("Unhandled promise: "+(r&&(r.message||r)||r));
 });
 
+// ─── Deterministic Math ──────────────────────────────────────────────────────
+// DET: IEEE 754 basic arithmetic is already cross-browser deterministic.
+// Only transcendental functions need deterministic replacements for lockstep.
+// Rounding to 6 decimals kills browser differences (they live in 15th+ decimal)
+// while keeping sub-pixel precision (0.000001 game units << 1 pixel).
+// Use DMath.* for state-affecting math (movement, dist, spells, projectiles).
+// Keep Math.* for visual-only code (rendering, particles, FX).
+const DMath={
+  _sinTable:null,
+  _init(){
+    // 1024-entry sin lookup table (0.35° resolution — plenty for movement).
+    this._sinTable=new Float64Array(1024);
+    for(let i=0;i<1024;i++)
+      this._sinTable[i]=Math.round(Math.sin(i/1024*2*Math.PI)*1e6)/1e6;
+  },
+  sqrt(x){return Math.round(Math.sqrt(x)*1e6)/1e6;},
+  sin(x){
+    if(!this._sinTable)this._init();
+    // Normalize angle to [0,2π) via integer index, then lookup.
+    const idx=((x/(2*Math.PI))*1024)|0;
+    return this._sinTable[((idx%1024)+1024)%1024];
+  },
+  cos(x){return this.sin(x+Math.PI/2);},
+  atan(x){return Math.round(Math.atan(x)*1e6)/1e6;},
+  atan2(y,x){
+    if(x===0)return y>0?Math.PI/2:y<0?-Math.PI/2:0;
+    return this.atan(y/x)+(x<0?y>=0?Math.PI:-Math.PI:0);
+  },
+  hypot(x,y){return this.sqrt(x*x+y*y);},
+};
+
+// ─── Seeded PRNG (mulberry32) ────────────────────────────────────────────────
+// DET: deterministic RNG for battle sim. Seeded per round from Match.seed.
+// Use rand()/randInt()/randRange() in state-affecting code (battle sim).
+// Keep R()/Q() for non-battle code (draft, shop, forge, bot AI, UI, BattleFX).
+let _battleSeed=0,_rngState=0;
+function seedBattle(s){_battleSeed=s>>>0;_rngState=s>>>0;}
+function rand(){
+  _rngState=(_rngState+0x6D2B79F5)|0;
+  let t=Math.imul(_rngState^(_rngState>>>15),1|_rngState);
+  t=(t+Math.imul(t^(t>>>7),61|t))^t;
+  return ((t^(t>>>14))>>>0)/4294967296;
+}
+function randInt(a,b){return a+Math.floor(rand()*(b-a));}
+function randRange(a,b){return a+rand()*(b-a);}
+
+// ─── FNV-1a state hash (desync detection) ────────────────────────────────────
+// DET: hashes a JS value into a 32-bit hex string. Used by Battle.stateHash()
+// to compare peer sims at round end. Identical sim states → identical hash.
+function fnv1aHash(obj){
+  const s=JSON.stringify(obj);
+  let h=0x811c9dc5;
+  for(let i=0;i<s.length;i++){
+    h^=s.charCodeAt(i);
+    h=Math.imul(h,0x01000193);
+  }
+  return (h>>>0).toString(16);
+}
+
 const R=Math.random;
 const F=Math.floor;
 const Q=(a,b)=>a+R()*(b-a);
@@ -2568,6 +2627,49 @@ function deserializeUnitsFromPeer(data){
   }).filter(Boolean);
 }
 
+// DET: army serialization for lockstep. Unlike deserializeUnitsFromPeer (which
+// rebuilds via unit() and drops position fields), this preserves x/y/mh so both
+// peers start the sim from byte-identical initial positions. Still runs unit()
+// for sanitization, then restores the position/HP fields from the raw payload.
+function serializeArmyForPeer(army){
+  const data=army.map(u=>{
+    const starter=G.base.find(b=>b.n===u.n);
+    if(starter&&starter.h===u.h&&starter.d===u.d&&starter.r===u.r&&starter.s===u.s&&starter.a===u.a&&starter.weaponType===u.weaponType&&starter.ability===u.ability){
+      // Starter — but army units carry positions, so send full data anyway.
+    }
+    const recipe=minifyRecipe(u.recipe);
+    return{...u,recipe};
+  });
+  if(LZString){
+    try{return LZString.compressToUTF16(JSON.stringify(data));}catch(e){/* fall through */}
+  }
+  return data;
+}
+function deserializeArmyForPeer(data){
+  let arr=data;
+  if(LZString&&typeof data==="string"){
+    try{arr=JSON.parse(LZString.decompressFromUTF16(data));}catch(e){arr=[];}
+  }
+  if(!Array.isArray(arr))return[];
+  if(arr.length>200)return[]; // P2P security: cap army size.
+  const out=[];
+  for(let i=0;i<arr.length;i++){
+    const d=arr[i];
+    try{
+      if(!d||typeof d!=="object")continue;
+      if(d.recipe)d.recipe=expandRecipe(d.recipe);
+      const u=unit(d); // sanitize + clamp fields
+      // Restore position + max-HP fields that unit() drops (needed for sim).
+      u.x=clamp(Number(d.x)||0,-1000,1000);
+      u.y=clamp(Number(d.y)||0,-1000,1000);
+      u.mh=clamp(Number(d.mh)||u.h,1,1000);
+      u.h=clamp(Number(d.h)||u.mh,1,u.mh);
+      out.push(u);
+    }catch(e){/* skip bad unit */}
+  }
+  return out;
+}
+
 // Phase 12: build a unit object from LLM/template attributes.
 function attrsToUnit(attrs,arenaIndex){
   debugForge("attrsToUnit input",{attrs,arenaIndex});
@@ -3047,6 +3149,8 @@ const P2P_RATE_WINDOW=1000; // 1s window
 const P2P_RATE_MAX=60; // 60 msgs/sec per peer (snapshots run at 20Hz)
 const _p2pRateBucket={count:0,resetAt:0};
 let _cmdRate=null; // P2P command rate limiter (10/sec)
+let _cmdLockRate=null; // DET: lockstep command rate limiter (20/sec)
+let _peerDetCapable=false; // DET: peer supports determinism (lockstep)
 function _p2pRateCheck(){
   const now=Date.now();
   if(now>_p2pRateBucket.resetAt){_p2pRateBucket.count=0;_p2pRateBucket.resetAt=now+P2P_RATE_WINDOW;}
@@ -3055,7 +3159,14 @@ function _p2pRateCheck(){
 }
 // P2P security: room password (optional). Set by host, verified by guest.
 let _roomPassword=null;
-function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;role="none";_p2pRateBucket.count=0;}}
+function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;role="none";_p2pRateBucket.count=0;
+  // DET: clear lockstep state so the sim doesn't stall waiting for peer acks.
+  _peerDetCapable=false;
+  if(typeof Battle!=="undefined"){
+    Battle._lockstepActive=false;
+    Battle._peerConfirmedTick=null;
+  }
+}}
 
 function setupNetwork(id,password){
   if(!joinRoom){
@@ -3205,6 +3316,8 @@ function networkReceive(data){
           return;
         }
         if(role==="none")role=data.d.role||"guest";
+        // DET: peer advertises determinism (lockstep) support.
+        _peerDetCapable=!!data.d.det;
       }else if(typeof data.d==="string"){
         if(role==="host"&&data.d==="host"){
           // Both players joined the queue room — use tiebreaker to decide roles.
@@ -3280,6 +3393,73 @@ function networkReceive(data){
     if(data.t==="snap"){
       // Guest renders the host's authoritative snapshot.
       if(role==="guest")G.applyRemoteSnapshot(data.d);
+    }
+    // DET: host shares the deterministic battle seed with the guest.
+    if(data.t==="seed"){
+      if(role==="guest"&&data.d&&typeof data.d.seed==="number"){
+        Match._receivedSeed=data.d.seed>>>0;
+      }
+    }
+    // DET: host starts a lockstep battle — guest runs the sim independently
+    // from the same seed + armies. Sim labeling is the host's on both peers.
+    if(data.t==="lockstep_start"){
+      if(role==="guest"){
+        const d=data.d;
+        if(!d||typeof d!=="object")return;
+        const playerArmy=deserializeArmyForPeer(d.playerArmy);
+        const enemyArmy=deserializeArmyForPeer(d.enemyArmy);
+        if(!playerArmy.length||!enemyArmy.length)return;
+        // P2P security: sanitize spells received from the host.
+        const sanList=arr=>Array.isArray(arr)?arr.map(s=>sanitizeSpell(s)).filter(Boolean):[];
+        const spells={player:sanList(d.playerSpells),enemy:sanList(d.enemySpells)};
+        if(typeof d.seed==="number")Match._receivedSeed=d.seed>>>0;
+        G.screen("battle");
+        G.updateLivesHUD();
+        // Guest's local team is "enemy" in the host's sim labeling. Both peers
+        // call Battle.start(playerArmy, enemyArmy) in the SAME order → identical
+        // initial unit array → deterministic.
+        Battle._localTeam="enemy";
+        Battle._lockstepActive=true;
+        Battle.start(playerArmy,enemyArmy,winner=>G.onBattleEnd(winner),spells);
+      }
+    }
+    // DET: lockstep command from peer — schedule for the target tick.
+    if(data.t==="cmd_lock"){
+      const c=data.d;
+      if(c&&typeof c==="object"&&typeof c.type==="string"&&typeof c.tick==="number"){
+        // P2P security: rate-limit lockstep commands (prevents spam).
+        if(!_cmdLockRate)_cmdLockRate={count:0,resetAt:0};
+        const now=Date.now();
+        if(now>_cmdLockRate.resetAt){_cmdLockRate.count=0;_cmdLockRate.resetAt=now+1000;}
+        _cmdLockRate.count++;
+        if(_cmdLockRate.count>20)return;
+        // Validate command payload.
+        if(c.type==="spell_cast"&&typeof c.spellIdx!=="number")return;
+        Battle.queueCommand(c,c.tick);
+        // The peer has confirmed up to this tick (they're scheduling past it).
+        Battle._peerConfirmedTick=Math.max(Battle._peerConfirmedTick||0,c.tick);
+      }
+    }
+    // DET: peer acknowledges having simulated up to this tick (lockstep pacing).
+    if(data.t==="tick_ack"){
+      if(data.d&&typeof data.d.tick==="number"){
+        Battle._peerConfirmedTick=Math.max(Battle._peerConfirmedTick||0,data.d.tick);
+      }
+    }
+    // DET: peer's round-end state hash for desync detection.
+    if(data.t==="round_hash"){
+      const peer=data.d;
+      if(peer&&typeof peer==="object"&&typeof peer.hash==="string"){
+        const myHash=Battle.stateHash();
+        if(peer.hash!==myHash){
+          console.error("[DET] DESYNC at round",peer.round,"my:",myHash,"peer:",peer.hash);
+          // Fall back to snapshot sync for the next round.
+          Battle._desyncFallback=true;
+        }else if(G._pendingRoundHash&&G._pendingRoundHash.round===peer.round){
+          // Hashes match — clear the pending hash and proceed normally.
+          G._pendingRoundHash=null;
+        }
+      }
     }
     if(data.t==="cmd"){
       // Host applies a guest command to its local simulation.
@@ -3413,7 +3593,8 @@ function networkReceive(data){
     // Unknown message type — log for debugging (future version compat).
     if(!["role","role_tiebreak","request_deck","deck","snap","cmd","forge",
          "match_start","round_start","opponent_picks","round_end",
-         "match_end","round_deck","spell_used"].includes(data.t)){
+         "match_end","round_deck","spell_used","seed","cmd_lock","tick_ack",
+         "round_hash","lockstep_start"].includes(data.t)){
       console.warn("Unknown network message type:",data.t);
     }
   }catch(e){
@@ -3425,15 +3606,18 @@ function networkReceive(data){
 // Phase 10: Behaviour Composition API — helper functions + lookup tables.
 // These replace the inline distance/movement code in v4's Battle.act().
 // PERF-R11: Math.sqrt is faster than Math.hypot for 2 args.
-function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return Math.sqrt(dx*dx+dy*dy);}
+// DET: DMath.sqrt for cross-browser determinism (rounds to 1e-6).
+function dist(a,b){const dx=a.x-b.x,dy=a.y-b.y;return DMath.sqrt(dx*dx+dy*dy);}
 function moveToward(u,t,d){
   // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
-  const dx=t.x-u.x, dy=t.y-u.y, dd=Math.sqrt(dx*dx+dy*dy);
+  // DET: DMath.sqrt for cross-browser determinism.
+  const dx=t.x-u.x, dy=t.y-u.y, dd=DMath.sqrt(dx*dx+dy*dy);
   if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
 }
 function moveAway(u,t,d){
   // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
-  const dx=u.x-t.x, dy=u.y-t.y, dd=Math.sqrt(dx*dx+dy*dy);
+  // DET: DMath.sqrt for cross-browser determinism.
+  const dx=u.x-t.x, dy=u.y-t.y, dd=DMath.sqrt(dx*dx+dy*dy);
   if(dd>0){u.x+=(dx/dd)*d;u.y+=(dy/dd)*d;}
 }
 // Phase 10: effective speed — base * moveSpeedMod, halved if slowed.
@@ -3497,10 +3681,10 @@ function avoidanceOffset(u,allies,radius){
         const dx=u.x-a.x, dy=u.y-a.y;
         const d2=dx*dx+dy*dy;
         if(d2<r2){
-          const d=Math.sqrt(d2);
+          const d=DMath.sqrt(d2);
           const strength=(radius-d)/radius;
           if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
-          else{const ang=Math.random()*Math.PI*2; ax+=Math.cos(ang)*strength; ay+=Math.sin(ang)*strength;}
+          else{const ang=rand()*Math.PI*2; ax+=DMath.cos(ang)*strength; ay+=DMath.sin(ang)*strength;}
         }
       }
     }
@@ -3511,16 +3695,17 @@ function avoidanceOffset(u,allies,radius){
       const dx=u.x-a.x, dy=u.y-a.y;
       const d2=dx*dx+dy*dy;
       if(d2<r2){
-        const d=Math.sqrt(d2);
+        const d=DMath.sqrt(d2);
         const strength=(radius-d)/radius;
         if(d>0.001){ax+=(dx/d)*strength; ay+=(dy/d)*strength;}
-        else{const ang=Math.random()*Math.PI*2; ax+=Math.cos(ang)*strength; ay+=Math.sin(ang)*strength;}
+        else{const ang=rand()*Math.PI*2; ax+=DMath.cos(ang)*strength; ay+=DMath.sin(ang)*strength;}
       }
     }
   }
   // Scale the accumulated push by u's effective speed so fast units separate faster.
   // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
-  const mag=Math.sqrt(ax*ax+ay*ay);
+  // DET: DMath.sqrt for cross-browser determinism.
+  const mag=DMath.sqrt(ax*ax+ay*ay);
   if(mag<0.001){_avoidBuf.x=0;_avoidBuf.y=0;return _avoidBuf;}
   // Cap the push to a fraction of unit speed per tick (avoids jitter when stationary).
   const maxPush=effSpeed(u)*0.4;
@@ -3817,7 +4002,7 @@ const MOVEMENT={
   },
   patrol:(u,target,dt)=>{
     u.patrolT=(u.patrolT||0)+dt;
-    u.x+=Math.sin(u.patrolT*2)*effSpeed(u)*dt*0.5;
+    u.x+=DMath.sin(u.patrolT*2)*effSpeed(u)*dt*0.5;
   },
   blink:(u,target,dt)=>{
     // blink: teleport toward target every 2s, otherwise hold
@@ -3827,7 +4012,7 @@ const MOVEMENT={
       // PERF-R12: squared distance check (avoid Math.sqrt).
       const dx=target.x-u.x, dy=target.y-u.y;
       if(dx*dx+dy*dy>u.r*u.r){
-        u.x=target.x+Q(-20,20);u.y=target.y+Q(-20,20);
+        u.x=target.x+randRange(-20,20);u.y=target.y+randRange(-20,20);
         u.blinkT=0;
         BattleFX.burst(u.x,u.y,u.c,4,20);
       }
@@ -3842,7 +4027,7 @@ const MOVEMENT={
     const sp=effSpeed(u)*dt;
     if(d2>u.r*u.r)moveToward(u,target,sp*0.7);
     u.strafeT=(u.strafeT||0)+dt;
-    u.y+=Math.sin(u.strafeT*3)*sp*0.5;
+    u.y+=DMath.sin(u.strafeT*3)*sp*0.5;
   },
 };
 
@@ -3886,6 +4071,12 @@ const Match={
     this.onMatchEnd=onMatchEnd||null;
     this.active=true;
     this.deathLog=[];  // Phase 16: accumulate deaths across rounds for hint.
+    // DET: generate deterministic seed. Host creates it, guest receives via P2P.
+    // Single-player (no connection) also seeds for reproducible bug reports.
+    this.seed=(role==="host"||!connected)
+      ?(Math.random()*0xFFFFFFFF)>>>0
+      :(this._receivedSeed||0);
+    if(connected&&role==="host")transmit("seed",{seed:this.seed});
     this.startRound();
   },
 
@@ -3908,6 +4099,14 @@ const Match={
 
   // Called by G.onBattleEnd after a round's battle finishes.
   onRoundEnd(winner){
+    // DET: desync detection — exchange state hashes with the peer at round end.
+    // Both peers compute the hash from their (independent) sims; a mismatch means
+    // the determinism contract broke and the next round falls back to snapshots.
+    if(connected&&_peerDetCapable){
+      const myHash=Battle.stateHash();
+      const payload={round:this.round,winner,hash:myHash};
+      transmit("round_hash",payload);
+    }
     this.history.push({round:this.round,winner});
     if(winner==="player")this.livesEnemy=Math.max(0,this.livesEnemy-1);
     else if(winner==="enemy")this.livesPlayer=Math.max(0,this.livesPlayer-1);
@@ -4586,7 +4785,7 @@ const SpriteRenderer={
     // D4: hit reaction — recoil away from attacker.
     let reactX=0,reactY=0;
     if(u.hitReact>0){
-      const dir=u.hitReactDir||{x:0,y:0};
+      const dir=u.hitReactDir||_zeroDir;
       reactX=dir.x*3*u.hitReact;
       reactY=dir.y*3*u.hitReact;
       u.hitReact-=0.015;
@@ -5361,7 +5560,8 @@ const SPELL_TARGET={
   },
   random_enemy(team,b){
     const es=b.units.filter(u=>u.h>0&&u.team!==team);
-    return es.length?es[F(R()*es.length)]:null;
+    // DET: randInt for deterministic random target selection.
+    return es.length?es[randInt(0,es.length)]:null;
   },
   center(team,b){return{x:200,y:275};},
   ally_cluster(team,b){
@@ -5385,7 +5585,8 @@ const SPELL_SHAPE={
   circle_aoe(anchor,spec,b){
     if(!anchor)return[];
     const ax=anchor.x??0,ay=anchor.y??0;
-    return b.units.filter(u=>u.h>0&&Math.hypot(u.x-ax,u.y-ay)<(spec.radius||60));
+    // DET: DMath.hypot for cross-browser determinism.
+    return b.units.filter(u=>u.h>0&&DMath.hypot(u.x-ax,u.y-ay)<(spec.radius||60));
   },
   line(anchor,spec,b,team){
     if(!anchor)return[];
@@ -5397,10 +5598,11 @@ const SPELL_SHAPE={
       if(u.h<=0)return false;
       // Distance from point to line segment.
       const dx=ax-sx,dy=ay-sy;
-      const len=Math.hypot(dx,dy)||1;
+      // DET: DMath.hypot for cross-browser determinism.
+      const len=DMath.hypot(dx,dy)||1;
       const t=Math.max(0,Math.min(1,((u.x-sx)*dx+(u.y-sy)*dy)/(len*len)));
       const px=sx+t*dx,py=sy+t*dy;
-      return Math.hypot(u.x-px,u.y-py)<(spec.radius||40);
+      return DMath.hypot(u.x-px,u.y-py)<(spec.radius||40);
     });
   },
   cone(anchor,spec,b,team){
@@ -5409,12 +5611,13 @@ const SPELL_SHAPE={
     const sx=team==="player"?40:360;
     const sy=ay;
     const dirX=ax-sx,dirY=ay-sy;
-    const dirLen=Math.hypot(dirX,dirY)||1;
+    // DET: DMath.hypot for cross-browser determinism.
+    const dirLen=DMath.hypot(dirX,dirY)||1;
     const ux=dirX/dirLen,uy=dirY/dirLen;
     return b.units.filter(u=>{
       if(u.h<=0)return false;
       const dx=u.x-sx,dy=u.y-sy;
-      const d=Math.hypot(dx,dy);
+      const d=DMath.hypot(dx,dy);
       if(d>(spec.radius||80))return false;
       const dot=(dx*ux+dy*uy)/(d||1);
       return dot>0.5; // ~60-degree cone
@@ -5449,8 +5652,8 @@ const SPELL_EFFECT={
         targeting:"closest",movement:"chase",attackCondition:"always",
         abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
       minion.team=team;
-      minion.x=anchor.x+Q(-20,20);
-      minion.y=anchor.y+Q(-20,20);
+      minion.x=anchor.x+randRange(-20,20);
+      minion.y=anchor.y+randRange(-20,20);
       minion.ttl=8;
       minion.lastAttacker={team,n:"Spell",id:team+"_spell"};
       b.units.push(b.initRuntime(minion));
@@ -5463,7 +5666,8 @@ const SPELL_EFFECT={
     const ax=anchor.x,ay=anchor.y;
     units.forEach(u=>{
       const dx=u.x-ax,dy=u.y-ay;
-      const d=Math.hypot(dx,dy)||1;
+      // DET: DMath.hypot for cross-browser determinism.
+      const d=DMath.hypot(dx,dy)||1;
       const force=spec.magnitude||30;
       u.x+=dx/d*force;u.y+=dy/d*force;
     });
@@ -5613,8 +5817,8 @@ const Spell={
               targeting:"closest",movement:"chase",attackCondition:"always",
               abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
             minion.team=z.team;
-            minion.x=z.x+Q(-20,20);
-            minion.y=z.y+Q(-20,20);
+            minion.x=z.x+randRange(-20,20);
+            minion.y=z.y+randRange(-20,20);
             minion.ttl=8;
             minion.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};
             battle.units.push(battle.initRuntime(minion));
@@ -5626,7 +5830,8 @@ const Spell={
             const u=aff[ai];
             const dx=u.x-z.x,dy=u.y-z.y;
             // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
-            const d=Math.sqrt(dx*dx+dy*dy)||1;
+            // DET: DMath.sqrt for cross-browser determinism (zone knockback moves units).
+            const d=DMath.sqrt(dx*dx+dy*dy)||1;
             const force=z.spec.magnitude||30;
             u.x+=dx/d*force;u.y+=dy/d*force;
           }
@@ -5787,6 +5992,9 @@ const Battle={
   start(units,enemies,onEnd,spells){
     // PERF-R12: clear sprite cache on new battle (frees memory, handles new unit types).
     _clearSpriteCache();
+    // DET: seed PRNG deterministically per round (seed + round offset).
+    // Both peers share Match.seed; round offset keeps each round independent.
+    seedBattle((Match.seed||0)+(Match.round||0));
     // Set team strings before initRuntime so hold_midpoint etc. work.
     this.units=[
       ...units.map(u=>({...u,team:"player"})),
@@ -5823,19 +6031,37 @@ const Battle={
     // PERF-R12: clear damage number pool on battle start (avoid stale objects).
     if(this._dmgPool)this._dmgPool.length=0;
     this.paused=false;     // reset pause flag
+    // DET: fixed-timestep + lockstep state. _tick is the deterministic sim tick
+    // counter (used to schedule commands). _accumulator buffers real frame time.
+    this._accumulator=0;
+    this._effectiveSpeed=1;
+    this._tick=0;
+    this._cmdBuffer=new Map();      // tick → array of commands
+    this._peerConfirmedTick=null;   // latest tick the peer has acknowledged
+    this._lockstepActive=false;     // set true when both peers run the sim
+    this._desyncFallback=false;     // set true on hash mismatch → snapshot fallback
+    // DET: the local player's team in the sim. Host/solo → "player". Guest in
+    // lockstep → "enemy" (the sim keeps the host's labeling on both peers so the
+    // initial unit array + team tags are byte-identical → deterministic).
+    this._localTeam=this._localTeam||"player";
     // Phase 23: init spells + zones.
     this.spells=[];
     this.zones=[];
     // Manually-castable player spells (each gets a cooldown).
+    // DET: the manual cast list is the LOCAL player's spells (spells[_localTeam]),
+    // so the guest in lockstep casts its own spells (team "enemy" in sim labeling).
     this.playerSpells=[];
     if(spells){
-      for(const s of (spells.player||[])){
+      const localTeam=this._localTeam;
+      for(const s of (spells[localTeam]||[])){
         // Auto-trigger spells go into the auto-fire list.
-        this.spells.push({spec:s,team:"player",fired:false,lastFire:0});
+        this.spells.push({spec:s,team:localTeam,fired:false,lastFire:0});
         // Also add to manual cast list (player can cast anytime, subject to cooldown).
         this.playerSpells.push({spec:s,cooldown:0,maxCD:this._spellCooldown(s)});
       }
-      for(const s of (spells.enemy||[]))this.spells.push({spec:s,team:"enemy",fired:false,lastFire:0});
+      // Auto-fire list also includes the opponent's spells (non-manual).
+      for(const s of (spells.player||[]))if(localTeam!=="player")this.spells.push({spec:s,team:"player",fired:false,lastFire:0});
+      for(const s of (spells.enemy||[]))if(localTeam!=="enemy")this.spells.push({spec:s,team:"enemy",fired:false,lastFire:0});
     }
     this._renderSpellBar();
     this.time=0;
@@ -5870,7 +6096,9 @@ const Battle={
     cv.height=dispH*dpr;
     this.canvasH=dispH;
     this.canvasW=dispW;
-    this.ctx=cv.getContext("2d");
+    // PERF: alpha:false makes canvas opaque (faster compositing — no alpha channel).
+    // desynchronized:true bypasses DOM compositor queue (lower latency, Chrome only).
+    this.ctx=cv.getContext("2d",{alpha:false,desynchronized:true});
     this.ctx.scale(dpr,dpr);
     // Note: 2D canvas contexts don't have context loss events (unlike WebGL).
     // The render loop already guards against null ctx (returns early), and
@@ -5947,17 +6175,60 @@ const Battle={
     }
   },
 
+  // DET: deterministic state hash for desync detection.
+  // Both peers compute this at round end; mismatch → fall back to snapshot sync.
+  // Quantizes positions to 0.001 units and HP to integers so float noise
+  // below the DMath rounding threshold (1e-6) doesn't cause false positives.
+  stateHash(){
+    // _finalUnits is snapshotted before stop() clears this.units; use it as the
+    // authoritative source at round end so the hash is computable post-stop.
+    const arr=(this.units&&this.units.length)?this.units:(this._finalUnits||[]);
+    const snap=new Array(arr.length);
+    for(let i=0;i<arr.length;i++){
+      const u=arr[i];
+      snap[i]={i:u.id,x:Math.round(u.x*1000),y:Math.round(u.y*1000),h:Math.round(u.h),s:u.animState};
+    }
+    return fnv1aHash(snap);
+  },
+
+  // DET: lockstep command buffer. Commands are scheduled for a future tick and
+  // executed at the start of that tick's update(), so both peers apply them
+  // identically. Keyed by tick number; freed after execution.
+  queueCommand(cmd,tick){
+    if(!this._cmdBuffer)this._cmdBuffer=new Map();
+    let arr=this._cmdBuffer.get(tick);
+    if(!arr){arr=[];this._cmdBuffer.set(tick,arr);}
+    arr.push(cmd);
+  },
+  executeCommands(tick){
+    if(!this._cmdBuffer)return;
+    const cmds=this._cmdBuffer.get(tick);
+    if(!cmds)return;
+    for(let i=0;i<cmds.length;i++){
+      const c=cmds[i];
+      if(c.type==="spell_cast")this._executeSpellCast(c.spellIdx,c.targetX,c.targetY);
+      else if(c.type==="speed"){this.speed=c.speed;this._manualSpeed=true;}
+      else if(c.type==="pause")this.paused=true;
+      else if(c.type==="resume")this.paused=false;
+    }
+    this._cmdBuffer.delete(tick);
+  },
+
+  // DET: fixed timestep for deterministic simulation. The sim advances in
+  // 1/60s increments regardless of real frame rate, so both peers tick identically.
+  // The accumulator buffers real frame time and feeds it to the sim in fixed steps.
+  // Max 4 steps per frame prevents the spiral-of-death when the tab stalls.
   loop(time){
     if(!this.running)return;
     // PERF-R12: cache bound loop function (avoids .bind() allocation every frame).
     if(!this._loopBound)this._loopBound=this.loop.bind(this);
     this.frame=requestAnimationFrame(this._loopBound);
     if(document.hidden){this.last=time;return;}
-    let dt=(time-this.last)/1000;
-    if(dt<this.targetFrameTime())return;
+    let frameTime=(time-this.last)/1000;
+    if(frameTime<this.targetFrameTime())return;
     this.last=time;
-    dt=Math.min(dt,0.05);
-    // Apply speed multiplier and pause.
+    frameTime=Math.min(frameTime,0.1);
+    // Pause: still render the current frame, but don't advance the sim.
     if(this.paused){this.render();return;}
     // Dramatic slowdown: when 3 or fewer total units remain alive, slow down
     // to 60% speed for dramatic effect (only if speed is >= 1).
@@ -5969,21 +6240,36 @@ const Battle={
         effectiveSpeed=effectiveSpeed*0.6;
       }
     }
-    dt*=effectiveSpeed;
-    this._lastDt=dt;
+    this._effectiveSpeed=effectiveSpeed;
+    // DET: feed real frame time (×speed) into the accumulator, drain in fixed steps.
+    const FIXED_DT=1/60;
+    this._accumulator=(this._accumulator||0)+frameTime*effectiveSpeed;
+    // DET: lockstep pacing — don't simulate too far ahead of the confirmed peer.
+    // When not in lockstep (single-player or snapshot mode), _peerConfirmedTick is
+    // undefined and maxTick is Infinity, so pacing is a no-op.
+    const maxTick=(this._lockstepActive&&this._peerConfirmedTick!=null)
+      ?this._peerConfirmedTick+10:Infinity;
+    let steps=0;
+    while(this._accumulator>=FIXED_DT&&steps<4&&(this._tick||0)<maxTick){
+      try{
+        this.update(FIXED_DT);
+      }catch(e){
+        showError("Update error: "+(e&&e.message||e));
+        this.stop();
+        return;
+      }
+      this._accumulator-=FIXED_DT;
+      steps++;
+    }
+    // _lastDt drives HP-bar interpolation in render; use real frame time so it
+    // stays smooth even on frames where no sim step runs (accumulator < FIXED_DT).
+    this._lastDt=frameTime;
     // FPS monitoring: compute rolling average every 30 frames, set quality tier.
-    this._fpsFrames++;this._fpsAccum+=dt;
+    this._fpsFrames++;this._fpsAccum+=frameTime;
     if(this._fpsFrames>=30){
       const avgFps=this._fpsFrames/this._fpsAccum;
       this._fpsTier=avgFps>50?"high":avgFps>30?"medium":"low";
       this._fpsFrames=0;this._fpsAccum=0;
-    }
-    try{
-      this.update(dt);
-    }catch(e){
-      showError("Update error: "+(e&&e.message||e));
-      this.stop();
-      return;
     }
     try{
       this.render();
@@ -5993,7 +6279,7 @@ const Battle={
       return;
     }
     // Update spell bar cooldown display (throttled to ~4fps to avoid DOM thrash).
-    this._spellBarT=(this._spellBarT||0)+dt;
+    this._spellBarT=(this._spellBarT||0)+frameTime;
     if(this._spellBarT>=0.5){
       this._spellBarT=0;
       this._renderSpellBar();
@@ -6005,6 +6291,16 @@ const Battle={
 
   // Phase 10: single units array, split by team each frame.
   update(dt){
+    // DET: deterministic tick counter — increments once per fixed sim step.
+    // Commands are scheduled by tick number and executed here, before sim logic,
+    // so both peers apply the same command at the same tick.
+    this._tick=(this._tick||0)+1;
+    this.executeCommands(this._tick);
+    // DET: periodically tell the peer how far we've simulated so they can pace.
+    // Every 10 ticks (~167ms) when in lockstep mode.
+    if(this._lockstepActive&&connected&&(this._tick%10)===0){
+      transmit("tick_ack",{tick:this._tick});
+    }
     this.time+=dt;
     // Phase 23: spell trigger checks + zone ticking.
     Spell.checkTriggers(this,dt);
@@ -6302,7 +6598,8 @@ const Battle={
       const forward=4*spriteScale;
       const dx=target.x-attacker.x,dy=target.y-attacker.y;
       // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
-      const d=Math.sqrt(dx*dx+dy*dy)||1;
+      // DET: DMath.sqrt for cross-browser determinism.
+      const d=DMath.sqrt(dx*dx+dy*dy)||1;
       const sx=wx+(dx/d)*forward;
       const sy=wy+(dy/d)*forward;
       // PERF-R12: pool projectiles (avoid per-attack object allocation + GC).
@@ -6330,7 +6627,7 @@ const Battle={
   takeDamage(attacker,target,enemies,dmgOverride){
     if(target.h<=0)return;
     // dodge: 50% chance to completely avoid (was 20% in v4)
-    if(target.ability==="dodge"&&R()<0.5){this.log(target.n+" dodges!");if(this.debug)console.log("[DODGE] t="+this.time.toFixed(2)+" "+target.n+" dodged "+attacker.n);return;}
+    if(target.ability==="dodge"&&rand()<0.5){this.log(target.n+" dodges!");if(this.debug)console.log("[DODGE] t="+this.time.toFixed(2)+" "+target.n+" dodged "+attacker.n);return;}
     // shield: immune if active
     if(target.shieldActive>0){this.log(target.n+" shielded!");if(this.debug)console.log("[SHIELD] t="+this.time.toFixed(2)+" "+target.n+" shielded vs "+attacker.n);return;}
     let dmg=dmgOverride!=null?dmgOverride:attacker.d;
@@ -6339,7 +6636,8 @@ const Battle={
     // executioner: 3× damage to enemies below 25% HP
     if(attacker.ability==="executioner"&&target.mh>0&&target.h<target.mh*0.25)dmg*=3;
     // crit
-    const crit=R()<(attacker.crit||0);
+    // DET: rand() for deterministic crit/dodge rolls.
+    const crit=rand()<(attacker.crit||0);
     if(crit){dmg*=2;vibrate(25);}
     const hpBefore=target.h;
     target.h-=dmg;
@@ -6374,7 +6672,8 @@ const Battle={
     target.hasBeenHit=true; // Phase 10: for on_first_hit trigger
     // D4: hit reaction — recoil away from attacker.
     const dx=target.x-attacker.x,dy=target.y-attacker.y;
-    const dd=Math.sqrt(dx*dx+dy*dy)||1;
+    // DET: DMath.sqrt for cross-browser determinism.
+    const dd=DMath.sqrt(dx*dx+dy*dy)||1;
     target.hitReact=0.15;
     // PERF-R12: reuse existing hitReactDir object (avoid per-hit allocation).
     if(!target.hitReactDir)target.hitReactDir={x:0,y:0};
@@ -6447,8 +6746,8 @@ const Battle={
           targeting:"closest",movement:"chase",attackCondition:"always",
           abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
         minion.team=u.team;
-        minion.x=u.x+Q(-20,20);
-        minion.y=u.y+Q(-20,20);
+        minion.x=u.x+randRange(-20,20);
+        minion.y=u.y+randRange(-20,20);
         minion.ttl=5;
         this.units.push(this.initRuntime(minion));
         BattleFX.onSpawn(minion); // Phase 17: spawn pop-in FX
@@ -6491,7 +6790,7 @@ const Battle={
         // PERF-R12: lowestBy already skips dead units — no filter needed.
         const target=lowestBy(enemies,e=>e.h);
         if(target){
-          u.x=target.x+Q(-15,15);u.y=target.y+Q(-15,15);
+          u.x=target.x+randRange(-15,15);u.y=target.y+randRange(-15,15);
           this.takeDamage(u,target,enemies,u.d*2);
           u.abCool=5.0;
           this.log(u.n+" blinks to "+target.n+"!");
@@ -6673,7 +6972,7 @@ const Battle={
         const tgt=idMap.get(p.targetId);
         if(tgt&&tgt.h>0){p.tx=tgt.x;p.ty=tgt.y;}
       }
-      const dx=p.tx-p.x, dy=p.ty-p.y, dd=Math.sqrt(dx*dx+dy*dy);
+      const dx=p.tx-p.x, dy=p.ty-p.y, dd=DMath.sqrt(dx*dx+dy*dy);
       const sp=320*dt;
       if(dd<=sp){
         // PERF-R12: build foes array lazily per team (only when a projectile hits).
@@ -6805,10 +7104,11 @@ const Battle={
             const bSep=b.z*1.8;
             const minD2=aSep>bSep?aSep2:bSep*bSep;
             if(d2<minD2){
-              const d=Math.sqrt(d2);
+              // DET: DMath.sqrt for cross-browser determinism.
+              const d=DMath.sqrt(d2);
               let nx,ny;
               if(d>0.001){nx=ddx/d;ny=ddy/d;}
-              else{const a2=Math.random()*Math.PI*2;nx=Math.cos(a2);ny=Math.sin(a2);}
+              else{const a2=rand()*Math.PI*2;nx=DMath.cos(a2);ny=DMath.sin(a2);}
               const minD=aSep>bSep?aSep:bSep;
               const push=(minD-(d>0.001?d:0.001))/2;
               a.x-=nx*push;a.y-=ny*push;
@@ -7743,6 +8043,8 @@ const Battle={
     cancelAnimationFrame(this.frame);
     if(this._interpRAF){cancelAnimationFrame(this._interpRAF);this._interpRAF=null;}
     if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    // DET: clear snapshot timer if active (prevents leak on error/timeout stop).
+    if(this.snapTimer){clearInterval(this.snapTimer);this.snapTimer=null;}
     // Stop battle music in all code paths (error, timeout, disconnect).
     GameAudio.stopMusic();
     // Clean up canvas click handler to prevent memory leak.
@@ -7957,13 +8259,44 @@ const Battle={
   },
 
   // Cast a player spell manually.
-  _castPlayerSpell(idx){
+  // DET: in lockstep mode, the cast is queued for a future tick and sent to the
+  // peer so both sims execute it identically. In single-player / snapshot mode,
+  // the spell fires immediately (legacy behavior).
+  _castPlayerSpell(idx,targetX,targetY){
     if(!this.running||!this.playerSpells||!this.playerSpells[idx])return;
     const ps=this.playerSpells[idx];
-    if(ps.cooldown>0)return;
-    // Fire the spell for the player's team.
-    this.fireSpell(ps.spec,"player");
+    if(ps.cooldown>0||ps._pendingCast)return;
+    if(this._lockstepActive){
+      // DET: schedule execution LOCKSTEP_DELAY ticks in the future so the peer's
+      // command arrives in time. Both peers execute the command at the same tick.
+      const LOCKSTEP_DELAY=3;
+      const targetTick=(this._tick||0)+LOCKSTEP_DELAY;
+      const cmd={type:"spell_cast",spellIdx:idx,targetX:targetX||0,targetY:targetY||0,tick:targetTick};
+      this.queueCommand(cmd,targetTick);
+      if(connected)transmit("cmd_lock",cmd);
+      // _pendingCast is UI-only (prevents spam during the lockstep window); it is
+      // NOT sim state and is cleared when the command executes.
+      ps._pendingCast=true;
+      // Visual-only casting indicator (does not affect the sim).
+      BattleFX.onSpell(ps.spec,{x:targetX||200,y:targetY||275},[],this._localTeam);
+      return;
+    }
+    // Fire the spell for the local player's team.
+    this.fireSpell(ps.spec,this._localTeam);
     ps.cooldown=ps.maxCD;
+    this._renderSpellBar();
+  },
+
+  // DET: execute a queued spell cast at the scheduled tick. Called by
+  // executeCommands on both peers at the same tick → identical cooldown state.
+  _executeSpellCast(idx,targetX,targetY){
+    if(!this.running||!this.playerSpells||!this.playerSpells[idx])return;
+    const ps=this.playerSpells[idx];
+    // Fire the spell for the local player's team. Spell.fire auto-targets from
+    // sim state, which is identical across peers at the same tick → deterministic.
+    this.fireSpell(ps.spec,this._localTeam);
+    ps.cooldown=ps.maxCD;
+    ps._pendingCast=false;
     this._renderSpellBar();
   },
 
@@ -8169,7 +8502,8 @@ const Battle={
       cv.height=dispH*dpr;
       this.canvasH=dispH;
       this.canvasW=dispW;
-      this.ctx=cv.getContext("2d");
+      // PERF: alpha:false + desynchronized:true for faster compositing + lower latency.
+      this.ctx=cv.getContext("2d",{alpha:false,desynchronized:true});
       this.ctx.scale(dpr,dpr);
     }
     this.render();
@@ -9642,7 +9976,8 @@ const G={
   renderDraftBattlefield(){
     const cv=$("cv");
     if(!cv)return;
-    const ctx=cv.getContext("2d");
+    // PERF: alpha:false for opaque canvas (faster compositing).
+    const ctx=cv.getContext("2d",{alpha:false,desynchronized:true});
     const w=cv.width,h=cv.height;
     const dpr=window.devicePixelRatio||1;
     const W=Battle.GAME_W,H=Battle.GAME_H;
@@ -10436,17 +10771,44 @@ const G={
     const enemies=this.buildBotArmy();
     this.screen("battle");
     this.updateLivesHUD();
+    // DET: solo mode — local team is always "player". Reset in case the player
+    // was previously a guest in lockstep (which sets _localTeam="enemy").
+    Battle._localTeam="player";
+    Battle._lockstepActive=false;
     // Phase 23: pass spells to Battle.start.
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
     Battle.start(myArmy,enemies,winner=>this.onBattleEnd(winner),spells);
   },
 
   // Phase 5: host assembles the full battle once the guest's deck arrives.
+  // DET: when both peers support determinism, start lockstep (both run the sim,
+  // sync only commands). Otherwise fall back to host-authoritative snapshots.
   startHostBattle(guestSelected,guestUpgrades){
     this._pendingGuestDeck=null; // consume pending deck
     const guestArmy=this.buildArmyFromSelected(guestSelected,guestUpgrades);
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
+    // DET: lockstep mode — both peers run the sim from the same seed + armies.
+    if(_peerDetCapable&&!Battle._desyncFallback){
+      // Host shares both armies + spells so the guest starts from identical state.
+      // Sim labeling is the host's on both peers (host=player, guest=enemy) →
+      // identical unit array order + team tags → deterministic.
+      const payload={
+        playerArmy:serializeArmyForPeer(this.pendingHostArmy),
+        enemyArmy:serializeArmyForPeer(guestArmy),
+        playerSpells:spells.player,enemySpells:spells.enemy,
+        round:Match.round,seed:Match.seed
+      };
+      transmit("lockstep_start",payload);
+      Battle._localTeam="player";
+      Battle._lockstepActive=true;
+      Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
+      this.updateLivesHUD();
+      // No snapshots in lockstep mode — both peers run the sim independently.
+      return;
+    }
+    // Fallback: host-authoritative snapshot sync (legacy behavior).
+    Battle._localTeam="player";
     Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
     this.updateLivesHUD();
     this.startSnapshots();
@@ -10558,6 +10920,12 @@ const G={
     // updates (lives, history). Guest must NOT call Match.onRoundEnd here —
     // that would double-count history/lives (once here, once via round_end msg).
     // Guest quest/achievement tracking happens via onMatchEnd (match_end msg).
+    // DET: in lockstep mode, both peers send their state hash for desync
+    // detection. This runs before the guest's early return so both sides emit.
+    if(connected&&_peerDetCapable&&Battle._lockstepActive){
+      const myHash=Battle.stateHash();
+      transmit("round_hash",{round:Match.round,winner,hash:myHash});
+    }
     if(connected&&role==="guest"){
       return;
     }
@@ -11204,6 +11572,20 @@ const G={
     Battle.skip();
   },
   cycleSpeed(){
+    // DET: in lockstep, speed changes must apply on both peers at the same tick.
+    if(connected&&Battle._lockstepActive){
+      const newSpeed=Battle.speed===1?2:Battle.speed===2?4:1;
+      const targetTick=(Battle._tick||0)+3;
+      const cmd={type:"speed",speed:newSpeed,tick:targetTick};
+      Battle.queueCommand(cmd,targetTick);
+      if(connected)transmit("cmd_lock",cmd);
+      // Update local UI immediately (sim speed changes at the scheduled tick).
+      Battle.speed=newSpeed;Battle._manualSpeed=true;
+      const btn=$("speedBtn");if(btn)btn.textContent=newSpeed+"×";
+      this.save.defaultSpeed=newSpeed;saveData(this.save);
+      if(Battle.autoTimer)Battle.auto();
+      return;
+    }
     if(connected&&role==="guest"){transmit("cmd",{cmd:"speed"});return;}
     Battle.speed=Battle.speed===1?2:Battle.speed===2?4:1;
     Battle._manualSpeed=true; // user override — disable dramatic slowdown
@@ -11216,6 +11598,18 @@ const G={
     if(Battle.autoTimer)Battle.auto();
   },
   togglePause(){
+    // DET: in lockstep, pause/resume must apply on both peers at the same tick.
+    if(connected&&Battle._lockstepActive){
+      const nowPaused=!Battle.paused;
+      const targetTick=(Battle._tick||0)+3;
+      const cmd={type:nowPaused?"pause":"resume",tick:targetTick};
+      Battle.queueCommand(cmd,targetTick);
+      if(connected)transmit("cmd_lock",cmd);
+      // Update local UI immediately.
+      Battle.paused=nowPaused;
+      const btn=$("pauseBtn");if(btn)btn.textContent=nowPaused?"▶":"⏸";
+      return;
+    }
     if(connected&&role==="guest"){transmit("cmd",{cmd:"pause"});return;}
     Battle.togglePause();
   },
@@ -12870,7 +13264,7 @@ G.p2pTestHost=function(){
     G._p2pTestLog("Network setup OK, waiting for peer...");
     G._p2pTestStartWaitTimer();
     // Send role announcement after 500ms (same as normal host).
-    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION});G._p2pTestLog("Sent role: host");},500);
+    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION,det:true});G._p2pTestLog("Sent role: host");},500);
   }else{
     G._p2pTestLog("Network setup FAILED");
   }
@@ -12885,7 +13279,7 @@ G.p2pTestJoin=function(){
   if(setupNetwork(roomName)){
     G._p2pTestLog("Network setup OK, waiting for host...");
     G._p2pTestStartWaitTimer();
-    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION});G._p2pTestLog("Sent role: guest");},500);
+    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION,det:true});G._p2pTestLog("Sent role: guest");},500);
   }else{
     G._p2pTestLog("Network setup FAILED");
   }
@@ -12934,7 +13328,7 @@ G.host=function(roomName,silent,password){
   }
   const ok=setupNetwork(room,password);
   if(ok){
-    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION});},500);
+    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION,det:true});},500);
     if(!silent){
       const c=$("connection");
       if(c)c.innerText="Status: hosting room "+room+(password?" (protected)":"");
@@ -12946,7 +13340,7 @@ G.join=function(password){
   role="guest";
   const rid=$("roomId");
   if(setupNetwork(rid?rid.value:"room1",password)){
-    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION});},500);
+    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION,det:true});},500);
   }
 };
 
@@ -12969,6 +13363,13 @@ window.sanitizeSpell=sanitizeSpell;
 window.cloneUnit=cloneUnit;
 window.Spell=Spell;
 window.SpriteRenderer=SpriteRenderer;
+// DET: expose determinism primitives for testing/debugging (lockstep replay).
+window.DMath=DMath;
+window.seedBattle=seedBattle;
+window.rand=rand;
+window.randInt=randInt;
+window.randRange=randRange;
+window.fnv1aHash=fnv1aHash;
 if(typeof LZString!=="undefined")window.LZString=LZString;
 window.templateFallback=templateFallback;
 window.clearError=clearError;

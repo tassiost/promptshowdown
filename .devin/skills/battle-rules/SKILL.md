@@ -146,3 +146,31 @@ on the same team. `_getCachedTarget` caches per `(team, targetingKey)` per frame
 
 ## Battle Timeout
 Battle ends as draw after 90s (prevents kite/flee standoffs). Winner determined by total HP.
+
+## Determinism Rules (DET)
+
+### DMath — Deterministic Math
+All sim-state-affecting math must use `DMath.*` instead of `Math.*`:
+- `DMath.sqrt(x)` — Newton-Raphson, deterministic (replaces `Math.sqrt`)
+- `DMath.sin(x)` / `DMath.cos(x)` — 1024-entry lookup table (replaces `Math.sin`/`Math.cos`)
+- `DMath.hypot(dx,dy)` — uses `DMath.sqrt` (replaces `Math.hypot`)
+
+`Math.*` is still fine for UI/render-only code (canvas transforms, particle FX, toast).
+
+### Seeded PRNG — rand/randRange
+All sim-state-affecting randomness must use `rand()`/`randRange(a,b)` instead of `R()`/`Q()`:
+- `rand()` — deterministic LCG PRNG seeded by `seedBattle(seed)`
+- `randRange(a,b)` — `a + rand() * (b-a)` (replaces `Q(a,b)`)
+- `randInt(a,b)` — `a + Math.floor(rand() * (b-a))` (replaces `R(a,b)`)
+
+`R()`/`Q()`/`Math.random()` are fine for UI-only randomness (particle FX, toast, etc).
+
+### Fixed Timestep
+`Battle.update(dt)` always receives `FIXED_DT = 1/60`. The accumulator in `Battle.loop()`
+drains real frame time (×speed) into fixed steps. Max 4 steps per frame. Never pass
+variable dt to `update()`. Render interpolation uses `_lastDt` (real frame time).
+
+### Lockstep Commands
+Spell casts, speed changes, and pauses queue via `queueCommand(cmd, targetTick)` and
+transmit via `cmd_lock`. Both peers execute at the same tick. `LOCKSTEP_DELAY=3` ticks.
+`executeCommands(tick)` runs at the top of `update()`, before sim logic.

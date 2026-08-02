@@ -596,8 +596,79 @@ def run():
                     page.evaluate("G._pendingImport=null; G.menu()")
                     page.wait_for_timeout(300)
 
-        # === TEST 18: Console Errors ===
-        print("\n=== TEST 18: Console Errors ===")
+        # === TEST 18: Determinism ===
+        print("\n=== TEST 18: Determinism ===")
+        # DET: same seed + same armies → identical state hash across runs.
+        # Different seed → different hash. This pins the deterministic sim.
+        det_result=page.evaluate("""() => {
+            const setup = () => {
+                let _id = 0;
+                const mk = (n, team, x, y, ability) => {
+                    const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: ++_id,
+                        ability: ability||'none',
+                        abilityTrigger: ability?'on_cooldown':'never',
+                        targeting:'closest', movement:'chase', attackCondition:'always',
+                        role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                    u.team = team; u.x = x; u.y = y;
+                    return Battle.initRuntime(u);
+                };
+                Battle.units = [
+                    mk('A1','player',80,280,'rage'), mk('A2','player',80,360,'heal'),
+                    mk('B1','enemy',320,280,'poison'), mk('B2','enemy',320,360,'splash')
+                ];
+                Battle._allUnits = [...Battle.units];
+                Battle.spells = []; Battle.zones = [];
+                Battle.projectiles = []; Battle.particles = []; Battle.damageNums = [];
+                Battle.recentCrits = []; Battle.deathLog = [];
+                Battle.running = true; Battle.time = 0;
+                Battle._tick = 0; Battle._cmdBuffer = new Map();
+                Battle._lockstepActive = false; Battle._peerConfirmedTick = null;
+                Battle._battleStats = {playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+                Battle._killFeed = [];
+                Battle._highlights = {biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+                Battle._firstBlood = false;
+            };
+            const run = (seed) => {
+                setup();
+                seedBattle(seed);
+                for (let i = 0; i < 600; i++) {
+                    if (!Battle.running) break;
+                    Battle.update(1/60);
+                }
+                const hash = Battle.stateHash();
+                const alive = Battle.units.filter(u=>u.h>0).length;
+                Battle.running = false;
+                return {hash, alive, time: Battle.time};
+            };
+            G.save.arena = 0;
+            const r1 = run(12345);
+            const r2 = run(12345);
+            const r3 = run(99999);
+            return {h1: r1.hash, h2: r2.hash, h3: r3.hash,
+                    alive1: r1.alive, time1: r1.time, alive2: r2.alive};
+        }""")
+        if det_result:
+            if det_result["h1"] and det_result["h1"]==det_result["h2"]:
+                ok(f"determinism: same seed → same hash ({det_result['h1']})")
+            else:
+                fail("determinism",f"same seed different hash: {det_result['h1']} vs {det_result['h2']}")
+            if det_result["h1"]!=det_result["h3"]:
+                ok(f"determinism: different seed → different hash ({det_result['h1']} vs {det_result['h3']})")
+            else:
+                warn("determinism","different seed produced same hash (weak PRNG?)")
+            if det_result["alive1"]==det_result["alive2"]:
+                ok(f"determinism: same alive count ({det_result['alive1']})")
+            else:
+                fail("determinism",f"alive count differs: {det_result['alive1']} vs {det_result['alive2']}")
+            if det_result["time1"] and abs(det_result["time1"]-10.0)<0.01:
+                ok(f"determinism: sim time exact ({det_result['time1']:.4f}s = 600 ticks)")
+            else:
+                warn("determinism",f"sim time {det_result['time1']:.4f} (expected ~10.0)")
+        else:
+            fail("determinism","test returned no result")
+
+        # === TEST 19: Console Errors ===
+        print("\n=== TEST 19: Console Errors ===")
         real_errors=[e for e in errors if "CORS" not in e and "Access-Control" not in e]
         if len(real_errors)==0: ok(f"no console errors ({len(errors)} CORS filtered)")
         else:

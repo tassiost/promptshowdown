@@ -6,7 +6,7 @@ Serve over HTTP: `python3 -m http.server 8765` → `http://localhost:8765/index.
 ## How to Run
 
 - **Play**: `python3 -m http.server 8765` then open in Chrome/Edge
-- **E2E tests**: Use the `/test` skill (184 tests, ~60s)
+- **E2E tests**: Use the `/test` skill (188 tests, ~60s)
 - **Performance**: Use the `/perf` skill (5 scenarios, ~60s)
 - **Bug hunt**: Use the `/bughunt` skill (static analysis + E2E)
 
@@ -35,12 +35,43 @@ Serve over HTTP: `python3 -m http.server 8765` → `http://localhost:8765/index.
 
 8. **P2P guest must not run authoritative logic** — guest doesn't call `Match.onRoundEnd`
    or `Match.onMatchEnd`. These come from host messages. Guest `onBattleEnd` returns early.
+   (Exception: in lockstep mode, both peers run the sim — see determinism rules below.)
 
 9. **Never re-create `#cv` canvas** — single shared canvas, only reparent between draft
    and battle via `G.screen()`. `Battle.start` re-initializes context after reparenting.
 
 10. **Never allocate in hot paths** — use index loops (`for(let i=0;...)` not `for...of`),
     pooled objects, reusable arrays, squared distance checks. See `/render-rules` skill.
+
+## Determinism Rules (DET)
+
+The sim uses a fixed-timestep lockstep protocol for P2P. Both peers run the sim
+independently from the same seed + armies, syncing only commands.
+
+11. **Never use `Math.sqrt/sin/cos/hypot` in sim state** — use `DMath.sqrt/sin/cos/hypot`
+    (lookup-table-based, deterministic). `Math.*` is fine for UI/render-only code.
+
+12. **Never use `R()`/`Q()`/`Math.random()` in sim state** — use `rand()`/`randRange()`
+    (seeded PRNG). `R()`/`Q()` are fine for UI-only randomness (particle FX, toast, etc).
+
+13. **Fixed timestep: `Battle.update()` always receives `1/60`** — the accumulator in
+    `Battle.loop()` drains real frame time into fixed steps. Never pass variable dt to
+    `update()`. Render interpolation uses `_lastDt` (real frame time).
+
+14. **Lockstep commands scheduled by tick** — spell casts, speed changes, and pauses
+    queue via `queueCommand(cmd, targetTick)` and transmit via `cmd_lock`. Both peers
+    execute at the same tick. `LOCKSTEP_DELAY=3` ticks gives time for propagation.
+
+15. **Sim labeling is the host's on both peers** — host=player, guest=enemy in the sim.
+    `_localTeam` tracks which team is the local player's. Manual spell cast fires for
+    `_localTeam`, not hardcoded `"player"`.
+
+16. **Desync detection via `stateHash()`** — both peers send `round_hash` at battle end.
+    Mismatch sets `_desyncFallback=true` → next round falls back to snapshot sync.
+
+17. **Army serialization preserves positions** — `serializeArmyForPeer`/
+    `deserializeArmyForPeer` keep x/y/mh (unlike `deserializeUnitsFromPeer` which
+    rebuilds via `unit()` and drops them). Both peers must start byte-identical.
 
 ## Skills (Invoke for Detailed Knowledge)
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""PERF-R12: Comprehensive profiler separating CPU vs GPU timings + memory.
-Scenarios: empty, 5v5, 20v20, 50v50, multiplayer-guest.
+"""Comprehensive profiler: 60fps/60tps target verification.
+Scenarios: empty, 5v5, 20v20, 50v50, multiplayer-lockstep, multiplayer-guest.
+Separates CPU (sim+render), frame interval, and memory stats.
 """
 import json, os, sys, time, statistics
 from playwright.sync_api import sync_playwright
@@ -8,56 +9,110 @@ from playwright.sync_api import sync_playwright
 URL = "http://localhost:8765/index.html"
 DURATION = 10  # seconds per scenario
 
-# Instrumentation injected into the page. Wraps Battle.update and Battle.render
-# with performance.now() timers. Also tracks frame intervals via rAF timestamps.
+# Instrumentation injected into the page.
+# Key fix: wrap the entire loop() to measure total CPU per frame (all updates + render),
+# not just individual update/render calls. Also track TPS (ticks per second).
 INSTRUMENT = r"""
 window._perf = {
     enabled: false,
-    frames: 0,
-    frameTimes: [],      // total frame interval (rAF to rAF)
-    updateTimes: [],     // CPU: update() duration
-    renderTimes: [],     // CPU: render() duration
-    cpuTimes: [],        // CPU: update + render
-    gpuEst: [],          // GPU estimate: frameInterval - cpuTime
-    slowFrames: 0,
-    lastRAF: 0,
-    heapSamples: [],
-    objCounts: [],
+    // Per-frame metrics (one entry per rendered frame)
+    frameTimes: [],      // rAF interval (ms) — frame-to-frame
+    cpuTimes: [],        // total CPU time per frame (all updates + render)
+    updateCounts: [],    // number of update() calls per frame (for TPS)
+    updateTimes: [],     // total update time per frame (all updates summed)
+    renderTimes: [],     // render time per frame
+    // Per-tick metrics (one entry per update() call)
+    tickTimes: [],       // individual update() duration
+    // Sub-function profiling
     subFunc: {},
-    rafTimes: [],
+    // Memory
+    heapSamples: [],
+    // Object counts
+    maxProj: 0, maxPart: 0, maxDmg: 0,
 };
 
 (function() {
     const _p = window._perf;
-    // Wrap Battle.update
+
+    // --- Wrap individual update() for per-tick timing ---
     const _update = Battle.update.bind(Battle);
+    let _frameUpdateCount = 0;
+    let _frameUpdateTotal = 0;
     Battle.update = function(dt) {
         const t0 = performance.now();
         const r = _update(dt);
-        _p.updateTimes.push(performance.now() - t0);
+        const dt_ms = performance.now() - t0;
+        if (_p.enabled) {
+            _p.tickTimes.push(dt_ms);
+            _frameUpdateCount++;
+            _frameUpdateTotal += dt_ms;
+        }
         return r;
     };
-    // Wrap Battle.render
+
+    // --- Wrap individual render() for per-frame render timing ---
     const _render = Battle.render.bind(Battle);
+    let _frameRenderTime = 0;
     Battle.render = function() {
         const t0 = performance.now();
         const r = _render();
-        _p.renderTimes.push(performance.now() - t0);
+        _frameRenderTime = performance.now() - t0;
         return r;
     };
-    // Wrap sub-functions
+
+    // --- Wrap loop() to measure total CPU per frame ---
+    // This captures ALL updates (0-4 via accumulator) + render in one timer.
+    const _loop = Battle.loop.bind(Battle);
+    Battle.loop = function(time) {
+        if (!_p.enabled || !this.running) {
+            return _loop(time);
+        }
+        // Reset per-frame accumulators
+        _frameUpdateCount = 0;
+        _frameUpdateTotal = 0;
+        _frameRenderTime = 0;
+
+        const t0 = performance.now();
+        const r = _loop(time);
+        const cpuTime = performance.now() - t0;
+
+        _p.cpuTimes.push(cpuTime);
+        _p.updateCounts.push(_frameUpdateCount);
+        _p.updateTimes.push(_frameUpdateTotal);
+        _p.renderTimes.push(_frameRenderTime);
+
+        return r;
+    };
+
+    // --- Wrap _interpRender for guest mode ---
+    if (Battle._interpRender) {
+        const _interp = Battle._interpRender.bind(Battle);
+        Battle._interpRender = function() {
+            if (!_p.enabled) return _interp();
+            _frameRenderTime = 0;
+            const t0 = performance.now();
+            const r = _interp();
+            _frameRenderTime = performance.now() - t0;
+            _p.cpuTimes.push(_frameRenderTime);
+            _p.updateCounts.push(0);  // no sim ticks in guest mode
+            _p.updateTimes.push(0);
+            _p.renderTimes.push(_frameRenderTime);
+            return r;
+        };
+    }
+
+    // --- Wrap sub-functions for detailed profiling ---
     function wrapSub(obj, name, key) {
         if (!obj[name]) return;
         const orig = obj[name].bind(obj);
         obj[name] = function() {
+            if (!_p.enabled) return orig.apply(this, arguments);
             const t0 = performance.now();
             const r = orig.apply(this, arguments);
             const dt = performance.now() - t0;
-            if (_p.enabled) {
-                if (!_p.subFunc[key]) _p.subFunc[key] = {count: 0, total: 0};
-                _p.subFunc[key].count++;
-                _p.subFunc[key].total += dt;
-            }
+            if (!_p.subFunc[key]) _p.subFunc[key] = {count: 0, total: 0};
+            _p.subFunc[key].count++;
+            _p.subFunc[key].total += dt;
             return r;
         };
     }
@@ -72,7 +127,7 @@ window._perf = {
     wrapSub(Battle, 'act', 'act');
 })();
 
-// rAF interval tracker
+// --- Frame interval tracker (rAF to rAF) ---
 (function() {
     let last = performance.now();
     function tick(t) {
@@ -80,39 +135,12 @@ window._perf = {
             const interval = t - last;
             if (interval > 0 && interval < 1000) {
                 window._perf.frameTimes.push(interval);
-                window._perf.rafTimes.push(t);
             }
         }
         last = t;
         requestAnimationFrame(tick);
     }
     requestAnimationFrame(tick);
-})();
-// PERF-R12: Override requestAnimationFrame to bypass vsync throttling (low power mode).
-// In low power mode, macOS throttles rAF to 30Hz. We use setTimeout(16.67ms) to
-// simulate 60fps and measure true CPU performance.
-(function() {
-    const _origRAF = window.requestAnimationFrame;
-    const _origCancel = window.cancelAnimationFrame;
-    const timers = new Map();
-    let nextId = 1;
-    window.requestAnimationFrame = function(cb) {
-        const id = nextId++;
-        const timer = setTimeout(function() {
-            timers.delete(id);
-            cb(performance.now());
-        }, 1000/60);
-        timers.set(id, timer);
-        return id;
-    };
-    window.cancelAnimationFrame = function(id) {
-        if (timers.has(id)) {
-            clearTimeout(timers.get(id));
-            timers.delete(id);
-        } else {
-            _origCancel(id);
-        }
-    };
 })();
 """
 
@@ -121,7 +149,6 @@ def start_server():
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     handler = http.server.SimpleHTTPRequestHandler
     handler.extensions_map.update({".js": "application/javascript"})
-    # Suppress logs
     class Q(handler):
         def log_message(self, *a): pass
     import socket
@@ -151,7 +178,7 @@ def setup_canvas(page):
             cv.height = 844 * dpr;
             Battle.canvasW = 390;
             Battle.canvasH = 844;
-            Battle.ctx = cv.getContext('2d');
+            Battle.ctx = cv.getContext('2d', {alpha: false, desynchronized: true});
             Battle.ctx.scale(dpr, dpr);
         }
     }""")
@@ -191,8 +218,19 @@ def make_units(page, count_per_side, hp=100, high_hp=False):
         Battle.projectiles=[];Battle.particles=[];Battle.zones=[];Battle.spells=[];Battle.damageNums=[];
         Battle.speed=1;Battle.paused=false;Battle.time=0;Battle.winner=null;
         Battle.onEnd=null;
+        // DET: init fixed-timestep state for perf testing.
+        Battle._accumulator=0;Battle._tick=0;
+        Battle._cmdBuffer=new Map();
+        Battle._lockstepActive=false;Battle._peerConfirmedTick=null;
+        Battle._effectiveSpeed=1;Battle._manualSpeed=false;
+        Battle._battleStats={playerDmg:0,enemyDmg:0,playerKills:0,enemyKills:0,peakDPS:0,dmgWindow:[]};
+        Battle._killFeed=[];
+        Battle._highlights={biggestHit:0,biggestHitBy:null,biggestHitTarget:null,biggestHitCrit:false};
+        Battle._firstBlood=false;
         Battle.running=true;Battle.last=performance.now();
         cancelAnimationFrame(Battle.frame);Battle.frame=requestAnimationFrame(Battle.loop.bind(Battle));
+        // Override checkEnd — prevent battle from ending during profiling.
+        Battle.checkEnd=function(){};
         // Restore Math.random (combat uses it for crits, particles, etc.)
         Math.random=_origRandom;
     """.replace("__N__", str(count_per_side)).replace("__HP__", str(hp))
@@ -205,22 +243,38 @@ def make_empty(page):
         Battle.projectiles=[];Battle.particles=[];Battle.zones=[];Battle.spells=[];Battle.damageNums=[];
         Battle.speed=1;Battle.paused=false;Battle.time=0;Battle.winner=null;
         Battle.onEnd=null;
+        Battle._accumulator=0;Battle._tick=0;
+        Battle._lockstepActive=false;Battle._peerConfirmedTick=null;
+        // Override checkEnd — with 0 units, the battle would end immediately.
+        Battle._origCheckEnd=Battle.checkEnd;
+        Battle.checkEnd=function(){};
         Battle.running=true;Battle.last=performance.now();
         cancelAnimationFrame(Battle.frame);Battle.frame=requestAnimationFrame(Battle.loop.bind(Battle));
+    })()""")
+
+def make_lockstep(page, count_per_side, hp=800):
+    """Lockstep mode — both peers run the sim. Simulate by activating lockstep
+    with a fake peer confirmed tick (so pacing doesn't block)."""
+    make_units(page, count_per_side, hp=hp, high_hp=True)
+    page.evaluate("""(() => {
+        // Activate lockstep mode with a generous peer confirmed tick so pacing
+        // doesn't block the sim. This tests the lockstep code path (command
+        // buffer, tick ack, etc.) without needing a real peer.
+        Battle._lockstepActive = true;
+        Battle._peerConfirmedTick = 999999;
+        Battle._localTeam = 'player';
     })()""")
 
 def reset_perf(page):
     page.evaluate("""() => {
         window._perf.enabled = true;
-        window._perf.frames = 0;
         window._perf.frameTimes = [];
+        window._perf.cpuTimes = [];
+        window._perf.updateCounts = [];
         window._perf.updateTimes = [];
         window._perf.renderTimes = [];
-        window._perf.cpuTimes = [];
-        window._perf.gpuEst = [];
-        window._perf.slowFrames = 0;
+        window._perf.tickTimes = [];
         window._perf.heapSamples = [];
-        window._perf.objCounts = [];
         window._perf.subFunc = {};
         window._perf.maxProj = 0;
         window._perf.maxPart = 0;
@@ -249,19 +303,6 @@ def collect(page, label):
     data = page.evaluate("""() => {
         window._perf.enabled = false;
         const p = window._perf;
-        // Compute CPU times (update + render per frame)
-        const cpuTimes = [];
-        const n = Math.min(p.updateTimes.length, p.renderTimes.length);
-        for (let i = 0; i < n; i++) {
-            cpuTimes.push(p.updateTimes[i] + p.renderTimes[i]);
-        }
-        // GPU estimate: frame interval - cpu time
-        const gpuEst = [];
-        const fn = Math.min(p.frameTimes.length, cpuTimes.length);
-        for (let i = 0; i < fn; i++) {
-            const g = Math.max(0, p.frameTimes[i] - cpuTimes[i]);
-            gpuEst.push(g);
-        }
         function stats(arr) {
             if (!arr.length) return {avg:0, p50:0, p95:0, p99:0, max:0};
             const s = [...arr].sort((a,b)=>a-b);
@@ -273,18 +314,31 @@ def collect(page, label):
                 max: s[s.length-1],
             };
         }
+        // TPS: total update calls / duration
+        const totalUpdates = p.updateCounts.reduce((a,b)=>a+b,0);
+        const tps = p.updateCounts.length > 0 ? totalUpdates / (DURATION) : 0;
+        // Non-CPU time: frame interval - CPU time (includes vsync, browser, GPU)
+        const nonCpuTimes = [];
+        const fn = Math.min(p.frameTimes.length, p.cpuTimes.length);
+        for (let i = 0; i < fn; i++) {
+            nonCpuTimes.push(Math.max(0, p.frameTimes[i] - p.cpuTimes[i]));
+        }
         return {
             frames: p.frameTimes.length,
             frameStats: stats(p.frameTimes),
+            cpuStats: stats(p.cpuTimes),
             updateStats: stats(p.updateTimes),
             renderStats: stats(p.renderTimes),
-            cpuStats: stats(cpuTimes),
-            gpuStats: stats(gpuEst),
+            tickStats: stats(p.tickTimes),
+            nonCpuStats: stats(nonCpuTimes),
             slowFrames: p.frameTimes.filter(f => f > 20).length,
+            totalUpdates: totalUpdates,
+            tps: tps,
             heap: p.heapSamples.length ? {
                 usedAvg: p.heapSamples.reduce((a,b)=>a+b.used,0)/p.heapSamples.length,
                 totalAvg: p.heapSamples.reduce((a,b)=>a+b.total,0)/p.heapSamples.length,
                 usedMax: Math.max(...p.heapSamples.map(s=>s.used)),
+                usedMin: Math.min(...p.heapSamples.map(s=>s.used)),
             } : null,
             subFunc: p.subFunc,
             objCounts: {
@@ -298,28 +352,29 @@ def collect(page, label):
             maxPart: p.maxPart,
             maxDmg: p.maxDmg,
         };
-    }""")
+    }""".replace("DURATION", str(DURATION)))
 
     print(f"\n{'='*60}")
     print(f"=== {label} ({DURATION}s) ===")
     print(f"{'='*60}")
-    print(f"  Frames: {data['frames']} | Slow frames (>20ms): {data['slowFrames']}")
     fps = data['frames'] / DURATION if data['frames'] else 0
-    print(f"  FPS: {fps:.1f}")
+    print(f"  Frames: {data['frames']} | FPS: {fps:.1f} | TPS: {data['tps']:.1f} | Slow frames (>20ms): {data['slowFrames']}")
     f = data['frameStats']
     print(f"  Frame:  avg={f['avg']:.2f}ms p50={f['p50']:.2f} p95={f['p95']:.2f} p99={f['p99']:.2f} max={f['max']:.2f}ms")
+    c = data['cpuStats']
+    print(f"  CPU:    avg={c['avg']:.2f}ms p50={c['p50']:.2f} p95={c['p95']:.2f} p99={c['p99']:.2f} max={c['max']:.2f}ms")
     u = data['updateStats']
     print(f"  Update: avg={u['avg']:.2f}ms p50={u['p50']:.2f} p95={u['p95']:.2f} p99={u['p99']:.2f} max={u['max']:.2f}ms")
     r = data['renderStats']
     print(f"  Render: avg={r['avg']:.2f}ms p50={r['p50']:.2f} p95={r['p95']:.2f} p99={r['p99']:.2f} max={r['max']:.2f}ms")
-    c = data['cpuStats']
-    print(f"  CPU:    avg={c['avg']:.2f}ms p50={c['p50']:.2f} p95={c['p95']:.2f} p99={c['p99']:.2f} max={c['max']:.2f}ms")
-    g = data['gpuStats']
-    print(f"  GPU*:   avg={g['avg']:.2f}ms p50={g['p50']:.2f} p95={g['p95']:.2f} p99={g['p99']:.2f} max={g['max']:.2f}ms")
-    print(f"  (*GPU = frameInterval - cpuTime, approximate)")
+    t = data['tickStats']
+    print(f"  Tick:   avg={t['avg']:.3f}ms p50={t['p50']:.3f} p95={t['p95']:.3f} p99={t['p99']:.3f} max={t['max']:.3f}ms ({data['totalUpdates']} total)")
+    n = data['nonCpuStats']
+    print(f"  Non-CPU:avg={n['avg']:.2f}ms p50={n['p50']:.2f} p95={n['p95']:.2f} p99={n['p99']:.2f} max={n['max']:.2f}ms")
+    print(f"  (Non-CPU = frame interval - CPU; includes vsync, browser, GPU composite)")
     if data['heap']:
         h = data['heap']
-        print(f"  Memory: used={h['usedAvg']/1048576:.1f}MB max={h['usedMax']/1048576:.1f}MB total={h['totalAvg']/1048576:.1f}MB")
+        print(f"  Memory: used={h['usedAvg']/1048576:.1f}MB min={h['usedMin']/1048576:.1f}MB max={h['usedMax']/1048576:.1f}MB total={h['totalAvg']/1048576:.1f}MB")
     oc = data['objCounts']
     print(f"  Objects: units={oc['units']} proj={oc['projectiles']} particles={oc['particles']} zones={oc['zones']} dmg={oc['damageNums']}")
     print(f"  Max:     proj={data.get('maxProj',0)} particles={data.get('maxPart',0)} dmg={data.get('maxDmg',0)}")
@@ -369,8 +424,15 @@ def main():
         reset_perf(page)
         results['50v50'] = collect(page, "50v50 (100 units)")
 
-        # Scenario 5: Multiplayer guest (snapshot interpolation)
-        print("\n--- Scenario 5: Multiplayer guest (50v50, snapshot interpolation) ---")
+        # Scenario 5: Multiplayer lockstep (both peers run sim)
+        print("\n--- Scenario 5: Multiplayer lockstep (50v50, both peers sim) ---")
+        make_lockstep(page, 50, hp=800)
+        time.sleep(1)
+        reset_perf(page)
+        results['mp_lockstep'] = collect(page, "MP LOCKSTEP (50v50 both peers sim)")
+
+        # Scenario 6: Multiplayer guest (snapshot interpolation)
+        print("\n--- Scenario 6: Multiplayer guest (50v50, snapshot interpolation) ---")
         make_units(page, 50, hp=800, high_hp=True)
         time.sleep(0.5)
         # Simulate guest receiving snapshots every 100ms (10fps from host).
@@ -426,6 +488,27 @@ def main():
     with open('perf_results.json', 'w') as f:
         json.dump(results, f, indent=2)
     print(f"\nResults saved to perf_results.json")
+
+    # Summary table
+    print(f"\n{'='*80}")
+    print("SUMMARY: 60fps/60tps Target Verification")
+    print(f"{'='*80}")
+    print(f"{'Scenario':<25} {'FPS':>6} {'TPS':>6} {'CPU avg':>8} {'CPU p99':>8} {'Slow':>5} {'Mem':>8}")
+    print(f"{'-'*25} {'-'*6} {'-'*6} {'-'*8} {'-'*8} {'-'*5} {'-'*8}")
+    for key, label in [('empty','Empty'), ('5v5','5v5 (10)'), ('20v20','20v20 (40)'),
+                       ('50v50','50v50 (100)'), ('mp_lockstep','MP Lockstep'),
+                       ('mp_guest','MP Guest')]:
+        if key not in results: continue
+        d = results[key]
+        fps = d['frames'] / DURATION
+        tps = d.get('tps', 0)
+        cpu_avg = d['cpuStats']['avg']
+        cpu_p99 = d['cpuStats']['p99']
+        slow = d['slowFrames']
+        mem = d['heap']['usedAvg']/1048576 if d['heap'] else 0
+        fps_ok = "OK" if fps >= 58 else "FAIL"
+        tps_ok = "OK" if tps >= 58 else "FAIL"
+        print(f"{label:<25} {fps:>5.1f}{fps_ok[0]} {tps:>5.1f}{tps_ok[0]} {cpu_avg:>7.2f}m {cpu_p99:>7.2f}m {slow:>5} {mem:>7.1f}MB")
 
     srv.shutdown()
 

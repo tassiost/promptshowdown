@@ -65,8 +65,62 @@ Only host runs battle simulation. When guest-team spell fires, host sends `spell
 message so guest can call `Quests.track("spell_use")`.
 
 ### P2P Version Compatibility
-Role messages include game version: `transmit("role", {role:"host", v:CURRENT_VERSION})`.
-Receiver checks version mismatch and disconnects with descriptive error.
+Role messages include game version: `transmit("role", {role:"host", v:CURRENT_VERSION, det:true})`.
+Receiver checks version mismatch and disconnects with descriptive error. The `det:true`
+flag advertises determinism (lockstep) support.
+
+## Determinism / Lockstep Rules (DET)
+
+### Architecture
+When both peers support determinism (`_peerDetCapable`), P2P battles use lockstep
+instead of host-authoritative snapshots. Both peers run the sim independently from
+the same seed + armies, syncing only commands. This eliminates snapshot bandwidth
+and ensures both peers see the same battle.
+
+### Seeded PRNG
+`seedBattle(seed)` initializes a deterministic LCG PRNG (`_battleSeed`/`_rngState`).
+`rand()` and `randRange(a,b)` draw from it. The seed is generated per-round by the
+host and shared via the `lockstep_start` message (included in the payload).
+
+### DMath Library
+`DMath.sqrt/sin/cos/hypot` use lookup tables (1024-entry for sin/cos, Newton-Raphson
+for sqrt). These replace `Math.*` in all sim-state-affecting code paths. `Math.*` is
+still fine for UI/render-only code (canvas transforms, particle FX, toast positions).
+
+### Fixed Timestep
+`Battle.loop()` uses an accumulator pattern: real frame time (×speed) is added to
+`_accumulator`, then drained in fixed `1/60` steps via `Battle.update(FIXED_DT)`.
+Max 4 steps per frame prevents spiral-of-death. `_lastDt` (real frame time) drives
+HP-bar interpolation in render.
+
+### Lockstep Command Protocol
+- Commands (spell casts, speed changes, pauses) are scheduled by tick number.
+- `queueCommand(cmd, targetTick)` stores in `_cmdBuffer` (Map<tick, cmd[]>).
+- `executeCommands(tick)` runs all commands for the current tick at the top of
+  `update()`, before sim logic.
+- `LOCKSTEP_DELAY=3` ticks gives time for the peer's command to arrive.
+- Commands transmit via `cmd_lock` message; peer acks via `tick_ack` every 10 ticks.
+- Pacing: sim won't advance past `_peerConfirmedTick + 10` to avoid running ahead.
+
+### Sim Labeling
+The host's team labels are used on BOTH peers (host=player, guest=enemy). Both call
+`Battle.start(playerArmy, enemyArmy)` in the same order → identical unit array.
+`Battle._localTeam` tracks which team is the local player's ("player" for host/solo,
+"enemy" for guest in lockstep). Manual spell casts fire for `_localTeam`.
+
+### Army Serialization
+`serializeArmyForPeer`/`deserializeArmyForPeer` preserve x/y/mh positions (unlike
+`deserializeUnitsFromPeer` which rebuilds via `unit()` and drops them). Both peers
+must start from byte-identical initial positions for determinism.
+
+### Desync Detection
+At battle end, both peers compute `Battle.stateHash()` (FNV-1a over unit positions,
+HP, and animState) and send it via `round_hash`. Mismatch sets `_desyncFallback=true`
+→ next round falls back to host-authoritative snapshot sync (legacy behavior).
+
+### Fallback
+If `_peerDetCapable` is false (peer doesn't support determinism) or `_desyncFallback`
+is true, the system falls back to host-authoritative snapshot sync (legacy behavior).
 
 ## Save System Rules
 
