@@ -5227,7 +5227,9 @@ const BattleFX={
     c.globalCompositeOperation="lighter";
     // PERF-R12: skip halo when many particles (bloom is visual nicety, doubles arc count).
     const doHalo=Battle.particles.length<=30;
-    for(const p of Battle.particles){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let pi=0;pi<Battle.particles.length;pi++){
+      const p=Battle.particles[pi];
       const a=Math.max(0,p.life/p.maxLife);
       c.globalAlpha=a;
       c.fillStyle=p.c;
@@ -5955,7 +5957,9 @@ const Battle={
     const _qTier=G.qualityTier?.()||"high";
     const _reducedMotion=G.save?.settings?.reducedMotion;
     const _auraEnabled=_qTier!=="low"&&_qTier!=="minimal"&&!_reducedMotion;
-    for(let u of this.units){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
       if(u.h<=0){
         if(u.deathT!==undefined)u.deathT+=dt;
         u.animState="death"; // Phase 11: death animation state
@@ -6003,7 +6007,9 @@ const Battle={
     // PERF-R12: store alive arrays as instance props for checkEnd() reuse.
     const players=this._alivePlayers||(this._alivePlayers=[]), enemies=this._aliveEnemies||(this._aliveEnemies=[]);
     players.length=0; enemies.length=0;
-    for(const u of this.units){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
       if(u.h<=0){
         if(u.deathT===undefined)this.onUnitDeath(u);
         continue;
@@ -6529,7 +6535,8 @@ const Battle={
     if(!this._projTrailPool)this._projTrailPool=[];
     const idMap=this._unitIdMap;
     idMap.clear();
-    for(const u of this.units)idMap.set(u.id,u);
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let ui=0;ui<this.units.length;ui++)idMap.set(this.units[ui].id,this.units[ui]);
     // PERF-R12: lazily build foes arrays per team only when a projectile hits.
     // Need separate arrays per team for splash damage (which iterates enemies array).
     let playerFoes=null,enemyFoes=null;
@@ -6538,19 +6545,21 @@ const Battle={
         if(!playerFoes){
           playerFoes=this._projPlayerFoes||(this._projPlayerFoes=[]);
           playerFoes.length=0;
-          for(const u of this.units){if(u.h>0&&u.team==="enemy")playerFoes.push(u);}
+          for(let ui=0;ui<this.units.length;ui++){const u=this.units[ui];if(u.h>0&&u.team==="enemy")playerFoes.push(u);}
         }
         return playerFoes;
       }else{
         if(!enemyFoes){
           enemyFoes=this._projEnemyFoes||(this._projEnemyFoes=[]);
           enemyFoes.length=0;
-          for(const u of this.units){if(u.h>0&&u.team==="player")enemyFoes.push(u);}
+          for(let ui=0;ui<this.units.length;ui++){const u=this.units[ui];if(u.h>0&&u.team==="player")enemyFoes.push(u);}
         }
         return enemyFoes;
       }
     }
-    for(let p of this.projectiles){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let pi=0;pi<this.projectiles.length;pi++){
+      const p=this.projectiles[pi];
       if(p.dead)continue;
       // PERF-R12: record trail position (reuse array, avoid per-frame object alloc).
       // Array holds 4 points × 2 coords = 8 slots. Shift before writing when full.
@@ -6577,7 +6586,9 @@ const Battle={
         // PERF-R12: build foes array lazily per team (only when a projectile hits).
         const foes=getFoes.call(this,p.team);
         let hit=false;
-        for(let f of foes){
+        // PERF-R12: index loop (avoid for...of iterator allocation).
+        for(let fi=0;fi<foes.length;fi++){
+          const f=foes[fi];
           const fdx=f.x-p.tx, fdy=f.y-p.ty;
           if(fdx*fdx+fdy*fdy<=(22+f.z)*(22+f.z)){
             // PERF-R12: reuse synth object (avoid per-hit allocation).
@@ -6641,7 +6652,9 @@ const Battle={
     const keys=this._sepKeys;
     keys.length=0;
     // Bin units into cells with numeric keys (faster than string concat).
-    for(const u of all){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let ui=0;ui<all.length;ui++){
+      const u=all[ui];
       if(u.h<=0)continue;
       const k=(Math.floor(u.x/cellSize)<<16)|Math.floor(u.y/cellSize);
       let cell=grid.get(k);
@@ -6928,7 +6941,9 @@ const Battle={
     }
     // Update + draw.
     const dt=0.016;
-    for(const p of this._bgParticles){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let i=0;i<this._bgParticles.length;i++){
+      const p=this._bgParticles[i];
       p.x+=p.vx*dt;
       p.y+=p.vy*dt;
       p.life-=dt;
@@ -6948,7 +6963,9 @@ const Battle={
     // Draw behind units (already on canvas, before unit draw).
     // PERF-R12: set fillStyle once (all particles use same color = theme.ambient).
     c.fillStyle=theme.ambient;
-    for(const p of this._bgParticles){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let i=0;i<this._bgParticles.length;i++){
+      const p=this._bgParticles[i];
       const a=Math.min(1,p.life/p.maxLife)*0.6;
       c.globalAlpha=a;
       c.beginPath();
@@ -7012,7 +7029,9 @@ const Battle={
     // units
     // PERF-R12: batch all shadows (fillStyle="#000" set once, varying alpha per shadow).
     c.fillStyle="#000";
-    for(let u of this.units){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
       if(!u||u.x===undefined)continue;
       if(u.h<=0&&u.deathT===undefined)continue;
       const lunge=BattleFX.getLungeOffset(u);
@@ -7028,7 +7047,9 @@ const Battle={
     }
     c.globalAlpha=1;
     // Pass 1: sprites + hit flashes (per unit, depth-ordered with lunge).
-    for(let u of this.units){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
       if(!u||u.x===undefined)continue;
       if(u.h<=0&&u.deathT===undefined)continue;
       // Phase 17: apply lunge offset + spawn scale.
@@ -7191,7 +7212,9 @@ const Battle={
     }
     // projectiles — weapon-specific shapes with glowing trail.
     const projPrev=c.globalCompositeOperation;
-    for(let p of this.projectiles){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let pi=0;pi<this.projectiles.length;pi++){
+      const p=this.projectiles[pi];
       const wt=p.weaponType||"none";
       const accent=p.accent||p.c;
       const dx=p.tx-p.x,dy=p.ty-p.y;
@@ -7377,7 +7400,9 @@ const Battle={
   // Update + render floating damage numbers.
   updateDmgNums(dt){
     if(!this.damageNums||!this.damageNums.length)return;
-    for(const d of this.damageNums){
+    // PERF-R12: index loop (avoid for...of iterator allocation).
+    for(let i=0;i<this.damageNums.length;i++){
+      const d=this.damageNums[i];
       d.life-=dt;
       d.y+=d.vy*dt;
       d.vy+=60*dt; // slight deceleration
