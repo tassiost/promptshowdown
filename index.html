@@ -3691,10 +3691,25 @@ const TARGETING={
     }
     return best;
   },
-  lowest_ally:(u,enemies,allies)=>lowestBy(allies.filter(a=>a!==u),a=>a.h),
-  highest_hp_ally:(u,enemies,allies)=>highestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h),
-  random_ally:(u,enemies,allies)=>{const alive=allies.filter(a=>a!==u&&a.h>0);return alive.length?alive[F(R()*alive.length)]:null;},
-  random:(u,enemies,allies)=>{const alive=enemies.filter(e=>e.h>0);return alive.length?alive[F(R()*alive.length)]:null;},
+  lowest_ally:(u,enemies,allies)=>lowestBy(allies,a=>a===u?Infinity:a.h),
+  highest_hp_ally:(u,enemies,allies)=>highestBy(allies,a=>a===u?-Infinity:a.h),
+  // PERF-R12: inline alive counting (avoid filter allocation per unit per frame).
+  random_ally:(u,enemies,allies)=>{
+    let count=0;
+    for(let i=0;i<allies.length;i++){const a=allies[i];if(a!==u&&a.h>0)count++;}
+    if(!count)return null;
+    let pick=F(R()*count);
+    for(let i=0;i<allies.length;i++){const a=allies[i];if(a!==u&&a.h>0){if(pick===0)return a;pick--;}}
+    return null;
+  },
+  random:(u,enemies,allies)=>{
+    let count=0;
+    for(let i=0;i<enemies.length;i++){if(enemies[i].h>0)count++;}
+    if(!count)return null;
+    let pick=F(R()*count);
+    for(let i=0;i<enemies.length;i++){if(enemies[i].h>0){if(pick===0)return enemies[i];pick--;}}
+    return null;
+  },
   self:(u,enemies,allies)=>u,
 };
 
@@ -6361,7 +6376,9 @@ const Battle={
     const dx=target.x-attacker.x,dy=target.y-attacker.y;
     const dd=Math.sqrt(dx*dx+dy*dy)||1;
     target.hitReact=0.15;
-    target.hitReactDir={x:dx/dd,y:dy/dd};
+    // PERF-R12: reuse existing hitReactDir object (avoid per-hit allocation).
+    if(!target.hitReactDir)target.hitReactDir={x:0,y:0};
+    target.hitReactDir.x=dx/dd;target.hitReactDir.y=dy/dd;
     // Phase 17: FX on hit.
     if(crit){
       BattleFX.onCrit(target);
@@ -6419,7 +6436,8 @@ const Battle={
     }
     switch(u.ability){
       case "heal":{
-        const ally=lowestBy(allies.filter(a=>a!==u&&a.h>0),a=>a.h);
+        // PERF-R12: lowestBy already skips dead units — just exclude self via Infinity.
+        const ally=lowestBy(allies,a=>a===u?Infinity:a.h);
         if(ally){ally.h=Math.min(ally.mh,ally.h+u.d*2);u.abCool=3.0;this.log(u.n+" heals "+ally.n);GameAudio.sfx("heal");}
         break;
       }
@@ -6470,7 +6488,8 @@ const Battle={
         break;
       }
       case "blink_strike":{
-        const target=lowestBy(enemies.filter(e=>e.h>0),e=>e.h);
+        // PERF-R12: lowestBy already skips dead units — no filter needed.
+        const target=lowestBy(enemies,e=>e.h);
         if(target){
           u.x=target.x+Q(-15,15);u.y=target.y+Q(-15,15);
           this.takeDamage(u,target,enemies,u.d*2);
