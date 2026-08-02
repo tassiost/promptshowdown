@@ -7065,15 +7065,19 @@ const Battle={
     const pass2=this._renderPass2;
     let pass2Len=0;
     // units
-    // PERF-R12: batch all shadows (fillStyle="#000" set once, varying alpha per shadow).
-    c.fillStyle="#000";
+    // PERF-R12: merged shadow + sprite pass (avoid calling getLungeOffset/getSpawnScale twice per unit).
+    // Shadows are drawn first with fillStyle="#000", then sprites on top.
     // PERF-R12: index loop (avoid for...of iterator allocation).
+    // Pass 1a: shadows (batched fillStyle="#000").
+    c.fillStyle="#000";
     for(let ui=0;ui<this.units.length;ui++){
       const u=this.units[ui];
       if(!u||u.x===undefined)continue;
       if(u.h<=0&&u.deathT===undefined)continue;
       const lunge=BattleFX.getLungeOffset(u);
       const spawnScale=BattleFX.getSpawnScale(u);
+      // PERF-R12: cache lunge/spawnScale on unit for sprite pass (avoid double compute).
+      u._renderLungeX=lunge.x;u._renderLungeY=lunge.y;u._renderSpawnScale=spawnScale;
       const sx=u.x+lunge.x, sy=u.y+lunge.y, sz=u.z*spawnScale;
       const shadowAlpha=u.deathT!==undefined?Math.max(0,1-u.deathT/0.5)*0.35:0.35;
       if(shadowAlpha>0.02){
@@ -7084,18 +7088,17 @@ const Battle={
       }
     }
     c.globalAlpha=1;
-    // Pass 1: sprites + hit flashes (per unit, depth-ordered with lunge).
+    // Pass 1b: sprites + hit flashes (per unit, depth-ordered with lunge).
     // PERF-R12: index loop (avoid for...of iterator allocation).
     for(let ui=0;ui<this.units.length;ui++){
       const u=this.units[ui];
       if(!u||u.x===undefined)continue;
       if(u.h<=0&&u.deathT===undefined)continue;
-      // Phase 17: apply lunge offset + spawn scale.
-      const lunge=BattleFX.getLungeOffset(u);
-      const spawnScale=BattleFX.getSpawnScale(u);
+      // Phase 17: apply lunge offset + spawn scale (use cached values from shadow pass).
+      const lungeX=u._renderLungeX||0,lungeY=u._renderLungeY||0,spawnScale=u._renderSpawnScale||1;
       const origX=u.x,origY=u.y,origZ=u.z;
-      u.x=origX+lunge.x;
-      u.y=origY+lunge.y;
+      u.x=origX+lungeX;
+      u.y=origY+lungeY;
       u.z=origZ*spawnScale;
       // Phase 11: use SpriteRenderer for units with recipes, fallback otherwise.
       const hasRecipe=!!u.recipe;
