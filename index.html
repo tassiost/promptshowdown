@@ -5204,7 +5204,9 @@ const BattleFX={
   update(dt){
     // Update particles.
     if(Battle.particles){
-      for(const p of Battle.particles){
+      // PERF-R12: index loop (avoid for...of iterator allocation).
+      for(let pi=0;pi<Battle.particles.length;pi++){
+        const p=Battle.particles[pi];
         p.x+=p.vx*dt;
         p.y+=p.vy*dt;
         p.vx*=0.95;
@@ -5997,7 +5999,9 @@ const Battle={
     this._applyArenaMechanics(dt);
     // Tick player spell cooldowns.
     if(this.playerSpells){
-      for(const ps of this.playerSpells){
+      // PERF-R12: index loop (avoid for...of iterator allocation).
+      for(let psi=0;psi<this.playerSpells.length;psi++){
+        const ps=this.playerSpells[psi];
         if(ps.cooldown>0)ps.cooldown=Math.max(0,ps.cooldown-dt);
       }
     }
@@ -6712,7 +6716,8 @@ const Battle={
   // J2: Spatial partitioning via uniform grid hash — O(n) instead of O(n²).
   // PERF-R11: reuse grid Map, use numeric keys, avoid string split/concat, skip pair Set.
   // PERF-R12: hoist offsets array outside function (avoid per-frame allocation).
-  _sepOffsets:[[0,0],[1,0],[0,1],[1,1],[1,-1]],
+  // PERF-R12: flattened offsets (avoid nested array indexing).
+  _sepOffsetsFlat:[0,0, 1,0, 0,1, 1,1, 1,-1],
   // PERF-R12: flat array grid for separate (avoids Map overhead).
   // Game space is 400×550, cellSize=60 → 7×10 cells. Pad by 1 for negative coords.
   _sepGridW:9,_sepGridH:12,
@@ -6754,7 +6759,7 @@ const Battle={
       }
     }
     // Check collisions within same + adjacent cells.
-    const offsets=this._sepOffsets;
+    const offsets=this._sepOffsetsFlat;
     // PERF-R12: iterate keys array (only non-empty cells).
     for(let ki=0;ki<keys.length;ki++){
       const idx=keys[ki];
