@@ -1322,7 +1322,12 @@ let llmCancelled=false;       // user tapped Cancel during download
 let llmWorker=null;           // ref to the worker so we can terminate on cancel
 let llmLoadPromise=null;      // shared in-flight load promise (awaited by forge + preload)
 let llmCancelResolve=null;    // resolver for the cancel signal (unblocks awaiters)
-const MODEL="Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
+// Mobile: use SmolLM2-360M (~580MB VRAM) — fits iOS jetsam limit (~800MB).
+// Desktop: use Qwen2.5-1.5B (~1630MB VRAM) — better quality, more VRAM available.
+// Qwen2.5-0.5B (~945MB) is still too large for iOS Safari's ~800MB tab limit.
+const MODEL=isMobile
+  ?"SmolLM2-360M-Instruct-q4f16_1-MLC"
+  :"Qwen2.5-1.5B-Instruct-q4f16_1-MLC";
 // Phase 4: cache of validated AI-generated units so re-forge is instant
 // and we don't re-query the LLM every round.
 let aiCache=[];
@@ -1418,6 +1423,24 @@ async function initLLM(){
   if(!navigator.gpu){
     await updateAI("AI unavailable (no WebGPU)",0);
     return null;
+  }
+  // Mobile guard: check WebGPU max buffer size. iOS Safari limits to ~715MB
+  // and jetsam-kills tabs at ~800MB RAM. If the adapter reports a small
+  // maxBufferSize, skip LLM and use template fallback to avoid a crash.
+  if(isMobile&&navigator.gpu){
+    try{
+      const adapter=await navigator.gpu.requestAdapter();
+      if(adapter){
+        const maxBuf=adapter.limits.maxBufferSize||0;
+        // SmolLM2-360M-q4f16 needs ~580MB VRAM. If maxBufferSize < 512MB,
+        // even the small model won't fit — fall back to templates.
+        if(maxBuf<512*1024*1024){
+          console.warn("WebGPU maxBufferSize too small for LLM: "+(maxBuf/1024/1024).toFixed(0)+"MB — using templates.");
+          await updateAI("AI unavailable (WebGPU memory too low)",0);
+          return null;
+        }
+      }
+    }catch(e){/* ignore — proceed with normal init */}
   }
   llmLoading=true;
   llmCancelled=false;
