@@ -3674,7 +3674,7 @@ function networkReceive(data){
         _cmdLockRate.count++;
         if(_cmdLockRate.count>20)return;
         // Validate command payload.
-        if(c.type==="spell_cast"&&typeof c.spellIdx!=="number")return;
+        if(c.type==="spell_cast"&&(typeof c.spellIdx!=="number"||(c.team!=="player"&&c.team!=="enemy")))return;
         // DET: detect late commands — if the target tick already passed, the
         // command can't be executed deterministically (one peer already ran it,
         // the other missed it). Fall back to snapshot sync for the next round.
@@ -6493,17 +6493,29 @@ const Battle={
     // DET: the manual cast list is the LOCAL player's spells (spells[_localTeam]),
     // so the guest in lockstep casts its own spells (team "enemy" in sim labeling).
     this.playerSpells=[];
+    // DET: store both teams' manual spells for lockstep execution. When the host
+    // casts a spell, the guest must fire the HOST's spell (team "player"), not its
+    // own (team "enemy"). Without this, spellIdx maps to different spells on each
+    // peer → wrong spell fires + wrong cooldown set → desync.
+    this._allPlayerSpells={player:[],enemy:[]};
     if(spells){
       const localTeam=this._localTeam;
       for(const s of (spells[localTeam]||[])){
         // Auto-trigger spells go into the auto-fire list.
         this.spells.push({spec:s,team:localTeam,fired:false,lastFire:0});
         // Also add to manual cast list (player can cast anytime, subject to cooldown).
-        this.playerSpells.push({spec:s,cooldown:0,maxCD:this._spellCooldown(s)});
+        const entry={spec:s,cooldown:0,maxCD:this._spellCooldown(s)};
+        this.playerSpells.push(entry);
+        this._allPlayerSpells[localTeam].push(entry);
       }
       // Auto-fire list also includes the opponent's spells (non-manual).
       for(const s of (spells.player||[]))if(localTeam!=="player")this.spells.push({spec:s,team:"player",fired:false,lastFire:0});
       for(const s of (spells.enemy||[]))if(localTeam!=="enemy")this.spells.push({spec:s,team:"enemy",fired:false,lastFire:0});
+      // DET: build the remote team's manual spell list (for lockstep execution).
+      const remoteTeam=localTeam==="player"?"enemy":"player";
+      for(const s of (spells[remoteTeam]||[])){
+        this._allPlayerSpells[remoteTeam].push({spec:s,cooldown:0,maxCD:this._spellCooldown(s)});
+      }
     }
     this._renderSpellBar();
     this.time=0;
@@ -6614,7 +6626,7 @@ const Battle={
     if(!cmds)return;
     for(let i=0;i<cmds.length;i++){
       const c=cmds[i];
-      if(c.type==="spell_cast")this._executeSpellCast(c.spellIdx,c.targetX,c.targetY);
+      if(c.type==="spell_cast")this._executeSpellCast(c.team||"player",c.spellIdx,c.targetX,c.targetY);
       else if(c.type==="speed"){this.speed=c.speed;this._manualSpeed=true;}
       else if(c.type==="pause")this.paused=true;
       else if(c.type==="resume")this.paused=false;
@@ -8562,6 +8574,7 @@ const Battle={
     this.spells=[];
     this.zones=[];
     this.playerSpells=[];
+    this._allPlayerSpells=null; // DET: clear lockstep spell map
     this.time=0;
     this._ending=false; // clear end-delay flag
     // NOTE: do NOT reset this.winner here — checkEnd() calls stop() before
@@ -8777,7 +8790,10 @@ const Battle={
       // command arrives in time. Both peers execute the command at the same tick.
       const LOCKSTEP_DELAY=3;
       const targetTick=(this._tick||0)+LOCKSTEP_DELAY;
-      const cmd={type:"spell_cast",spellIdx:idx,targetX:targetX||0,targetY:targetY||0,tick:targetTick};
+      // DET: include the casting team so the peer fires the correct spell.
+      // Without this, spellIdx maps to different spells on host vs guest
+      // (playerSpells is per-team) → wrong spell fires → desync.
+      const cmd={type:"spell_cast",team:this._localTeam,spellIdx:idx,targetX:targetX||0,targetY:targetY||0,tick:targetTick};
       this.queueCommand(cmd,targetTick);
       if(connected)transmit("cmd_lock",cmd);
       // _pendingCast is UI-only (prevents spam during the lockstep window); it is
@@ -8795,12 +8811,16 @@ const Battle={
 
   // DET: execute a queued spell cast at the scheduled tick. Called by
   // executeCommands on both peers at the same tick → identical cooldown state.
-  _executeSpellCast(idx,targetX,targetY){
-    if(!this.running||!this.playerSpells||!this.playerSpells[idx])return;
-    const ps=this.playerSpells[idx];
-    // Fire the spell for the local player's team. Spell.fire auto-targets from
+  // DET: the team field tells us which team's spell to fire (the caster's team).
+  // Both peers look up the spell from _allPlayerSpells[team][idx] → same spell.
+  _executeSpellCast(team,idx,targetX,targetY){
+    if(!this.running||!this._allPlayerSpells)return;
+    const teamSpells=this._allPlayerSpells[team];
+    if(!teamSpells||!teamSpells[idx])return;
+    const ps=teamSpells[idx];
+    // Fire the spell for the caster's team. Spell.fire auto-targets from
     // sim state, which is identical across peers at the same tick → deterministic.
-    this.fireSpell(ps.spec,this._localTeam);
+    this.fireSpell(ps.spec,team);
     ps.cooldown=ps.maxCD;
     ps._pendingCast=false;
     this._renderSpellBar();
