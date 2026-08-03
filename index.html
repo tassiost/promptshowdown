@@ -3397,6 +3397,31 @@ function setupNetwork(id,password){
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
       G.cancelReconnect();
+      // RELAY: if the guest rejoined during a grace period in relay mode,
+      // resync by sending a fresh relay_start + immediate snapshot.
+      if(Match._graceActive&&role==="host"&&Battle._useRelay&&Match.active){
+        // Restart the battle sim (it was stopped by gracefulDisconnect).
+        if(!Battle.running){
+          // Resume the battle — the host's sim state is still intact (units, time, etc).
+          Battle.running=true;
+          Battle.last=performance.now();
+          Battle._loopBound=Battle.loop.bind(Battle);
+          Battle.frame=requestAnimationFrame(Battle._loopBound);
+        }
+        // Re-send relay_start so the guest re-enters render-only mode.
+        const spells={player:Match.playerSpells||G.playerSpells||[],enemy:Match.enemySpells||G.enemySpells||[]};
+        transmit("relay_start",{playerSpells:spells.player,enemySpells:spells.enemy,round:Match.round});
+        // Restart snapshot broadcast.
+        G.startSnapshots();
+        // Send immediate snapshot for instant resync.
+        const snap=Battle.compressedSnapshot();
+        snap.round=Match.round;
+        snap.livesPlayer=Match.livesPlayer;
+        snap.livesEnemy=Match.livesEnemy;
+        snap.drawIndex=G.roundDraftState?.drawIndex||0;
+        transmit("snap",snap);
+        Match._graceActive=false;
+      }
       // NETFIX: start heartbeat on peer join.
       _startHeartbeat();
       // Matchmaking: peer joined the queue room — show "opponent found".
@@ -3439,13 +3464,26 @@ function _handlePeerLeave(){
     Match._graceActive=true;
     Match.gracefulDisconnect();
   }else if(Match.active&&role==="guest"){
-    Match.active=false;
-    // NETFIX: capture opponent picks BEFORE stop() clears Battle.units.
-    const opponentPicks=(Battle._finalUnits||Battle.units||[]).filter(u=>u.team==="player").map(u=>unit(u));
-    Battle.stop();
-    G.stopSnapshots();
-    // P2P: offer "Continue vs Bot" to guest too (not just host).
-    showDisconnectPrompt(opponentPicks);
+    // RELAY: in relay mode, give the guest a grace period too (host might reconnect).
+    // In lockstep/snapshot mode, the guest can't continue without the host, so show
+    // the disconnect prompt immediately.
+    if(Battle._useRelay){
+      Match._graceActive=true;
+      // Don't set Match.active=false — we want to resume if host reconnects.
+      // Stop the battle but keep match state for potential resync.
+      const opponentPicks=(Battle._finalUnits||Battle.units||[]).filter(u=>u.team==="player").map(u=>unit(u));
+      Match.opponentPicks=opponentPicks; // save for "Continue vs Bot" fallback
+      Battle.stop();
+      G.showReconnect(30,()=>showDisconnectPrompt(opponentPicks));
+    }else{
+      Match.active=false;
+      // NETFIX: capture opponent picks BEFORE stop() clears Battle.units.
+      const opponentPicks=(Battle._finalUnits||Battle.units||[]).filter(u=>u.team==="player").map(u=>unit(u));
+      Battle.stop();
+      G.stopSnapshots();
+      // P2P: offer "Continue vs Bot" to guest too (not just host).
+      showDisconnectPrompt(opponentPicks);
+    }
   }
   connState="DISCONNECTED";
 }
@@ -3663,6 +3701,12 @@ function networkReceive(data){
         Battle._localTeam="enemy";
         Battle._useRelay=true;
         Battle._lockstepActive=false;
+        // RELAY: restore match state if this is a reconnect (grace period was active).
+        if(Match._graceActive){
+          Match._graceActive=false;
+          Match.active=true;
+          G.cancelReconnect();
+        }
         // Guest starts Battle with empty armies — units will arrive via snapshots.
         // We pass the spells so the spell bar renders correctly.
         Battle.start([],[],winner=>G.onBattleEnd(winner),spells);
@@ -9046,8 +9090,25 @@ const Battle={
       time:Math.round(this.time*100)/100,
       units:cu,projectiles:cp,
       winner:this.winner,
-      rc:(this.recentCrits||[]).slice(-5)
+      rc:(this.recentCrits||[]).slice(-5),
+      // RELAY: include sim metadata so guest can sync spell cooldowns, pause, speed.
+      paused:this.paused,
+      speed:this.speed,
+      spellCDs:this._spellCDsForSnapshot()
     };
+  },
+  // RELAY: extract spell cooldowns for snapshot (both teams).
+  _spellCDsForSnapshot(){
+    const out={};
+    if(this._allPlayerSpells){
+      for(const team of ["player","enemy"]){
+        const arr=this._allPlayerSpells[team];
+        if(arr){
+          out[team]=arr.map(ps=>({cd:Math.round((ps.cooldown||0)*100)/100,pc:!!ps._pendingCast}));
+        }
+      }
+    }
+    return out;
   },
 
   // Phase 17: applySnapshot diffs against previous snapshot to fire FX
@@ -11729,8 +11790,16 @@ const G={
       Battle._lockstepActive=false;
       Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
       this.updateLivesHUD();
-      // Start broadcasting state snapshots to the guest at 15Hz.
+      // Start broadcasting state snapshots to the guest at 20Hz.
       this.startSnapshots();
+      // RELAY: send an immediate snapshot so the guest doesn't see an empty screen
+      // while waiting for the first interval tick (50ms).
+      const immediateSnap=Battle.compressedSnapshot();
+      immediateSnap.round=Match.round;
+      immediateSnap.livesPlayer=Match.livesPlayer;
+      immediateSnap.livesEnemy=Match.livesEnemy;
+      immediateSnap.drawIndex=G.roundDraftState?.drawIndex||0;
+      transmit("snap",immediateSnap);
       return;
     }
     // DET: lockstep mode — both peers run the sim from the same seed + armies.
@@ -12700,6 +12769,28 @@ const G={
       setText("battleHP",myAlive);
       setText("battleEnemy",hostAlive);
       setText("turn","T"+Math.floor(Battle.time));
+    }
+    // RELAY: sync spell cooldowns from host snapshot.
+    if(snap.spellCDs&&Battle._allPlayerSpells){
+      for(const team of ["player","enemy"]){
+        const hostCDs=snap.spellCDs[team];
+        const localSpells=Battle._allPlayerSpells[team];
+        if(hostCDs&&localSpells){
+          for(let i=0;i<hostCDs.length&&i<localSpells.length;i++){
+            localSpells[i].cooldown=hostCDs[i].cd;
+            localSpells[i]._pendingCast=hostCDs[i].pc;
+          }
+        }
+      }
+    }
+    // RELAY: sync pause/speed state from host.
+    if(typeof snap.paused==="boolean"){
+      Battle.paused=snap.paused;
+      const btn=$("pauseBtn");if(btn)btn.textContent=snap.paused?"▶":"⏸";
+    }
+    if(typeof snap.speed==="number"){
+      Battle.speed=snap.speed;
+      const btn=$("speedBtn");if(btn)btn.textContent=snap.speed+"×";
     }
     if(snap.winner){
       // Host's "player" = host won → guest lost. Host's "enemy" = guest won.

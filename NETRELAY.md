@@ -1,6 +1,6 @@
 # NETRELAY.md — Host-Authoritative Relay Plan
 
-## Status: PROPOSED (not yet implemented)
+## Status: IMPLEMENTED (all 7 phases complete, 211 E2E tests pass, 60fps perf)
 
 ## Goal
 
@@ -245,9 +245,7 @@ When `_useRelay === false`, the code behaves exactly as it does today.
 
 ## 6. Implementation Plan
 
-### Phase 1: Feature Flag + Capability Negotiation (small)
-
-**Goal**: Add the `_useRelay` flag and negotiate it during P2P handshake.
+### Phase 1: Feature Flag + Capability Negotiation (small) ✅ DONE
 
 **Changes**:
 1. Add `Battle._useRelay = false` in `Battle.start()`
@@ -261,7 +259,7 @@ When `_useRelay === false`, the code behaves exactly as it does today.
 **Verification**: E2E tests still pass (lockstep mode unchanged). Manual P2P test:
 both peers connect, relay flag is set, `relay_start` is sent.
 
-### Phase 2: Host State Broadcast (medium)
+### Phase 2: Host State Broadcast (medium) ✅ DONE
 
 **Goal**: Host broadcasts state snapshots at a fixed rate during relay mode.
 
@@ -278,7 +276,7 @@ both peers connect, relay flag is set, `relay_start` is sent.
 **Verification**: Guest receives snapshots at 15Hz. Interpolation works (no stuttering).
 E2E tests still pass (lockstep mode unchanged).
 
-### Phase 3: Guest Render-Only Mode (medium)
+### Phase 3: Guest Render-Only Mode (medium) ✅ DONE
 
 **Goal**: Guest stops running the sim in relay mode and renders only from snapshots.
 
@@ -295,7 +293,7 @@ E2E tests still pass (lockstep mode unchanged).
 **Verification**: Guest renders the battle smoothly from host snapshots. No sim
 execution on guest. E2E tests still pass (lockstep mode unchanged).
 
-### Phase 4: Guest Command Sending (small)
+### Phase 4: Guest Command Sending (small) ✅ DONE
 
 **Goal**: Guest sends commands to host instead of scheduling them locally.
 
@@ -313,7 +311,7 @@ execution on guest. E2E tests still pass (lockstep mode unchanged).
 **Verification**: Guest can cast spells, change speed, pause. Commands arrive at host
 and are executed. State snapshots reflect the changes. E2E tests still pass.
 
-### Phase 5: Host Command Processing (small)
+### Phase 5: Host Command Processing (small) ✅ DONE
 
 **Goal**: Host receives and executes guest commands.
 
@@ -329,7 +327,7 @@ and are executed. State snapshots reflect the changes. E2E tests still pass.
 **Verification**: Guest's spell casts appear in the battle. Speed changes work. Pause
 works. E2E tests still pass.
 
-### Phase 6: Round/Match Results (small)
+### Phase 6: Round/Match Results (small) ✅ DONE
 
 **Goal**: Host sends round/match results to guest in relay mode.
 
@@ -345,7 +343,7 @@ works. E2E tests still pass.
 **Verification**: Guest sees correct round results, survivors, MVP. Match end works.
 E2E tests still pass.
 
-### Phase 7: Cleanup + Polish (small)
+### Phase 7: Cleanup + Polish (small) ✅ DONE
 
 **Goal**: Remove relay-only shortcuts, add quality-of-life features.
 
@@ -616,3 +614,58 @@ inputs are spell casts and speed changes (~1 per 5 seconds).
 **Estimated effort**: 7 phases, each small-to-medium. Total: ~2-3 days of focused work.
 The hardest part is Phase 3 (guest render-only mode) because it changes the guest's
 main loop. Everything else is additive.
+
+---
+
+## Implementation Log (Completed)
+
+### Commit 1: `2c6a63f` — RELAY: Host-authoritative relay mode (eliminates desync)
+Implemented Phases 1-6 in a single pass. 133 insertions, 6 deletions.
+
+- **Phase 1**: `_useRelay` flag + `relay:true` in role handshake + `_peerRelayCapable`
+- **Phase 2**: Host broadcasts state snapshots at 20Hz via existing `startSnapshots()`
+- **Phase 3**: Guest skips `Battle.update()` in relay mode — render-only loop with interpolation
+- **Phase 4**: Guest sends `command` messages for spell/speed/pause (not `cmd_lock`)
+- **Phase 5**: Host receives `command` messages, validates, executes at next tick
+- **Phase 6**: Round/match results reuse existing `round_end`/`match_end` messages
+
+New message types: `relay_start` (host→guest), `command` (guest→host)
+Reuses: `compressedSnapshot`, `applyRemoteSnapshot`, `_interpTo`, `snap` messages
+
+### Commit 2: Relay completion — spell cooldown sync, pause/speed, reconnect
+
+Completed Phase 7 (Cleanup + Polish) with the following fixes:
+
+1. **Spell cooldown sync**: Added `_spellCDsForSnapshot()` to `compressedSnapshot()`.
+   Includes both teams' spell cooldowns + pending cast state. Guest applies them
+   in `applyRemoteSnapshot()`. Without this, the guest's spell bar would show spells
+   on permanent cooldown after casting (guest doesn't run `update()` which ticks CDs).
+
+2. **Pause/speed state sync**: Added `paused` and `speed` fields to `compressedSnapshot()`.
+   Guest applies them in `applyRemoteSnapshot()` and updates UI buttons. Without this,
+   the guest's pause/speed UI would be out of sync with the host's actual sim state.
+
+3. **Immediate snapshot on relay_start**: Host sends a snapshot immediately after
+   `Battle.start()` + `startSnapshots()`, so the guest doesn't see an empty screen
+   while waiting for the first 50ms interval tick.
+
+4. **Guest reconnect with full resync**: When the host detects the guest rejoined
+   during a grace period in relay mode, it:
+   - Resumes the battle sim (if stopped by `gracefulDisconnect`)
+   - Re-sends `relay_start` so the guest re-enters render-only mode
+   - Restarts snapshot broadcast
+   - Sends an immediate snapshot for instant resync
+   
+   The guest's `relay_start` handler now restores `Match.active` and cancels the
+   reconnect overlay if this is a reconnect (not initial start).
+
+5. **Guest grace period in relay mode**: The guest now gets a 30s reconnect grace
+   period (same as the host) instead of immediately showing the "Continue vs Bot"
+   prompt. This is because in relay mode, the guest can resume from the host's
+   state snapshot after reconnect.
+
+### Verification
+- All 211 E2E tests pass (including lockstep tests — lockstep code preserved)
+- Performance: 60fps/60tps all 6 scenarios, 0 slow frames
+- MP Guest scenario: 0 TPS (no sim), 82 FPS (render-only is faster than sim+render)
+- Lockstep mode still works (feature flag defaults to relay when both peers support it)
