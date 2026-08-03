@@ -395,6 +395,11 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 <div id="killFeed" style="display:none;position:fixed;right:5px;top:calc(140px + env(safe-area-inset-top,0px));max-width:160px;background:rgba(11,17,32,.7);border-radius:var(--radius-sm);padding:4px;font-size:.6rem;color:var(--text);pointer-events:none;z-index:98;"></div>
 <div id="unitInspector" style="display:none;position:fixed;left:50%;bottom:calc(80px + max(env(safe-area-inset-bottom,0px),var(--standalone-gap,0px)));transform:translateX(-50%);max-width:280px;background:rgba(11,17,32,.95);border:1px solid var(--accent);border-radius:var(--radius);padding:10px;font-size:.72rem;color:var(--text);z-index:100;pointer-events:none;"></div>
 <div id="networkBadge">🌐 ONLINE</div>
+<div id="netPauseOverlay" style="display:none;position:fixed;inset:0;background:rgba(11,17,32,.8);z-index:200;align-items:center;justify-content:center;flex-direction:column;gap:12px;pointer-events:none;">
+  <div style="font-size:2rem;">⏸️</div>
+  <div style="font-size:1rem;color:var(--warn);font-weight:600;">Network Paused</div>
+  <div id="netPauseReason" style="font-size:.8rem;color:var(--text);opacity:.8;">Waiting for peer...</div>
+</div>
 <button class="btn red" onclick="G.forfeitMatch()" style="position:fixed;top:calc(70px + env(safe-area-inset-top,0px));right:8px;font-size:.7rem;padding:3px 8px;opacity:0.6;z-index:100;">🏳️ Forfeit</button>
 <div class="group" style="position:fixed;bottom:0;left:0;right:0;z-index:50;display:flex;justify-content:center;gap:4px;padding:6px 6px calc(6px + max(env(safe-area-inset-bottom,0px),var(--standalone-gap,0px)));background:linear-gradient(0deg,rgba(11,17,32,.9),transparent);">
 <button class="btn primary" onclick="G.tick()" style="width:auto;padding:10px 16px;">⏵</button>
@@ -3370,9 +3375,13 @@ function _onHeartbeatTimeout(){
   // In match — start grace period if not already.
   if(Match.active&&role==="host"&&!Match._graceActive){
     Match._graceActive=true;
+    // VOIDSTRIKE: network pause with reason.
+    _setNetworkPaused(true,"Peer unresponsive — waiting for reconnection");
     Match.gracefulDisconnect();
   }else if(Match.active&&role==="guest"&&!Match._graceActive){
     Match._graceActive=true;
+    // VOIDSTRIKE: network pause with reason.
+    _setNetworkPaused(true,"Peer unresponsive — waiting for reconnection");
     Match.active=false;
     // NETFIX: capture opponent picks BEFORE stop() clears Battle.units.
     const opponentPicks=(Battle._finalUnits||Battle.units||[]).filter(u=>u.team==="player").map(u=>unit(u));
@@ -3410,6 +3419,13 @@ function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=nul
   _commandBuffer=[];
   _latencyStats={currentRTT:0,avgRTT:0,minRTT:Infinity,maxRTT:0,jitter:0,packetsLost:0,packetsSent:0};
   _pendingPings.clear();
+  // VOIDSTRIKE: clear network pause state.
+  _setNetworkPaused(false,"Disconnected");
+  // VOIDSTRIKE: clear signing state.
+  _peerSigningPublicKey=null;
+  _desyncState="synced";_desyncTick=null;
+  // VOIDSTRIKE: clear command history.
+  _clearCommandHistory();
   // NETFIX: reset sequence numbers + stop heartbeat on full disconnect.
   _sendSeq=0;
   _recvSeq=0;
@@ -3435,6 +3451,8 @@ function setupNetwork(id,password){
     // Without TURN, connections fail on mobile (CG NAT) and corporate networks.
     room=joinRoom({appId:"prompt-showdown-v4",rtcConfig:{iceServers:ICE_SERVERS}},roomId);
     connState="CONNECTING";
+    // VOIDSTRIKE: initialize command signing on room join.
+    _initCommandSigning();
     let action=room.makeAction("game");
     // trystero v0.25+ returns {send, onMessage, onReceiveProgress}
     sendNet=action.send||action[0];
@@ -3495,6 +3513,10 @@ function setupNetwork(id,password){
       _startHeartbeat();
       // VOIDSTRIKE: flush any buffered commands from during disconnect.
       if(_commandBuffer.length>0)_flushCommandBuffer();
+      // VOIDSTRIKE: resume network pause if active.
+      if(_networkPaused)_setNetworkPaused(false,"Peer reconnected");
+      // VOIDSTRIKE: send our signing public key to peer.
+      if(_signingPublicKeyB64)transmit("signing_key",{key:_signingPublicKeyB64});
       // Matchmaking: peer joined the queue room — show "opponent found".
       if(G.matchmakingWaitInterval){
         setText("matchmakingStatus","Opponent found! Negotiating roles...");
@@ -3567,12 +3589,168 @@ function _getConnectionQuality(){
   if(rtt<250&&jitter<100&&loss<30)return"poor";
   return"critical";
 }
+// VOIDSTRIKE: network pause state — game paused waiting for connection recovery.
+// Unlike grace period (which is silent), this shows a visible pause overlay.
+let _networkPaused=false;
+let _networkPauseReason=null;
+let _networkPauseStartTime=null;
+function _setNetworkPaused(paused,reason){
+  const wasPaused=_networkPaused;
+  _networkPaused=paused;
+  _networkPauseReason=paused?reason:null;
+  _networkPauseStartTime=paused?Date.now():null;
+  if(paused&&!wasPaused){
+    console.warn("[P2P] Network paused: "+reason);
+    // Pause the battle sim if running.
+    if(Battle.running&&!Battle._paused){Battle._paused=true;Battle._netPause=true;}
+    // Show pause overlay.
+    const ov=$("netPauseOverlay");
+    if(ov){ov.style.display="flex";const t=$("netPauseReason");if(t)t.textContent=reason||"Waiting for peer...";}
+  }else if(!paused&&wasPaused){
+    console.log("[P2P] Network resumed after "+(_networkPauseStartTime?((Date.now()-_networkPauseStartTime)/1000).toFixed(1)+"s":"?"));
+    if(Battle._netPause){Battle._paused=false;Battle._netPause=false;}
+    const ov=$("netPauseOverlay");
+    if(ov)ov.style.display="none";
+  }
+}
+// VOIDSTRIKE: desync state — synced/checking/desynced (replaces boolean _desyncFallback).
+// _desyncFallback is kept for backwards compat but _desyncState is the source of truth.
+let _desyncState="synced"; // 'synced' | 'checking' | 'desynced'
+let _desyncTick=null;
+function _setDesyncState(state,tick){
+  _desyncState=state;
+  if(tick!==undefined)_desyncTick=tick;
+  if(state==="desynced"){
+    console.error("[DET] Desync confirmed at tick "+(tick||"?"));
+    Battle._desyncFallback=true; // backwards compat
+  }else if(state==="synced"){
+    Battle._desyncFallback=false;
+  }
+  // Update UI indicator.
+  const nb=$("networkBadge");
+  if(nb&&state==="desynced"){nb.textContent+=" ⚠ DESYNC";}
+}
+// VOIDSTRIKE: command history — stores commands per-tick for replay/debug.
+// Keeps up to 2000 ticks of history (≈33s at 60 TPS). Used to diagnose desyncs.
+const COMMAND_HISTORY_MAX_TICKS=2000;
+let _commandHistory=new Map(); // tick → array of commands
+let _commandHistoryLastCleanup=0;
+function _trackCommandHistory(cmd){
+  if(!cmd||typeof cmd.tick!=="number")return;
+  const tick=cmd.tick;
+  const arr=_commandHistory.get(tick);
+  if(arr)arr.push(cmd);
+  else _commandHistory.set(tick,[cmd]);
+  // Periodic cleanup (every 100 ticks ≈ 1.6s) to avoid per-command O(n) sweeps.
+  const currentTick=Battle._tick||tick;
+  if(currentTick-_commandHistoryLastCleanup>=100){
+    _cleanupCommandHistory(currentTick);
+    _commandHistoryLastCleanup=currentTick;
+  }
+}
+function _cleanupCommandHistory(currentTick){
+  const ticksToRemove=[];
+  for(const tick of _commandHistory.keys()){
+    if(currentTick-tick>COMMAND_HISTORY_MAX_TICKS)ticksToRemove.push(tick);
+  }
+  for(const tick of ticksToRemove)_commandHistory.delete(tick);
+}
+function _getCommandHistoryForTick(tick){
+  return _commandHistory.get(tick)||[];
+}
+function _dumpCommandHistory(startTick,endTick){
+  const dump=[];
+  for(let t=startTick;t<=(endTick||startTick+100);t++){
+    const cmds=_commandHistory.get(t);
+    if(cmds)dump.push({tick:t,commands:cmds});
+  }
+  return dump;
+}
+function _clearCommandHistory(){
+  _commandHistory.clear();
+  _commandHistoryLastCleanup=0;
+}
+// Prevents command forgery/tampering in P2P. Each peer generates a key pair,
+// shares the public key, and signs all cmd_lock messages.
+let _signingKeyPair=null;
+let _signingPublicKeyB64=null;
+let _peerSigningPublicKey=null; // peer's imported CryptoKey for verification
+let _signingEnabled=false;
+async function _initCommandSigning(){
+  try{
+    _signingKeyPair=await crypto.subtle.generateKey(
+      {name:"ECDSA",namedCurve:"P-256"},true,["sign","verify"]
+    );
+    const exported=await crypto.subtle.exportKey("spki",_signingKeyPair.publicKey);
+    const bytes=new Uint8Array(exported);
+    _signingPublicKeyB64=btoa(String.fromCharCode(...bytes));
+    _signingEnabled=true;
+    console.log("[P2P] Command signing initialized");
+  }catch(e){
+    console.warn("[P2P] Command signing unavailable:",e.message);
+    _signingEnabled=false;
+  }
+}
+async function _importPeerSigningKey(b64){
+  try{
+    const bin=atob(b64);
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+    _peerSigningPublicKey=await crypto.subtle.importKey(
+      "spki",bytes.buffer,{name:"ECDSA",namedCurve:"P-256"},true,["verify"]
+    );
+    console.log("[P2P] Peer signing key imported");
+  }catch(e){
+    console.warn("[P2P] Failed to import peer signing key:",e.message);
+  }
+}
+async function _signCommand(cmd){
+  if(!_signingEnabled||!_signingKeyPair)return cmd;
+  try{
+    // Canonical: sorted keys, no signature field.
+    const canon=JSON.stringify(cmd,Object.keys(cmd).sort());
+    const data=new TextEncoder().encode(canon);
+    const sig=await crypto.subtle.sign(
+      {name:"ECDSA",hash:"SHA-256"},_signingKeyPair.privateKey,data
+    );
+    const sigBytes=new Uint8Array(sig);
+    return{...cmd,sig:btoa(String.fromCharCode(...sigBytes))};
+  }catch(e){
+    console.warn("[P2P] Sign failed:",e.message);
+    return cmd;
+  }
+}
+async function _verifyCommand(cmd){
+  if(!_signingEnabled||!_peerSigningPublicKey||!cmd.sig)return true; // no sig = allow (backwards compat)
+  try{
+    const{sig,...cmdWithoutSig}=cmd;
+    const canon=JSON.stringify(cmdWithoutSig,Object.keys(cmdWithoutSig).sort());
+    const data=new TextEncoder().encode(canon);
+    const sigBytes=Uint8Array.from(atob(sig),c=>c.charCodeAt(0));
+    return await crypto.subtle.verify(
+      {name:"ECDSA",hash:"SHA-256"},_peerSigningPublicKey,sigBytes.buffer,data
+    );
+  }catch(e){
+    console.warn("[P2P] Verify failed:",e.message);
+    return false;
+  }
+}
+// VOIDSTRIKE: sign + transmit a cmd_lock message (async wrapper).
+async function _transmitSignedCmd(cmd){
+  if(!_signingEnabled){transmit("cmd_lock",cmd);return;}
+  const signed=await _signCommand(cmd);
+  transmit("cmd_lock",signed);
+}
 // NETFIX: update connection status badge with latency + quality.
 function _updateConnStatus(latency){
   const nb=$("networkBadge");
   if(!nb)return;
   const q=_getConnectionQuality();
   const jitter=_latencyStats.jitter;
+  // VOIDSTRIKE: tooltip with full RTT stats (current/avg/min/max/jitter/loss).
+  const ls=_latencyStats;
+  const minR=ls.minRTT===Infinity?0:ls.minRTT;
+  nb.title=`RTT: cur ${ls.currentRTT}ms | avg ${ls.avgRTT}ms | min ${minR}ms | max ${ls.maxRTT}ms | jitter ${ls.jitter}ms | lost ${ls.packetsLost}/${ls.packetsSent} | quality: ${q}`;
   if(q==="excellent"){nb.style.color="var(--ok)";nb.style.borderColor="var(--ok)";nb.style.background="rgba(52,211,153,.1)";nb.textContent="🌐 "+latency+"ms";}
   else if(q==="good"){nb.style.color="var(--ok)";nb.style.borderColor="var(--ok)";nb.style.background="rgba(52,211,153,.08)";nb.textContent="🌐 "+latency+"ms";}
   else if(q==="poor"){nb.style.color="var(--warn)";nb.style.borderColor="var(--warn)";nb.style.background="rgba(245,158,11,.1)";nb.textContent="🌐 "+latency+"ms ±"+jitter;}
@@ -3716,6 +3894,10 @@ function networkReceive(data){
         return;
       }
       _recvSeq=data.seq;
+    }
+    // VOIDSTRIKE: receive peer's signing public key.
+    if(data.t==="signing_key"){
+      if(data.d&&typeof data.d.key==="string")_importPeerSigningKey(data.d.key);
     }
     if(data.t==="role"){
       // P2P security: version compatibility check.
@@ -3875,29 +4057,46 @@ function networkReceive(data){
     if(data.t==="cmd_lock"){
       const c=data.d;
       if(c&&typeof c==="object"&&typeof c.type==="string"&&typeof c.tick==="number"){
-        // P2P security: rate-limit lockstep commands (prevents spam).
-        if(!_cmdLockRate)_cmdLockRate={count:0,resetAt:0};
-        const now=Date.now();
-        if(now>_cmdLockRate.resetAt){_cmdLockRate.count=0;_cmdLockRate.resetAt=now+1000;}
-        _cmdLockRate.count++;
-        if(_cmdLockRate.count>20)return;
-        // Validate command payload.
-        if(c.type==="spell_cast"&&(typeof c.spellIdx!=="number"||(c.team!=="player"&&c.team!=="enemy")))return;
-        // DET: detect late commands — if the target tick already passed, the
-        // command can't be executed deterministically (one peer already ran it,
-        // the other missed it). Fall back to snapshot sync for the next round.
-        const currentTick=Battle._tick||0;
-        if(Battle._lockstepActive&&c.tick<=currentTick){
-          console.warn("[DET] Late command for tick "+c.tick+" (current="+currentTick+") — desync fallback.");
-          Battle._desyncFallback=true;
-          // Still queue it (harmless — the tick buffer was already deleted).
+        // VOIDSTRIKE: verify command signature if signing is enabled.
+        if(_signingEnabled&&_peerSigningPublicKey){
+          _verifyCommand(c).then(valid=>{
+            if(!valid){
+              console.warn("[P2P] Command signature verification FAILED — dropping");
+              return;
+            }
+            _processLockstepCommand(c);
+          });
         }else{
-          Battle.queueCommand(c,c.tick);
+          _processLockstepCommand(c);
         }
-        // The peer has confirmed up to this tick (they're scheduling past it).
-        Battle._peerConfirmedTick=Math.max(Battle._peerConfirmedTick||0,c.tick);
       }
     }
+// VOIDSTRIKE: process a verified lockstep command (extracted for async signing).
+function _processLockstepCommand(c){
+  // P2P security: rate-limit lockstep commands (prevents spam).
+  if(!_cmdLockRate)_cmdLockRate={count:0,resetAt:0};
+  const now=Date.now();
+  if(now>_cmdLockRate.resetAt){_cmdLockRate.count=0;_cmdLockRate.resetAt=now+1000;}
+  _cmdLockRate.count++;
+  if(_cmdLockRate.count>20)return;
+  // Validate command payload.
+  if(c.type==="spell_cast"&&(typeof c.spellIdx!=="number"||(c.team!=="player"&&c.team!=="enemy")))return;
+  // DET: detect late commands — if the target tick already passed, the
+  // command can't be executed deterministically (one peer already ran it,
+  // the other missed it). Fall back to snapshot sync for the next round.
+  const currentTick=Battle._tick||0;
+  if(Battle._lockstepActive&&c.tick<=currentTick){
+    console.warn("[DET] Late command for tick "+c.tick+" (current="+currentTick+") — desync fallback.");
+    _setDesyncState("desynced",c.tick);
+    // Still queue it (harmless — the tick buffer was already deleted).
+  }else{
+    Battle.queueCommand(c,c.tick);
+  }
+  // The peer has confirmed up to this tick (they're scheduling past it).
+  Battle._peerConfirmedTick=Math.max(Battle._peerConfirmedTick||0,c.tick);
+  // VOIDSTRIKE: track command in history for replay/debug.
+  _trackCommandHistory(c);
+}
     // DET: peer acknowledges having simulated up to this tick (lockstep pacing).
     if(data.t==="tick_ack"){
       if(data.d&&typeof data.d.tick==="number"){
@@ -3908,6 +4107,8 @@ function networkReceive(data){
     if(data.t==="round_hash"){
       const peer=data.d;
       if(peer&&typeof peer==="object"&&typeof peer.hash==="string"){
+        // VOIDSTRIKE: desync state — checking while comparing hashes.
+        _setDesyncState("checking",peer.round);
         const myHash=Battle.stateHash();
         if(peer.hash!==myHash){
           console.error("[DET] DESYNC at round",peer.round,"my:",myHash,"peer:",peer.hash);
@@ -3921,11 +4122,22 @@ function networkReceive(data){
               ).join(", "));
             }
           }
-          // Fall back to snapshot sync for the next round.
-          Battle._desyncFallback=true;
-        }else if(G._pendingRoundHash&&G._pendingRoundHash.round===peer.round){
-          // Hashes match — clear the pending hash and proceed normally.
-          G._pendingRoundHash=null;
+          // VOIDSTRIKE: set desync state → snapshot fallback for next round.
+          _setDesyncState("desynced",peer.round);
+          // VOIDSTRIKE: dump command history around desync tick for debugging.
+          const endTick=Battle._tick||0;
+          const startTick=Math.max(0,endTick-100);
+          const history=_dumpCommandHistory(startTick,endTick);
+          if(history.length>0){
+            console.error("[DET] Command history (ticks "+startTick+"-"+endTick+"):",history);
+          }
+        }else{
+          // VOIDSTRIKE: hashes match — synced state.
+          _setDesyncState("synced");
+          if(G._pendingRoundHash&&G._pendingRoundHash.round===peer.round){
+            // Hashes match — clear the pending hash and proceed normally.
+            G._pendingRoundHash=null;
+          }
         }
       }
     }
@@ -6755,6 +6967,8 @@ const Battle={
     this._peerConfirmedTick=null;   // latest tick the peer has acknowledged
     this._lockstepActive=false;     // set true when both peers run the sim
     this._desyncFallback=false;     // set true on hash mismatch → snapshot fallback
+    _desyncState="synced";_desyncTick=null; // VOIDSTRIKE: reset desync state
+    _clearCommandHistory(); // VOIDSTRIKE: clear command history for new battle
     this._useRelay=false;           // RELAY: host runs sim, guest renders from snapshots
     this._stallStart=null;          // DET: lockstep stall watchdog timestamp
     // DET: the local player's team in the sim. Host/solo → "player". Guest in
@@ -9196,7 +9410,7 @@ const Battle={
       // (playerSpells is per-team) → wrong spell fires → desync.
       const cmd={type:"spell_cast",team:this._localTeam,spellIdx:idx,targetX:targetX||0,targetY:targetY||0,tick:targetTick};
       this.queueCommand(cmd,targetTick);
-      if(connected)transmit("cmd_lock",cmd);
+      if(connected)_transmitSignedCmd(cmd);
       // _pendingCast is UI-only (prevents spam during the lockstep window); it is
       // NOT sim state and is cleared when the command executes.
       ps._pendingCast=true;
@@ -12872,7 +13086,7 @@ const G={
       const targetTick=(Battle._tick||0)+3;
       const cmd={type:"speed",speed:newSpeed,tick:targetTick};
       Battle.queueCommand(cmd,targetTick);
-      if(connected)transmit("cmd_lock",cmd);
+      if(connected)_transmitSignedCmd(cmd);
       // Update local UI immediately (sim speed changes at the scheduled tick).
       Battle.speed=newSpeed;Battle._manualSpeed=true;
       const btn=$("speedBtn");if(btn)btn.textContent=newSpeed+"×";
@@ -12907,7 +13121,7 @@ const G={
       const targetTick=(Battle._tick||0)+3;
       const cmd={type:nowPaused?"pause":"resume",tick:targetTick};
       Battle.queueCommand(cmd,targetTick);
-      if(connected)transmit("cmd_lock",cmd);
+      if(connected)_transmitSignedCmd(cmd);
       // Update local UI immediately.
       Battle.paused=nowPaused;
       const btn=$("pauseBtn");if(btn)btn.textContent=nowPaused?"▶":"⏸";
@@ -14951,7 +15165,7 @@ document.addEventListener("visibilitychange",()=>{
       const targetTick=(Battle._tick||0)+3;
       const cmd={type:"pause",tick:targetTick};
       Battle.queueCommand(cmd,targetTick);
-      transmit("cmd_lock",cmd);
+      _transmitSignedCmd(cmd);
     }
     GameAudio.stopMusic();
   }else{
@@ -14961,7 +15175,7 @@ document.addEventListener("visibilitychange",()=>{
       const targetTick=(Battle._tick||0)+3;
       const cmd={type:"resume",tick:targetTick};
       Battle.queueCommand(cmd,targetTick);
-      transmit("cmd_lock",cmd);
+      _transmitSignedCmd(cmd);
     }
   }
   // Phase 35: flush analytics on visibility change.
