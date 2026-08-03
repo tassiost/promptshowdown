@@ -5806,59 +5806,135 @@ const SPELL_ENUM={
   fxType:["explosion","frost","lightning","poison_cloud","heal_glow","shockwave","fire_wall"],
 };
 // Phase 23: spell target resolution — returns {x,y} anchor point.
+// PERF-R13: optimized to avoid O(n²) nested filter+dist in cluster targeting.
 const SPELL_TARGET={
   enemy_cluster(team,b){
-    const enemies=b.units.filter(u=>u.h>0&&u.team!==team);
-    if(!enemies.length)return null;
-    let best=null,bestCount=0;
-    for(const e of enemies){
-      const c=enemies.filter(o=>dist(e,o)<80).length;
-      if(c>bestCount){bestCount=c;best=e;}
+    // PERF-R13: grid-based cluster counting (O(n)) instead of O(n²) filter+dist.
+    const cellSize=80,grid=new Map();
+    let count=0;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      count++;
+      const k=Math.floor(u.x/cellSize)+","+Math.floor(u.y/cellSize);
+      grid.set(k,(grid.get(k)||0)+1);
     }
-    return best||enemies[0];
+    if(!count)return null;
+    let best=null,bestCount=0;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      const cx=Math.floor(u.x/cellSize),cy=Math.floor(u.y/cellSize);
+      let c=0;
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+        const v=grid.get((cx+dx)+","+(cy+dy));
+        if(v)c+=v;
+      }
+      if(c>bestCount){bestCount=c;best=u;}
+    }
+    return best||b.units.find(u=>u.h>0&&u.team!==team);
   },
   enemy_frontline(team,b){
-    const es=b.units.filter(u=>u.h>0&&u.team!==team);
-    if(!es.length)return null;
-    return team==="player"?es.reduce((a,c)=>c.y<a.y?c:a,es[0]):es.reduce((a,c)=>c.y>a.y?c:a,es[0]);
+    // PERF-R13: single-pass loop (avoid filter + reduce).
+    let best=null;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      if(!best)best=u;
+      else if(team==="player"?u.y<best.y:u.y>best.y)best=u;
+    }
+    return best;
   },
   enemy_backline(team,b){
-    const es=b.units.filter(u=>u.h>0&&u.team!==team);
-    if(!es.length)return null;
-    return team==="player"?es.reduce((a,c)=>c.y>a.y?c:a,es[0]):es.reduce((a,c)=>c.y<a.y?c:a,es[0]);
+    // PERF-R13: single-pass loop (avoid filter + reduce).
+    let best=null;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      if(!best)best=u;
+      else if(team==="player"?u.y>best.y:u.y<best.y)best=u;
+    }
+    return best;
   },
   enemy_carry(team,b){
-    const es=b.units.filter(u=>u.h>0&&u.team!==team&&u.role==="carry");
-    const pool=es.length?es:b.units.filter(u=>u.h>0&&u.team!==team);
-    return pool[0]||null;
+    // PERF-R13: single-pass loop (avoid 2 filter calls).
+    let carry=null,first=null;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      if(!first)first=u;
+      if(u.role==="carry"){carry=u;break;}
+    }
+    return carry||first||null;
   },
   lowest_hp_enemy(team,b){
-    const es=b.units.filter(u=>u.h>0&&u.team!==team);
-    return es.length?es.reduce((a,c)=>c.h<a.h?c:a,es[0]):null;
+    // PERF-R13: single-pass loop (avoid filter + reduce).
+    let best=null;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      if(!best||u.h<best.h)best=u;
+    }
+    return best;
   },
   highest_hp_enemy(team,b){
-    const es=b.units.filter(u=>u.h>0&&u.team!==team);
-    return es.length?es.reduce((a,c)=>c.h>a.h?c:a,es[0]):null;
+    // PERF-R13: single-pass loop (avoid filter + reduce).
+    let best=null;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team===team)continue;
+      if(!best||u.h>best.h)best=u;
+    }
+    return best;
   },
   random_enemy(team,b){
-    const es=b.units.filter(u=>u.h>0&&u.team!==team);
-    // DET: randInt for deterministic random target selection.
-    return es.length?es[randInt(0,es.length)]:null;
+    // PERF-R13: count loop (avoid filter allocation).
+    let count=0;
+    for(let i=0;i<b.units.length;i++){const u=b.units[i];if(u.h>0&&u.team!==team)count++;}
+    if(!count)return null;
+    let pick=randInt(0,count);
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h>0&&u.team!==team){if(pick===0)return u;pick--;}
+    }
+    return null;
   },
   center(team,b){return{x:200,y:275};},
   ally_cluster(team,b){
-    const allies=b.units.filter(u=>u.h>0&&u.team===team);
-    if(!allies.length)return null;
-    let best=null,bestCount=0;
-    for(const a of allies){
-      const c=allies.filter(o=>dist(a,o)<80).length;
-      if(c>bestCount){bestCount=c;best=a;}
+    // PERF-R13: grid-based cluster counting (O(n)) instead of O(n²) filter+dist.
+    const cellSize=80,grid=new Map();
+    let count=0;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team!==team)continue;
+      count++;
+      const k=Math.floor(u.x/cellSize)+","+Math.floor(u.y/cellSize);
+      grid.set(k,(grid.get(k)||0)+1);
     }
-    return best||allies[0];
+    if(!count)return null;
+    let best=null,bestCount=0;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team!==team)continue;
+      const cx=Math.floor(u.x/cellSize),cy=Math.floor(u.y/cellSize);
+      let c=0;
+      for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+        const v=grid.get((cx+dx)+","+(cy+dy));
+        if(v)c+=v;
+      }
+      if(c>bestCount){bestCount=c;best=u;}
+    }
+    return best||b.units.find(u=>u.h>0&&u.team===team);
   },
   lowest_ally(team,b){
-    const allies=b.units.filter(u=>u.h>0&&u.team===team);
-    return allies.length?allies.reduce((a,c)=>c.h<a.h?c:a,allies[0]):null;
+    // PERF-R13: single-pass loop (avoid filter + reduce).
+    let best=null;
+    for(let i=0;i<b.units.length;i++){
+      const u=b.units[i];
+      if(u.h<=0||u.team!==team)continue;
+      if(!best||u.h<best.h)best=u;
+    }
+    return best;
   },
 };
 // Phase 23: spell shape — returns list of affected units given anchor + spec.
@@ -5917,15 +5993,18 @@ const SPELL_SHAPE={
   },
 };
 // Phase 23: spell effect — applies the effect to affected units.
+// PERF-R13: pooled synth for lastAttacker (avoid per-hit object allocation).
+const _spellSynth={team:"",n:"Spell",id:"",h:1,mh:1,d:0,baseD:0,r:0,x:0,y:0,role:"",crit:0,ability:"none",dmgDealt:0};
 const SPELL_EFFECT={
-  damage(units,spec,team){units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;u.lastAttacker={team:team,n:"Spell",id:team+"_spell"};if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
-  damage_over_time(units,spec,team){units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;u.lastAttacker={team:team,n:"Spell",id:team+"_spell"};});},
+  damage(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;u.lastAttacker=_spellSynth;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
+  damage_over_time(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;u.lastAttacker=_spellSynth;});},
   slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
   stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
   heal_allies(units,spec){units.forEach(u=>{const heal=spec.magnitude||30;u.h=Math.min(u.mh,u.h+heal);if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,"+"+Math.round(heal),u.team,false);});},
   heal_over_time(units,spec){units.forEach(u=>{u.regen=Math.max(u.regen||0,spec.duration||3);u.regenAmt=Math.max(u.regenAmt||0,spec.magnitude||10);u.regenTick=0;});},
   shield_allies(units,spec){units.forEach(u=>{u.shieldActive=Math.max(u.shieldActive,spec.duration||2);});},
   summon(units,spec,team,b){
+    _spellSynth.team=team;_spellSynth.id=team+"_spell";
     const count=Math.min(spec.magnitude>40?3:spec.magnitude>20?2:1,3);
     const anchor=units[0]||{x:team==="player"?100:300,y:300};
     for(let i=0;i<count;i++){
@@ -5937,7 +6016,7 @@ const SPELL_EFFECT={
       minion.x=anchor.x+randRange(-20,20);
       minion.y=anchor.y+randRange(-20,20);
       minion.ttl=8;
-      minion.lastAttacker={team,n:"Spell",id:team+"_spell"};
+      minion.lastAttacker=_spellSynth;
       b.units.push(b.initRuntime(minion));
       BattleFX.onSpawn(minion);
     }
@@ -6046,6 +6125,9 @@ const Spell={
   // Phase 23: tick persistent zones each frame.
   tickZones(battle,dt){
     if(!battle.zones)return;
+    // PERF-R13: pooled synth for lastAttacker (avoid per-hit object allocation).
+    if(!this._zoneSynth)this._zoneSynth={team:"",n:"Spell",id:"",h:1,mh:1,d:0,baseD:0,r:0,x:0,y:0,role:"",crit:0,ability:"none",dmgDealt:0};
+    const synth=this._zoneSynth;
     // PERF-R12: index loop (avoid for...of iterator allocation).
     for(let zi=0;zi<battle.zones.length;zi++){
       const z=battle.zones[zi];
@@ -6069,11 +6151,13 @@ const Spell={
           if(dx*dx+dy*dy>=zr2)continue;
           if(allyZone?u.team===z.team:u.team!==z.team)aff.push(u);
         }
+        // Update pooled synth for this zone (reused across all affected units).
+        synth.team=z.team;synth.id=z.team+"_spell";
         if(z.spec.effect==="damage"){
-          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];const dmg=z.spec.magnitude||10;u.h-=dmg;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");}
+          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];const dmg=z.spec.magnitude||10;u.h-=dmg;u.lastAttacker=synth;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");}
         }else if(z.spec.effect==="damage_over_time"){
           // Apply poison status (DoT) — uses Math.max to avoid overwriting higher poison.
-          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.poison=Math.max(u.poison||0,z.spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;u.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};}
+          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.poison=Math.max(u.poison||0,z.spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;u.lastAttacker=synth;}
         }else if(z.spec.effect==="slow"){
           for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.slow=Math.max(u.slow,z.spec.duration||2);}
         }else if(z.spec.effect==="heal_allies"){
@@ -6102,7 +6186,7 @@ const Spell={
             minion.x=z.x+randRange(-20,20);
             minion.y=z.y+randRange(-20,20);
             minion.ttl=8;
-            minion.lastAttacker={team:z.team,n:"Spell",id:z.team+"_spell"};
+            minion.lastAttacker=synth;
             battle.units.push(battle.initRuntime(minion));
             BattleFX.onSpawn(minion);
           }
@@ -6703,7 +6787,7 @@ const Battle={
     // Create new object (cheaper than delete which deoptimizes hidden class).
     _targetCache={};
     // PERF-R12: increment closestEnemy temporal coherence frame counter.
-    // PERF-R11: cache taunters per frame (avoids O(n) find per unit).
+    // PERF-R12: cache taunters per frame (avoids O(n) find per unit).
     const playerTaunter=players.find(e=>e.ability==="taunt");
     const enemyTaunter=enemies.find(e=>e.ability==="taunt");
     // PERF-R12: build spatial grid for avoidance (avoids O(n²) ally scan).
@@ -7022,10 +7106,11 @@ const Battle={
     if(attacker.ability==="slow")target.slow=Math.max(target.slow,1.0);
     // splash: AoE damage to enemies near target (50% damage)
     if(attacker.ability==="splash"){
-      // PERF-R12: index loop (avoid for...of iterator allocation).
+      // PERF-R13: squared distance check (avoid DMath.sqrt per enemy).
+      const splashR2=40*40;
       for(let ei=0;ei<enemies.length;ei++){
         const e=enemies[ei];
-        if(e!==target&&e.h>0&&dist(target,e)<40){const splashDmg=dmg*0.5;e.h-=splashDmg;if(e.h<0)e.h=0;e.lastAttacker=attacker;if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=splashDmg;}
+        if(e!==target&&e.h>0){const dx=target.x-e.x,dy=target.y-e.y;if(dx*dx+dy*dy<splashR2){const splashDmg=dmg*0.5;e.h-=splashDmg;if(e.h<0)e.h=0;e.lastAttacker=attacker;if(attacker.dmgDealt!==undefined)attacker.dmgDealt+=splashDmg;}}
       }
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
@@ -7075,10 +7160,11 @@ const Battle={
         break;
       }
       case "explode":{
-        // PERF-R12: index loop with inline filter (avoid filter allocation + for...of).
+        // PERF-R13: squared distance check (avoid DMath.sqrt per enemy).
+        const explodeR2=60*60;
         for(let ei=0;ei<enemies.length;ei++){
           const e=enemies[ei];
-          if(e.h>0&&dist(u,e)<60)this.takeDamage(u,e,enemies);
+          if(e.h>0){const dx=u.x-e.x,dy=u.y-e.y;if(dx*dx+dy*dy<explodeR2)this.takeDamage(u,e,enemies);}
         }
         u.abCool=5.0;
         this.log(u.n+" explodes!");
@@ -7086,10 +7172,11 @@ const Battle={
         break;
       }
       case "heal_burst":{
-        // PERF-R12: index loop with inline filter (avoid filter allocation + for...of).
+        // PERF-R13: squared distance check (avoid DMath.sqrt per ally).
+        const healR2=60*60;
         for(let ai=0;ai<allies.length;ai++){
           const a=allies[ai];
-          if(a.h>0&&dist(u,a)<60)a.h=Math.min(a.mh,a.h+u.d*2);
+          if(a.h>0){const dx=u.x-a.x,dy=u.y-a.y;if(dx*dx+dy*dy<healR2)a.h=Math.min(a.mh,a.h+u.d*2);}
         }
         u.abCool=4.0;
         this.log(u.n+" heal burst!");
@@ -7124,10 +7211,11 @@ const Battle={
         break;
       }
       case "cleanse":{
-        // PERF-R12: index loop with inline filter (avoid filter allocation + for...of).
+        // PERF-R13: squared distance check (avoid DMath.sqrt per ally).
+        const cleanseR2=80*80;
         for(let ai=0;ai<allies.length;ai++){
           const a=allies[ai];
-          if(a.h>0&&dist(u,a)<80){a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;}
+          if(a.h>0){const dx=u.x-a.x,dy=u.y-a.y;if(dx*dx+dy*dy<cleanseR2){a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;}}
         }
         u.abCool=5.0;
         this.log(u.n+" cleanses allies!");
@@ -7135,13 +7223,21 @@ const Battle={
         break;
       }
       case "chain_lightning":{
-        const targets=enemies.filter(e=>e.h>0).sort((a,b)=>dist(u,a)-dist(u,b)).slice(0,3);
-        let last=u;
-        for(const t of targets){
-          this.takeDamage(u,t,enemies,u.d*0.8);
-          BattleFX.burst(t.x,t.y,"#4af",4,30);
-          last=t;
+        // PERF-R13: find 3 closest enemies without filter+sort+slice (3 allocations).
+        // Single-pass selection: track top-3 by squared distance.
+        let t1=null,t2=null,t3=null,d1=Infinity,d2=Infinity,d3=Infinity;
+        for(let ei=0;ei<enemies.length;ei++){
+          const e=enemies[ei];
+          if(e.h<=0)continue;
+          const dx=u.x-e.x,dy=u.y-e.y,d=dx*dx+dy*dy;
+          if(d<d1){t3=t2;d3=d2;t2=t1;d2=d1;t1=e;d1=d;}
+          else if(d<d2){t3=t2;d3=d2;t2=e;d2=d;}
+          else if(d<d3){t3=e;d3=d;}
         }
+        let last=u;
+        if(t1){this.takeDamage(u,t1,enemies,u.d*0.8);BattleFX.burst(t1.x,t1.y,"#4af",4,30);last=t1;}
+        if(t2){this.takeDamage(u,t2,enemies,u.d*0.8);BattleFX.burst(t2.x,t2.y,"#4af",4,30);last=t2;}
+        if(t3){this.takeDamage(u,t3,enemies,u.d*0.8);BattleFX.burst(t3.x,t3.y,"#4af",4,30);last=t3;}
         u.abCool=4.0;
         this.log(u.n+" chains lightning!");
         GameAudio.sfx("attack_ranged",{pitch:400});
@@ -8370,10 +8466,11 @@ const Battle={
     }
     this.winner=playerAlive?"player":(enemyAlive?"enemy":"draw");
     // Clutch sound: player wins with a unit at very low HP.
-    if(this.winner==="player"){
-      const survivors=this.units.filter(u=>u.team==="player"&&u.h>0);
-      const clutchSurvivor=survivors.find(u=>u.h<u.mh*0.15);
-      if(clutchSurvivor)GameAudio.sfx("clutch");
+    // PERF-R13: use pre-built alive array instead of filter() allocation.
+    if(this.winner==="player"&&players){
+      for(let i=0;i<players.length;i++){
+        if(players[i].h<players[i].mh*0.15){GameAudio.sfx("clutch");break;}
+      }
     }
     this._endBattle();
   },
@@ -11299,44 +11396,37 @@ const G={
     if(this.snapTimer){clearInterval(this.snapTimer);this.snapTimer=null;}
   },
 
+  // NETFIX: unified survivor cleanup — removes transient battle state from units.
+  // Used for both player and enemy survivors (was duplicated inline).
+  _cleanSurvivors(allUnits,team){
+    return allUnits.filter(u=>u.team===team).map(u=>{
+      const clean={...u};
+      delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
+      delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
+      delete clean.shieldActive;delete clean.deathT;delete clean.animState;delete clean.animT;
+      delete clean.attackT;delete clean.movedThisFrame;delete clean.attackedThisFrame;
+      delete clean.prevX;delete clean.prevY;delete clean.prevH;delete clean.spawnT;
+      delete clean.hitFlash;delete clean.lungeT;delete clean.lungeDir;delete clean.abFlash;
+      delete clean.abFlashColor;delete clean.dmgDealt;delete clean.kills;delete clean.lastAttacker;
+      delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
+      delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
+      delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
+      if(clean._baseS){clean.s=clean._baseS;delete clean._baseS;} // restore base speed (undo arena boost)
+      return clean;
+    });
+  },
+
   // Phase 8: Battle ended — delegate to Match for round/match logic.
   onBattleEnd(winner){
     this.stopSnapshots();
     // Continuous draft: store ALL units for next round (killed units revive).
     // Use _allUnits which tracks every unit (dead units are removed from Battle.units
     // after death animation, but kept in _allUnits for revival).
+    // NETFIX: unified survivor cleanup — was 2 identical blocks (player/enemy).
     if(Match.active){
       const allUnits=Battle._allUnits||Battle._finalUnits||Battle.units||[];
-      this.playerSurvivors=allUnits.filter(u=>u.team==="player").map(u=>{
-        const clean={...u};
-        delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
-        delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
-        delete clean.shieldActive;delete clean.deathT;delete clean.animState;delete clean.animT;
-        delete clean.attackT;delete clean.movedThisFrame;delete clean.attackedThisFrame;
-        delete clean.prevX;delete clean.prevY;delete clean.prevH;delete clean.spawnT;
-        delete clean.hitFlash;delete clean.lungeT;delete clean.lungeDir;delete clean.abFlash;
-        delete clean.abFlashColor;delete clean.dmgDealt;delete clean.kills;delete clean.lastAttacker;
-        delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
-        delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
-        delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
-        if(clean._baseS){clean.s=clean._baseS;delete clean._baseS;} // restore base speed (undo arena boost)
-        return clean;
-      });
-      this.enemySurvivors=allUnits.filter(u=>u.team==="enemy").map(u=>{
-        const clean={...u};
-        delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
-        delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
-        delete clean.shieldActive;delete clean.deathT;delete clean.animState;delete clean.animT;
-        delete clean.attackT;delete clean.movedThisFrame;delete clean.attackedThisFrame;
-        delete clean.prevX;delete clean.prevY;delete clean.prevH;delete clean.spawnT;
-        delete clean.hitFlash;delete clean.lungeT;delete clean.lungeDir;delete clean.abFlash;
-        delete clean.abFlashColor;delete clean.dmgDealt;delete clean.kills;delete clean.lastAttacker;
-        delete clean.hitReact;delete clean.hitReactDir;delete clean._buffDmgApplied;
-        delete clean._buffSpeedApplied;delete clean._baseSpeedMod;delete clean.firstHitUsed;
-        delete clean.hasBeenHit;delete clean.patrolT;delete clean.team;
-        if(clean._baseS){clean.s=clean._baseS;delete clean._baseS;} // restore base speed (undo arena boost)
-        return clean;
-      });
+      this.playerSurvivors=this._cleanSurvivors(allUnits,"player");
+      this.enemySurvivors=this._cleanSurvivors(allUnits,"enemy");
     }
     // Phase 16: accumulate death log across rounds for post-match hint.
     if(Battle.deathLog&&Battle.deathLog.length){
