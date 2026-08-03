@@ -27,3 +27,4 @@ perf_results.json
 # Python
 __pycache__/
 *.pyc
+reference/

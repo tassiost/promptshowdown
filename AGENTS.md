@@ -88,8 +88,13 @@ independently from the same seed + armies, syncing only commands.
 
 - **[docs/FILE_MAP.md](docs/FILE_MAP.md)** — Line-by-line map of index.html (where everything lives)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Full system architecture
+- **[RESEARCH.md](RESEARCH.md)** — Autobattler research findings (Machine Guard, Pokemon Auto Chess,
+  chibi-arena, Lagless, OpenFront, TFT, Phaser-AI-First-Starter, multiplayer architecture comparison)
+- **[NETRELAY.md](NETRELAY.md)** — Host-authoritative relay plan (eliminate desync, preserve lockstep)
 - **[PERF-R12.md](PERF-R12.md)** — Performance optimization details (90 optimizations)
 - **[BUGS.md](BUGS.md)** — Bug hunt log (213 bugs found and fixed)
+- **[reference/](reference/)** — Cloned reference projects (gitignored, local only)
+  - **Machine-Guard-Corps/** — Sci-fi lane defense autobattler (vanilla JS, same constraints as us)
 - **[archive/](archive/)** — Historical session logs (BUG-HUNT-R*, OVERNIGHT*, PLAN-TIER*)
 
 ## Code Style
