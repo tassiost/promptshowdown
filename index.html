@@ -5549,20 +5549,20 @@ const BattleFX={
   // Crit burst: gold flash + 6-particle spark + screen shake.
   onCrit(u){
     u.hitFlash=0.08;
-    if(G.save?.reducedMotion)return; // skip particles/shake in reduced motion
+    if(G.save?.settings?.reducedMotion)return; // skip particles/shake in reduced motion
     this.burst(u.x,u.y,"#fd4",6,80);
     this.shake(3);
   },
   // Death burst: expand + fade + 8 particles.
   onDeath(u){
-    if(G.save?.reducedMotion)return;
+    if(G.save?.settings?.reducedMotion)return;
     this.burst(u.x,u.y,u.c,8,60);
     if(u.role==="carry")this.shake(4); // carry death = bigger shake
   },
   // Phase 20: ramp kill — golden particle burst + brief size pulse.
   onKill(u){
     u.hitFlash=0.08;
-    if(G.save?.reducedMotion)return;
+    if(G.save?.settings?.reducedMotion)return;
     this.burst(u.x,u.y,"#fd4",5,70);
     GameAudio.sfx("ramp_up"); // Phase 30
   },
@@ -5571,8 +5571,9 @@ const BattleFX={
     if(!anchor)return;
     const ax=anchor.x??0,ay=anchor.y??0;
     // Mark affected units with hit flash (always, even in reduced motion).
-    affected.forEach(u=>{u.hitFlash=0.1;});
-    if(G.save?.reducedMotion)return; // skip particles/shake in reduced motion
+    // PERF-R13: index loop (avoid forEach closure allocation).
+    for(let ai=0;ai<affected.length;ai++)affected[ai].hitFlash=0.1;
+    if(G.save?.settings?.reducedMotion)return; // skip particles/shake in reduced motion
     // PERF-R12: use hoisted SPELL_FX_COLORS constant (avoid per-call object allocation).
     const color=SPELL_FX_COLORS[spec.fxType]||"#fff";
     const count=spec.shape==="persistent_zone"?8:spec.shape==="circle_aoe"?12:6;
