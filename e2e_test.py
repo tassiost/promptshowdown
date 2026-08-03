@@ -1110,8 +1110,159 @@ def run():
         else:
             fail("late command","test returned no result")
 
-        # === TEST 23: Console Errors ===
-        print("\n=== TEST 23: Console Errors ===")
+        # === TEST 23: Continuous Draft Carry-Over (Single Player) ===
+        # Verifies that units accumulate across rounds: survivors + new picks.
+        # Dead units revive to full HP. Army should grow each round.
+        print("\n=== TEST 23: Continuous Draft Carry-Over (SP) ===")
+        sp_carry = page.evaluate("""() => {
+            const log = [];
+            const mkUnit = (n, team, x, y) => {
+                const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: Math.random()*10000|0,
+                    ability:'none', abilityTrigger:'never',
+                    targeting:'closest', movement:'chase', attackCondition:'always',
+                    role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                u.team = team; u.x = x; u.y = y;
+                return u;
+            };
+            window.__setP2PState(false, 'none', false);
+
+            Match.start(3, w => G.onMatchEnd(w));
+            // R1
+            G.selected = [mkUnit('Knight','player',80,280), mkUnit('Archer','player',80,360)];
+            G._draftBotPicks = [mkUnit('Goblin','enemy',320,280), mkUnit('Orc','enemy',320,360)];
+            const pa1 = G.buildArmy(), ea1 = G.buildBotArmy();
+            Battle._localTeam='player'; Battle._lockstepActive=false;
+            Battle.start(pa1, ea1, w => G.onBattleEnd(w), {player:[],enemy:[]});
+            Battle.skip();
+            // R2 — must run battle to generate survivors
+            Match.startRound();
+            G.selected = [mkUnit('Wizard','player',80,440)];
+            G._draftBotPicks = [mkUnit('Troll','enemy',320,440)];
+            const pa2 = G.buildArmy(), ea2 = G.buildBotArmy();
+            Battle._localTeam='player'; Battle._lockstepActive=false;
+            Battle.start(pa2, ea2, w => G.onBattleEnd(w), {player:[],enemy:[]});
+            Battle.skip();
+            // R3
+            Match.startRound();
+            G.selected = [mkUnit('Dragon','player',80,200)];
+            G._draftBotPicks = [mkUnit('Skeleton','enemy',320,200)];
+            const pa3 = G.buildArmy(), ea3 = G.buildBotArmy();
+
+            const result = {
+                r1Player: pa1.length, r1Enemy: ea1.length,
+                r2Player: pa2.length, r2Enemy: ea2.length,
+                r3Player: pa3.length, r3Enemy: ea3.length,
+                r2Names: pa2.map(u=>u.n).join(','),
+                r3Names: pa3.map(u=>u.n).join(','),
+                r2AllHealed: pa2.every(u=>u.h===u.mh),
+                r3AllHealed: pa3.every(u=>u.h===u.mh),
+            };
+            window.__setP2PState(false, 'none', false);
+            Match.active = false;
+            return result;
+        }""")
+        if sp_carry:
+            if sp_carry["r1Player"]==2 and sp_carry["r1Enemy"]==2:
+                ok(f"SP carry: R1 army correct ({sp_carry['r1Player']}v{sp_carry['r1Enemy']})")
+            else:
+                fail("SP carry R1",f"expected 2v2, got {sp_carry['r1Player']}v{sp_carry['r1Enemy']}")
+            if sp_carry["r2Player"]==3 and sp_carry["r2Enemy"]==3:
+                ok(f"SP carry: R2 army grew ({sp_carry['r2Player']}v{sp_carry['r2Enemy']})")
+            else:
+                fail("SP carry R2",f"expected 3v3, got {sp_carry['r2Player']}v{sp_carry['r2Enemy']}")
+            if sp_carry["r3Player"]==4 and sp_carry["r3Enemy"]==4:
+                ok(f"SP carry: R3 army grew ({sp_carry['r3Player']}v{sp_carry['r3Enemy']})")
+            else:
+                fail("SP carry R3",f"expected 4v4, got {sp_carry['r3Player']}v{sp_carry['r3Enemy']}")
+            if sp_carry["r3Names"]=="Knight,Archer,Wizard,Dragon":
+                ok(f"SP carry: R3 names correct ([{sp_carry['r3Names']}])")
+            else:
+                fail("SP carry R3 names",f"got [{sp_carry['r3Names']}]")
+            if sp_carry["r3AllHealed"]:
+                ok("SP carry: all units healed to full between rounds")
+            else:
+                fail("SP carry","units not healed to full")
+        else:
+            fail("SP carry","test returned no result")
+
+        # === TEST 24: Continuous Draft Carry-Over (Multiplayer) ===
+        # Verifies that BOTH host and guest armies accumulate across rounds in MP.
+        # Bug: guest army was wiped each round (only new picks, no survivors).
+        print("\n=== TEST 24: Continuous Draft Carry-Over (MP) ===")
+        mp_carry = page.evaluate("""() => {
+            const mkUnit = (n, team, x, y) => {
+                const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: Math.random()*10000|0,
+                    ability:'none', abilityTrigger:'never',
+                    targeting:'closest', movement:'chase', attackCondition:'always',
+                    role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                u.team = team; u.x = x; u.y = y;
+                return u;
+            };
+            window.__setP2PState(true, 'host', false);
+
+            Match.start(3, w => G.onMatchEnd(w));
+            // R1
+            G.selected = [mkUnit('Knight','player',80,280), mkUnit('Archer','player',80,360)];
+            const gp1 = [mkUnit('Goblin','enemy',320,280), mkUnit('Orc','enemy',320,360)];
+            G.pendingHostArmy = G.buildArmy();
+            G.startHostBattle(gp1, {});
+            Battle.skip();
+            // R2
+            Match.startRound();
+            G.selected = [mkUnit('Wizard','player',80,440)];
+            const gp2 = [mkUnit('Troll','enemy',320,440)];
+            G.pendingHostArmy = G.buildArmy();
+            G.startHostBattle(gp2, {});
+            const r2Guest = Battle.units.filter(u=>u.team==='enemy');
+            Battle.skip();
+            // R3
+            Match.startRound();
+            G.selected = [mkUnit('Dragon','player',80,200)];
+            const gp3 = [mkUnit('Skeleton','enemy',320,200)];
+            G.pendingHostArmy = G.buildArmy();
+            G.startHostBattle(gp3, {});
+            const r3Guest = Battle.units.filter(u=>u.team==='enemy');
+            const r3Host = Battle.units.filter(u=>u.team==='player');
+
+            const result = {
+                r2GuestCount: r2Guest.length,
+                r2GuestNames: r2Guest.map(u=>u.n).join(','),
+                r3GuestCount: r3Guest.length,
+                r3GuestNames: r3Guest.map(u=>u.n).join(','),
+                r3HostCount: r3Host.length,
+                r3HostNames: r3Host.map(u=>u.n).join(','),
+                r3AllHealed: [...r3Host, ...r3Guest].every(u=>u.h===u.mh),
+            };
+            window.__setP2PState(false, 'none', false);
+            Match.active = false;
+            return result;
+        }""")
+        if mp_carry:
+            if mp_carry["r2GuestCount"]==3:
+                ok(f"MP carry: R2 guest army grew ({mp_carry['r2GuestCount']})")
+            else:
+                fail("MP carry R2 guest",f"expected 3, got {mp_carry['r2GuestCount']}")
+            if mp_carry["r3GuestCount"]==4:
+                ok(f"MP carry: R3 guest army grew ({mp_carry['r3GuestCount']})")
+            else:
+                fail("MP carry R3 guest",f"expected 4, got {mp_carry['r3GuestCount']}")
+            if mp_carry["r3GuestNames"]=="Goblin,Orc,Troll,Skeleton":
+                ok(f"MP carry: R3 guest names correct ([{mp_carry['r3GuestNames']}])")
+            else:
+                fail("MP carry R3 guest names",f"got [{mp_carry['r3GuestNames']}]")
+            if mp_carry["r3HostCount"]==4:
+                ok(f"MP carry: R3 host army grew ({mp_carry['r3HostCount']})")
+            else:
+                fail("MP carry R3 host",f"expected 4, got {mp_carry['r3HostCount']}")
+            if mp_carry["r3AllHealed"]:
+                ok("MP carry: all units healed to full between rounds")
+            else:
+                fail("MP carry","units not healed to full")
+        else:
+            fail("MP carry","test returned no result")
+
+        # === TEST 25: Console Errors ===
+        print("\n=== TEST 25: Console Errors ===")
         real_errors=[e for e in errors if "CORS" not in e and "Access-Control" not in e]
         if len(real_errors)==0: ok(f"no console errors ({len(errors)} CORS filtered)")
         else:

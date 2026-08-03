@@ -10853,7 +10853,29 @@ const G={
   // sync only commands). Otherwise fall back to host-authoritative snapshots.
   startHostBattle(guestSelected,guestUpgrades){
     this._pendingGuestDeck=null; // consume pending deck
-    const guestArmy=this.buildArmyFromSelected(guestSelected,guestUpgrades);
+    // Continuous draft: combine guest's survivors (enemy team in sim) with new picks.
+    // The host's enemySurvivors contains the guest's units from previous rounds
+    // (in lockstep, both peers run the same sim → host has full state).
+    const guestNew=this.buildArmyFromSelected(guestSelected,guestUpgrades);
+    const guestSurvivors=this.enemySurvivors.map(u=>{
+      const clean={...u};
+      delete clean._isSurvivor;
+      delete clean.team;
+      delete clean.deathT;
+      delete clean.animState;
+      delete clean.cool;
+      delete clean.abCool;
+      delete clean.poison;
+      delete clean.shieldActive;
+      delete clean.hitFlash;
+      delete clean.lungeT;
+      delete clean.dmgDealt;
+      delete clean.kills;
+      delete clean.lastAttacker;
+      clean.h=clean.mh; // heal to full between rounds
+      return clean;
+    });
+    const guestArmy=[...guestSurvivors,...guestNew];
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
     // DET: lockstep mode — both peers run the sim from the same seed + armies.
@@ -13416,6 +13438,8 @@ window.G=G;
 window.Match=Match;
 window.Battle=Battle;
 window.Bot=Bot;
+// DET: expose P2P state for testing (module-scoped let vars aren't on window by default).
+window.__setP2PState=(c,r,d)=>{connected=c;role=r;_peerDetCapable=d;};
 window.Quests=Quests;
 window.Analytics=Analytics;
 window.AdSDK=AdSDK;
