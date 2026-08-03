@@ -4305,6 +4305,10 @@ const ANIM_DURATIONS={idle:2.0,move:0.6,attack:0.4,death:0.5};
 // Face/eyes are drawn dynamically on top (they track targets).
 const SPRITE_CACHE_FRAMES=8; // frames per animation cycle
 const SPRITE_CACHE_PAD=4;     // padding around sprite bounds
+// Origin position within cache canvas: 70% from top leaves 30% below for legs/feet.
+// Sprite shapes extend from y≈-30 (head) to y≈+15 (legs) unscaled; the origin
+// (unit feet) must be high enough to fit the lower extent without clipping.
+const SPRITE_ORIGIN_FRAC=0.7;
 const _spriteCache=new Map(); // key → offscreen canvas
 // PERF-R12: hoist faced plans Set (avoid per-drawFace array allocation + includes scan).
 const _facedPlans=new Set(["humanoid","undead","demon","beast-man","ghost","flying","monopod","angel","wraith","gargoyle","spider","kraken","wyvern","treant"]);
@@ -4335,10 +4339,11 @@ function _getRecipeId(u){
 function _getSpriteCacheKey(u,state,frameIdx){
   // PERF-R12: cache key prefix on unit (avoids string concat per call).
   // Prefix = recipeId + "|z" + zRounded + "|" — only changes when z changes.
+  // v2: origin moved to 70% + bob removed from cache (format change).
   const zR=Math.round((u.z||10)*2)/2;
   if(u._spriteKeyZ!==zR){
     u._spriteKeyZ=zR;
-    u._spriteKeyPrefix=_getRecipeId(u)+"|z"+zR+"|";
+    u._spriteKeyPrefix=_getRecipeId(u)+"|z"+zR+"|v2|";
   }
   return u._spriteKeyPrefix+state+"|"+frameIdx;
 }
@@ -4365,8 +4370,9 @@ function _renderSpriteToCache(u,state,frameIdx){
   const oc=document.createElement("canvas");
   oc.width=spriteW;oc.height=spriteH;
   const sc=oc.getContext("2d");
-  // Center the sprite in the canvas. The unit's "origin" (u.x,u.y) maps to the center-bottom.
-  const cx=spriteW/2, cy=spriteH-SPRITE_CACHE_PAD;
+  // Origin at 70% from top — leaves room for legs/feet below the origin
+  // (shapes extend to y≈+15 unscaled, scaled by 1.8 = +27px below origin).
+  const cx=spriteW/2, cy=spriteH*SPRITE_ORIGIN_FRAC;
 
   // Set up the same transform stack as SpriteRenderer.draw, but centered on our canvas.
   sc.save();
@@ -4378,9 +4384,11 @@ function _renderSpriteToCache(u,state,frameIdx){
   if(u.team==="enemy"){sc.translate(cx,cy);sc.scale(-1,1);sc.translate(-cx,-cy);}
   if(rot){sc.translate(cx,cy);sc.rotate(rot*Math.PI/180);sc.translate(-cx,-cy);}
 
-  // Temporarily set u's position to the canvas center for shape rendering.
+  // Temporarily set u's position to the canvas origin for shape rendering.
+  // Bob is NOT baked into the cache — it's applied at draw time (smoother + avoids
+  // double-bob since the draw path also adds bobY to dy).
   const saveX=u.x, saveY=u.y, saveZ=u.z;
-  u.x=cx; u.y=cy+bobY; u.z=u.z||10;
+  u.x=cx; u.y=cy; u.z=u.z||10;
 
   // Draw ground decal — team-colored base ring for friend/foe identification.
   if(state!=="death"){
@@ -4867,7 +4875,7 @@ const SpriteRenderer={
         // PERF-R12: round to integer pixels (avoids sub-pixel anti-aliasing overhead).
         // Apply hitReact offset to draw position.
         const dx=((u.x+reactX) - sw/2)|0;
-        const dy=((u.y+reactY) - (sh-SPRITE_CACHE_PAD) + bobY)|0;
+        const dy=((u.y+reactY) - (sh*SPRITE_ORIGIN_FRAC) + bobY)|0;
         // Team-colored outline glow — subtle aura behind the unit for team ID.
         // Drawn before the sprite so it appears behind the body shapes.
         const oldAlpha=c.globalAlpha;
