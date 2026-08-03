@@ -11337,12 +11337,22 @@ const G={
     GameAudio.init();GameAudio.stopMusic();GameAudio.startMusic(); // Phase 30 + I1: switch to battle music
     const myArmy=this.buildArmy();
     // Phase 5: host-authoritative multiplayer.
+    // BUGFIX: set pendingHostArmy + send request_deck so the guest's deck reply
+    // triggers startHostBattle. Without this, the host shows the battle screen
+    // but never starts the sim (pendingHostArmy was only set in battle(), which
+    // is the old scout-screen flow — startBattle() is the continuous-draft flow).
     if(connected&&role==="host"){
+      this.pendingHostArmy=myArmy;
       this.screen("battle");
       this.updateLivesHUD();
       setText("turn","WAIT");
       setText("battleHP",myArmy.length);
       setText("battleEnemy","?");
+      transmit("request_deck",{});
+      // If guest deck already arrived (guest finished drafting first), start now.
+      if(this._pendingGuestDeck){
+        this.startHostBattle(this._pendingGuestDeck.selected,this._pendingGuestDeck.upgrades);
+      }
       return;
     }
     if(connected&&role==="guest"){
