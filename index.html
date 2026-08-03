@@ -5711,7 +5711,7 @@ function fxTypeFreq(fxType){
   }
 }
 
-const MAX_PARTICLES=60;
+const MAX_PARTICLES=100; // QUICKWIN: was 60 — felt sparse on big spells
 // PERF-R12: particle pool — reuse dead particles to avoid GC pressure.
 // Particles are created/destroyed frequently (every hit, aura tick, spell).
 const _particlePool=[];
@@ -10019,10 +10019,10 @@ const G={
     {n:"Knight",h:110,d:12,r:40,s:50,a:1,c:"#44aaff",ability:"none",rar:"common",cost:1,crit:0.05,
      targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"on_cooldown",moveSpeedMod:80,role:"frontline",weaponType:"shield",
      recipe:SPRITE_RECIPES.Knight},
-    {n:"Archer",h:55,d:18,r:170,s:65,a:1.2,c:"#44ff44",ability:"none",rar:"common",cost:2,crit:0.15,
+    {n:"Archer",h:55,d:15,r:170,s:65,a:1.2,c:"#44ff44",ability:"none",rar:"common",cost:2,crit:0.15,
      targeting:"closest",movement:"kite",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"carry",weaponType:"bow",
      recipe:SPRITE_RECIPES.Archer},
-    {n:"Slash",h:70,d:24,r:35,s:85,a:1,c:"#ff4444",ability:"splash",rar:"rare",cost:3,crit:0.10,
+    {n:"Slash",h:70,d:20,r:35,s:85,a:1,c:"#ff4444",ability:"splash",rar:"rare",cost:3,crit:0.10,
      targeting:"closest",movement:"chase",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:100,role:"counter",weaponType:"sword",
      recipe:SPRITE_RECIPES.Slash},
     {n:"Priest",h:65,d:10,r:100,s:50,a:1.5,c:"#ffdd44",ability:"heal",rar:"rare",cost:3,crit:0.05,
@@ -10060,7 +10060,7 @@ const G={
     {n:"Healer",h:70,d:8,r:110,s:45,a:1.5,c:"#ffdd44",ability:"heal_burst",rar:"rare",cost:3,crit:0.05,
      targeting:"lowest_ally",movement:"flee",attackCondition:"never",abilityTrigger:"when_ally_hurt",moveSpeedMod:90,role:"support",weaponType:"staff",
      recipe:SPRITE_RECIPES.Healer},
-    {n:"Tank",h:150,d:10,r:35,s:35,a:1.3,c:"#888888",ability:"none",rar:"rare",cost:3,crit:0.05,
+    {n:"Tank",h:150,d:13,r:35,s:35,a:1.3,c:"#888888",ability:"none",rar:"rare",cost:3,crit:0.05,
      targeting:"closest",movement:"hold_midpoint",attackCondition:"always",abilityTrigger:"never",moveSpeedMod:70,role:"frontline",weaponType:"shield",
      recipe:SPRITE_RECIPES.Tank}
   ],
@@ -11504,6 +11504,13 @@ const G={
       return card;
     }
     card.className="card rar-"+u.rar;
+    // QUICKWIN: native tooltip with full stats + ability description.
+    const draftAbDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?ABILITY_DESCRIPTIONS[u.ability]:"";
+    const draftTooltip=[`${u.h} HP · ${u.d} DMG · Range ${u.r} · Speed ${u.s} · Atk ${u.a}s`];
+    if(u.ability&&u.ability!=="none")draftTooltip.push(`Ability: ${u.ability}${draftAbDesc?" — "+draftAbDesc:""}`);
+    if(u.role)draftTooltip.push(`Role: ${u.role}`);
+    draftTooltip.push(`Rarity: ${u.rar} · Cost: ${u.cost}`);
+    card.title=draftTooltip.join("\n");
     // Phase 16: check if this unit fills a missing role (only after first pick).
     const pickedRoles=this.roundDraftState.picks.map(p=>p.role);
     const missingRole=this.roundDraftState.picks.length>0&&!pickedRoles.includes(u.role);
@@ -13525,6 +13532,13 @@ const G={
       }
       const card=document.createElement("div");
       card.className="card";
+      // QUICKWIN: native tooltip with full stats + ability description on hover.
+      const abDescText=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?ABILITY_DESCRIPTIONS[u.ability]:"";
+      const tooltipParts=[`${u.h} HP · ${u.d} DMG · Range ${u.r} · Speed ${u.s} · Atk ${u.a}s`];
+      if(u.ability&&u.ability!=="none")tooltipParts.push(`Ability: ${u.ability}${abDescText?" — "+abDescText:""}`);
+      if(u.role)tooltipParts.push(`Role: ${u.role}`);
+      tooltipParts.push(`Rarity: ${u.rar} · Cost: ${u.cost}`);
+      card.title=tooltipParts.join("\n");
       card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${masteryBadge}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       // F2: info button opens unit detail view.
