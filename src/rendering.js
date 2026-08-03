@@ -585,7 +585,7 @@ const SpriteRenderer={
       }
       const frameIdx=Math.min(SPRITE_CACHE_FRAMES-1,Math.floor(t*SPRITE_CACHE_FRAMES));
       const cached=_getCachedSprite(u,state,frameIdx);
-      if(cached){
+      if(cached&&cached.width>0&&cached.height>0){
         // PERF-R12: decrement hitReact only on cache hit (avoids double-decrement on miss).
         if(u.hitReact>0)u.hitReact-=0.015;
         // Draw the cached sprite image. Enemy flip + scale are baked into cache.

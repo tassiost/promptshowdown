@@ -14,4 +14,5 @@
 // INCLUDE: ./quests.js
 // INCLUDE: ./bot.js
 // INCLUDE: ./ui.js
+// INCLUDE: ./generated_units.js
 // INCLUDE: ./game.js
