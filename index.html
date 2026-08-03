@@ -3258,6 +3258,36 @@ const _p2pRateBucket={count:0,resetAt:0};
 let _cmdRate=null; // P2P command rate limiter (10/sec)
 let _cmdLockRate=null; // DET: lockstep command rate limiter (20/sec)
 let _peerDetCapable=false; // DET: peer supports determinism (lockstep)
+// NETFIX: ICE servers for NAT traversal — STUN for direct P2P, TURN for relay.
+// Without these, WebRTC fails on mobile (CG NAT), corporate networks, symmetric NAT.
+const ICE_SERVERS=[
+  // Google STUN (unlimited free, no credentials needed)
+  {urls:"stun:stun.l.google.com:19302"},
+  {urls:"stun:stun1.l.google.com:19302"},
+  // Open Relay Project TURN (free public credentials, port 80/443 for firewalls)
+  {urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},
+  {urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},
+  {urls:"turn:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"},
+  {urls:"turns:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"},
+];
+// NETFIX: connection state machine — clear states instead of boolean flags.
+// DISCONNECTED → CONNECTING → CONNECTED → IN_MATCH → RECONNECTING → DISCONNECTED
+let connState="DISCONNECTED";
+// NETFIX: heartbeat — detect connection loss before TCP timeout (~30s).
+// Ping every 2s, if 3 consecutive pongs miss (6s), mark as disconnected.
+let _heartbeatInterval=null;
+let _lastPongReceived=0;
+let _pingSeq=0;
+const HEARTBEAT_INTERVAL_MS=2000;
+const HEARTBEAT_TIMEOUT_MS=6000; // 3 missed pings
+// NETFIX: message sequence numbers — dedup + ordering.
+let _sendSeq=0;
+let _recvSeq=0;
+// NETFIX: reconnection — store room info to rejoin on disconnect.
+let _lastRoomId=null;
+let _lastRoomPassword=null;
+let _reconnectTimeout=null;
+const RECONNECT_GRACE_MS=30000; // 30s grace period
 function _p2pRateCheck(){
   const now=Date.now();
   if(now>_p2pRateBucket.resetAt){_p2pRateBucket.count=0;_p2pRateBucket.resetAt=now+P2P_RATE_WINDOW;}
@@ -3266,7 +3296,48 @@ function _p2pRateCheck(){
 }
 // P2P security: room password (optional). Set by host, verified by guest.
 let _roomPassword=null;
+// NETFIX: start heartbeat — called when peer joins.
+function _startHeartbeat(){
+  _stopHeartbeat();
+  _lastPongReceived=Date.now();
+  _pingSeq=0;
+  _heartbeatInterval=setInterval(()=>{
+    if(!connected){_stopHeartbeat();return;}
+    _pingSeq++;
+    transmit("ping",{ts:Date.now(),ps:_pingSeq},true);
+    // Check for timeout — 3 consecutive missed pongs.
+    if(Date.now()-_lastPongReceived>HEARTBEAT_TIMEOUT_MS){
+      console.warn("[P2P] Heartbeat timeout — peer unresponsive for "+((Date.now()-_lastPongReceived)/1000).toFixed(1)+"s");
+      _onHeartbeatTimeout();
+    }
+  },HEARTBEAT_INTERVAL_MS);
+}
+// NETFIX: stop heartbeat — called on disconnect / cleanup.
+function _stopHeartbeat(){
+  if(_heartbeatInterval){clearInterval(_heartbeatInterval);_heartbeatInterval=null;}
+}
+// NETFIX: heartbeat timeout — start reconnection grace period.
+function _onHeartbeatTimeout(){
+  if(connState!=="IN_MATCH"&&connState!=="CONNECTED")return;
+  if(connState==="CONNECTED"){
+    // Not in match — just disconnect.
+    _handlePeerLeave();
+    return;
+  }
+  // In match — start grace period if not already.
+  if(Match.active&&role==="host"&&!Match._graceActive){
+    Match.gracefulDisconnect();
+  }else if(Match.active&&role==="guest"&&!Match._graceActive){
+    Match.active=false;
+    Battle.stop();
+    G.stopSnapshots();
+    const opponentPicks=Battle.units.filter(u=>u.team==="player").map(u=>unit(u));
+    showDisconnectPrompt(opponentPicks);
+  }
+}
 function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=null;connected=false;role="none";_p2pRateBucket.count=0;
+  _stopHeartbeat();
+  connState="DISCONNECTED";
   // DET: clear lockstep state so the sim doesn't stall waiting for peer acks.
   _peerDetCapable=false;
   if(typeof Battle!=="undefined"){
@@ -3274,6 +3345,10 @@ function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=nul
     Battle._peerConfirmedTick=null;
     Battle._stallStart=null;
   }
+  // NETFIX: reset sequence numbers + stop heartbeat on full disconnect.
+  _sendSeq=0;
+  _recvSeq=0;
+  _stopHeartbeat();
 }}
 
 function setupNetwork(id,password){
@@ -3288,7 +3363,13 @@ function setupNetwork(id,password){
     let roomId=id;
     if(password){roomId=id+":pw:"+password;}
     _roomPassword=password||null;
-    room=joinRoom({appId:"prompt-showdown-v4"},roomId);
+    // NETFIX: store room info for reconnection.
+    _lastRoomId=roomId;
+    _lastRoomPassword=password||null;
+    // NETFIX: pass ICE servers (STUN+TURN) for NAT traversal.
+    // Without TURN, connections fail on mobile (CG NAT) and corporate networks.
+    room=joinRoom({appId:"prompt-showdown-v4",rtcConfig:{iceServers:ICE_SERVERS}},roomId);
+    connState="CONNECTING";
     let action=room.makeAction("game");
     // trystero v0.25+ returns {send, onMessage, onReceiveProgress}
     sendNet=action.send||action[0];
@@ -3296,11 +3377,14 @@ function setupNetwork(id,password){
     else if(typeof action[1]==="function")action[1](data=>{if(data)networkReceive(data);});
     room.onPeerJoin=()=>{
       connected=true;
+      connState=Match.active?"IN_MATCH":"CONNECTED";
       setText("connection",t("status_connected"));
       const np=$("netPill");if(np)np.style.display="inline-flex";
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
       G.cancelReconnect();
+      // NETFIX: start heartbeat on peer join.
+      _startHeartbeat();
       // Matchmaking: peer joined the queue room — show "opponent found".
       if(G.matchmakingWaitInterval){
         setText("matchmakingStatus","Opponent found! Negotiating roles...");
@@ -3315,25 +3399,7 @@ function setupNetwork(id,password){
       }
     };
     room.onPeerLeave=()=>{
-      connected=false;
-      setText("connection",t("status_disconnected"));
-      // P2P Test: log + update UI.
-      if($("p2pTestLog")){
-        G._p2pTestLog("❌ Peer left. Disconnected.");
-        G._p2pTestUpdateUI();
-      }
-      // Phase 18/34: mid-match disconnect — offer reconnect grace period (host)
-      // or "Continue vs Bot" prompt (guest). Both sides get the option.
-      if(Match.active&&role==="host"){
-        Match.gracefulDisconnect();
-      }else if(Match.active&&role==="guest"){
-        Match.active=false;
-        Battle.stop();
-        G.stopSnapshots();
-        // P2P: offer "Continue vs Bot" to guest too (not just host).
-        const opponentPicks=Battle.units.filter(u=>u.team==="player").map(u=>unit(u));
-        showDisconnectPrompt(opponentPicks);
-      }
+      _handlePeerLeave();
     };
     return true;
   }
@@ -3343,10 +3409,47 @@ function setupNetwork(id,password){
   }
 }
 
-function transmit(type,data){
+// NETFIX: unified peer-leave handler — used by both onPeerLeave and heartbeat timeout.
+function _handlePeerLeave(){
+  connected=false;
+  _stopHeartbeat();
+  setText("connection",t("status_disconnected"));
+  // P2P Test: log + update UI.
+  if($("p2pTestLog")){
+    G._p2pTestLog("❌ Peer left. Disconnected.");
+    G._p2pTestUpdateUI();
+  }
+  // Phase 18/34: mid-match disconnect — offer reconnect grace period (host)
+  // or "Continue vs Bot" prompt (guest). Both sides get the option.
+  if(Match.active&&role==="host"){
+    Match.gracefulDisconnect();
+  }else if(Match.active&&role==="guest"){
+    Match.active=false;
+    Battle.stop();
+    G.stopSnapshots();
+    // P2P: offer "Continue vs Bot" to guest too (not just host).
+    const opponentPicks=Battle.units.filter(u=>u.team==="player").map(u=>unit(u));
+    showDisconnectPrompt(opponentPicks);
+  }
+  connState="DISCONNECTED";
+}
+
+// NETFIX: update connection status badge with latency.
+function _updateConnStatus(latency){
+  const nb=$("networkBadge");
+  if(!nb)return;
+  if(latency<100){nb.style.color="var(--ok)";nb.style.borderColor="var(--ok)";nb.style.background="rgba(52,211,153,.1)";nb.textContent="🌐 "+latency+"ms";}
+  else if(latency<250){nb.style.color="var(--warn)";nb.style.borderColor="var(--warn)";nb.style.background="rgba(245,158,11,.1)";nb.textContent="🌐 "+latency+"ms";}
+  else{nb.style.color="var(--danger)";nb.style.borderColor="var(--danger)";nb.style.background="rgba(248,113,113,.1)";nb.textContent="🌐 "+latency+"ms ⚠";}
+}
+
+// NETFIX: transmit with sequence number. _internal=true skips seq (for heartbeat).
+function transmit(type,data,_internal){
   if(connected&&sendNet){
     try{
       const msg={t:type,d:data};
+      // NETFIX: add sequence number for dedup (skip for internal heartbeat pings).
+      if(!_internal){msg.seq=++_sendSeq;}
       // P2P security: enforce message size limit on send.
       const size=JSON.stringify(msg).length;
       if(size>P2P_MAX_MSG_SIZE){console.warn("[P2P] Dropping oversized message:",type,size);return;}
@@ -3405,14 +3508,26 @@ function networkReceive(data){
     if(!data||typeof data!=="object"||typeof data.t!=="string")return;
     // Guard: most message types require data.d; skip if missing.
     if(data.t!=="role"&&data.t!=="ping"&&data.t!=="pong"&&!data.d)return;
-    // P2P Test: handle ping/pong for latency testing.
+    // NETFIX: message dedup — drop messages with seq <= last seen (duplicates).
+    // Heartbeat pings/pongs don't have seq (sent as _internal), so skip check.
+    if(data.seq!==undefined){
+      if(data.seq<=_recvSeq){
+        console.debug("[P2P] Dropping duplicate/old message:",data.t,"seq:",data.seq,"<= ",_recvSeq);
+        return;
+      }
+      _recvSeq=data.seq;
+    }
+    // NETFIX: heartbeat ping/pong — also updates lastPongReceived for connection monitoring.
     if(data.t==="ping"){
-      transmit("pong",{ts:data.d?.ts});
+      transmit("pong",{ts:data.d?.ts},true);
       return;
     }
     if(data.t==="pong"){
+      _lastPongReceived=Date.now();
       const latency=Date.now()-(data.d?.ts||0);
       G._p2pTestLog?.(`Pong received — latency: ${latency}ms`);
+      // NETFIX: update connection status UI with latency.
+      _updateConnStatus(latency);
       return;
     }
     if(data.t==="role"){
@@ -3430,7 +3545,12 @@ function networkReceive(data){
         if(role==="host"&&data.d==="host"){
           // Both players joined the queue room — use tiebreaker to decide roles.
           // Lower peerId becomes host, higher becomes guest.
-          if(!_peerId)_peerId=Math.random().toString(36).slice(2);
+          // NETFIX: use crypto.getRandomValues for secure tiebreaker (not Math.random).
+          if(!_peerId){
+            const arr=new Uint8Array(8);
+            crypto.getRandomValues(arr);
+            _peerId=Array.from(arr).map(b=>b.toString(16).padStart(2,"0")).join("");
+          }
           transmit("role_tiebreak",{id:_peerId});
         }else if(role==="none")role=data.d;
       }
@@ -3642,6 +3762,7 @@ function networkReceive(data){
         Match.history=[];
         Match.onMatchEnd=winner=>G.onMatchEnd(winner);
         Match.active=true;
+        connState="IN_MATCH";
         Match.deathLog=[];
         G.save.arena=clamp(Number(d.arena)||0,0,10);
       }
@@ -10114,6 +10235,7 @@ const G={
     // Phase 18: send match_start to guest.
     if(connected&&role==="host"){
       transmit("match_start",{arena:this.save.arena||0,lives,firstPlayer:"host"});
+      connState="IN_MATCH";
     }
     Match.start(lives,winner=>this.onMatchEnd(winner));
     // Override enemy lives for endless mode (after Match.start sets defaults).
