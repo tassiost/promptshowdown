@@ -3686,8 +3686,9 @@ function networkReceive(data){
         Match.seed=data.d.seed>>>0; // DET: set Match.seed so Battle.start() uses it
       }
     }
-    // RELAY: host starts a relay battle — guest enters render-only mode.
-    // Guest does NOT run the sim. It renders state from host snapshots.
+    // RELAY: host starts a relay battle (fallback mode after desync, or peer
+    // doesn't support determinism). Guest enters render-only mode — does NOT
+    // run the sim, renders state from host snapshots instead.
     if(data.t==="relay_start"){
       if(role==="guest"){
         const d=data.d;
@@ -6769,8 +6770,8 @@ const Battle={
     // DET: feed real frame time (×speed) into the accumulator, drain in fixed steps.
     const FIXED_DT=1/60;
     this._accumulator=(this._accumulator||0)+frameTime*effectiveSpeed;
-    // RELAY: guest in relay mode does NOT run the sim — it only renders state
-    // received from the host via snapshots. Skip the update loop entirely.
+    // RELAY: guest in relay fallback mode does NOT run the sim — it only renders
+    // state received from the host via snapshots. Skip the update loop entirely.
     // The host runs the sim normally (no lockstep constraints in relay mode).
     if(this._useRelay&&connected&&role==="guest"){
       // Guest: just render. State arrives via snap messages (applyRemoteSnapshot).
@@ -11771,38 +11772,11 @@ const G={
     const guestArmy=[...guestSurvivors,...guestNew];
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
-    // RELAY: host-authoritative relay mode — only host runs the sim, guest
-    // renders from state snapshots. Eliminates desync bugs entirely.
-    // Preferred over lockstep when both peers support it.
-    // Lockstep code is preserved for fallback (if relay has issues, set
-    // _useRelay=false to revert to lockstep or snapshot sync).
-    if(_peerRelayCapable&&_peerDetCapable&&!Battle._desyncFallback){
-      // Send relay_start so the guest knows to enter render-only mode.
-      // Guest does NOT receive armies — it will get state via snapshots.
-      const payload={
-        playerSpells:spells.player,enemySpells:spells.enemy,
-        round:Match.round
-      };
-      transmit("relay_start",payload);
-      Battle._useRelay=true;
-      Battle._localTeam="player";
-      // Host runs the sim normally (no lockstep, no DMath/rand constraints).
-      Battle._lockstepActive=false;
-      Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
-      this.updateLivesHUD();
-      // Start broadcasting state snapshots to the guest at 20Hz.
-      this.startSnapshots();
-      // RELAY: send an immediate snapshot so the guest doesn't see an empty screen
-      // while waiting for the first interval tick (50ms).
-      const immediateSnap=Battle.compressedSnapshot();
-      immediateSnap.round=Match.round;
-      immediateSnap.livesPlayer=Match.livesPlayer;
-      immediateSnap.livesEnemy=Match.livesEnemy;
-      immediateSnap.drawIndex=G.roundDraftState?.drawIndex||0;
-      transmit("snap",immediateSnap);
-      return;
-    }
-    // DET: lockstep mode — both peers run the sim from the same seed + armies.
+    // DET: lockstep is the primary mode (like Clash Royale). Both peers run the
+    // sim from the same seed + armies, syncing only commands. This gives the
+    // lowest bandwidth (~200 bytes/s) and lowest input latency (3 ticks).
+    // Requires determinism (DMath, rand, stateHash) — we've eliminated all known
+    // desync bugs, so this is the right default.
     if(_peerDetCapable&&!Battle._desyncFallback){
       // Host shares both armies + spells so the guest starts from identical state.
       // Sim labeling is the host's on both peers (host=player, guest=enemy) →
@@ -11816,12 +11790,39 @@ const G={
       transmit("lockstep_start",payload);
       Battle._localTeam="player";
       Battle._lockstepActive=true;
+      Battle._useRelay=false;
       Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
       this.updateLivesHUD();
       // No snapshots in lockstep mode — both peers run the sim independently.
       return;
     }
-    // Fallback: host-authoritative snapshot sync (legacy behavior).
+    // RELAY: fallback mode — used when desync is detected (_desyncFallback=true)
+    // or when peer doesn't support determinism. Only host runs the sim, guest
+    // renders from state snapshots. Higher bandwidth (~30KB/s) but no determinism
+    // required. The relay improvements (spell CD sync, pause/speed sync,
+    // immediate snapshot, reconnect) benefit this fallback path.
+    if(_peerRelayCapable||_peerDetCapable){
+      const payload={
+        playerSpells:spells.player,enemySpells:spells.enemy,
+        round:Match.round
+      };
+      transmit("relay_start",payload);
+      Battle._useRelay=true;
+      Battle._localTeam="player";
+      Battle._lockstepActive=false;
+      Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
+      this.updateLivesHUD();
+      this.startSnapshots();
+      // Send an immediate snapshot so the guest doesn't see an empty screen.
+      const immediateSnap=Battle.compressedSnapshot();
+      immediateSnap.round=Match.round;
+      immediateSnap.livesPlayer=Match.livesPlayer;
+      immediateSnap.livesEnemy=Match.livesEnemy;
+      immediateSnap.drawIndex=G.roundDraftState?.drawIndex||0;
+      transmit("snap",immediateSnap);
+      return;
+    }
+    // Legacy fallback: peer doesn't support relay or determinism.
     Battle._localTeam="player";
     Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
     this.updateLivesHUD();

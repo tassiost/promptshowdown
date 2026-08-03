@@ -1,16 +1,20 @@
 # NETRELAY.md — Host-Authoritative Relay Plan
 
-## Status: IMPLEMENTED (all 7 phases complete, 211 E2E tests pass, 60fps perf)
+## Status: IMPLEMENTED as fallback (lockstep is primary, relay activates on desync)
 
 ## Goal
 
-Replace the deterministic lockstep multiplayer with a **host-authoritative relay** model
-where only the host runs the simulation. The guest sends commands and renders received
-state snapshots. This eliminates the entire class of desync bugs.
+Provide a **host-authoritative relay** as the desync fallback for the deterministic
+lockstep multiplayer. Lockstep is the primary mode (like Clash Royale) — both peers
+run the sim, syncing only commands. When a desync is detected (`_desyncFallback=true`),
+the system falls back to relay mode: only the host runs the sim, the guest renders
+from state snapshots.
 
-**Critical constraint**: The current lockstep infrastructure is preserved behind a feature
-flag (`_useRelay`). We do not delete it. It may be useful later (e.g., for low-latency
-LAN play or as a fallback). The relay is an *addition*, not a *replacement*.
+**Architecture decision**: Lockstep is primary because it has the lowest bandwidth
+(~200 bytes/s vs ~30KB/s) and lowest input latency (3 ticks vs 50-100ms RTT). We've
+eliminated all known desync bugs, so the determinism cost is already paid. The relay
+is the safety net for when desync does occur — it keeps the game running instead of
+freezing or producing divergent results.
 
 ## Table of Contents
 
