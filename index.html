@@ -8141,13 +8141,7 @@ const Battle={
             console.log("  "+u.n+"["+u.team+"] pos=("+u.x.toFixed(0)+","+u.y.toFixed(0)+") hp="+u.h.toFixed(0)+"/"+u.mh.toFixed(0)+" mov="+u.movement+" range="+u.r+" tgt="+u.targeting+" tgtDist="+(u.target?dist(u,u.target).toFixed(0):"-"));
           }
         }
-        BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
-        BattleFX.shake(4);
-        this._finalUnits=this.units.map(u=>({...u})); // snapshot before stop() clears units
-        this._syncAllUnits(); // update _allUnits with final state for cumulative draft
-        this._finalSpells=(this.spells||[]).map(s=>({...s})); // snapshot spells for stats
-        this.stop();
-        if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle end handler failed: "+(e&&e.message||e));}
+        this._endBattle();
       }
       return;
     }
@@ -8158,14 +8152,32 @@ const Battle={
       const clutchSurvivor=survivors.find(u=>u.h<u.mh*0.15);
       if(clutchSurvivor)GameAudio.sfx("clutch");
     }
+    this._endBattle();
+  },
+
+  // End the battle: snapshot state, stop sim, keep rendering for 1s so players
+  // can see the final state, then call onEnd to transition to the result screen.
+  _endBattle(){
+    if(this._ending)return; // guard against double-call (timeout + normal)
+    this._ending=true;
     // Phase 17: round-end flash + screen shake.
     BattleFX.roundEnd(this.winner==="player"?"#0f0":this.winner==="enemy"?"#f00":"#888");
     BattleFX.shake(4);
     this._finalUnits=this.units.map(u=>({...u})); // snapshot before stop() clears units
     this._syncAllUnits(); // update _allUnits with final state for cumulative draft
     this._finalSpells=(this.spells||[]).map(s=>({...s})); // snapshot spells for stats
-    this.stop();
-    if(this.onEnd)try{this.onEnd(this.winner);}catch(e){console.error("[Battle.checkEnd] onEnd failed:",e);showError("Battle end handler failed: "+(e&&e.message||e));}
+    // Stop the sim but keep rendering the final frame for 1 second.
+    this.running=false;
+    if(this.autoTimer){clearInterval(this.autoTimer);this.autoTimer=null;}
+    if(this.snapTimer){clearInterval(this.snapTimer);this.snapTimer=null;}
+    // Render one final frame so the flash/shake is visible.
+    try{this.render();}catch(e){/* ignore */}
+    // After 1s, fully stop and transition to result screen.
+    setTimeout(()=>{
+      this._ending=false;
+      this.stop();
+      if(this.onEnd)try{this.onEnd(this.winner);}catch(e){console.error("[Battle._endBattle] onEnd failed:",e);showError("Battle end handler failed: "+(e&&e.message||e));}
+    },1000);
   },
 
   stop(){
@@ -8193,6 +8205,7 @@ const Battle={
     this.zones=[];
     this.playerSpells=[];
     this.time=0;
+    this._ending=false; // clear end-delay flag
     // NOTE: do NOT reset this.winner here — checkEnd() calls stop() before
     // invoking onEnd(this.winner), so resetting would pass null to the callback.
     // winner is reset in start() instead.
@@ -8459,7 +8472,7 @@ const Battle={
       this.update(0.05*(this.speed||1));
       this.checkEnd();
     }
-    if(safety<=0){this.winner="draw";this._finalUnits=this.units.map(u=>({...u}));this._syncAllUnits();this._finalSpells=(this.spells||[]).map(s=>({...s}));this.stop();if(this.onEnd)try{this.onEnd(this.winner);}catch(e){showError("Battle skip safety end failed: "+(e&&e.message||e));}}
+    if(safety<=0){this.winner="draw";this._endBattle();}
   },
 
   // Toggle pause.
