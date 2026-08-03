@@ -15,6 +15,12 @@ index.original.html
 # Node (only if you later add tooling)
 node_modules/
 
+# Vite build output
+dist/
+
+# Old monolith backup
+index.html.monolith
+
 # Local AI agent config (personal preferences, not shared)
 AGENTS.local.md
 *.local

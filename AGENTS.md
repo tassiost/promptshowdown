@@ -1,14 +1,47 @@
 # AGENTS.md — Prompt Showdown
 
-Single-file AI auto-battler (`index.html`, ~13K lines). No build step, no dependencies.
-Serve over HTTP: `python3 -m http.server 8765` → `http://localhost:8765/index.html`
+AI auto-battler with P2P multiplayer. Source is split into `src/` modules, bundled to a single `dist/index.html` via Vite.
 
 ## How to Run
 
-- **Play**: `python3 -m http.server 8765` then open in Chrome/Edge
-- **E2E tests**: Use the `/test` skill (188 tests, ~60s)
-- **Performance**: Use the `/perf` skill (5 scenarios, ~60s)
+- **Dev server**: `npm run dev` → `http://localhost:5173` (Vite HMR)
+- **Build**: `npm run build` → `dist/index.html` (single self-contained file)
+- **Play (built)**: `cd dist && python3 -m http.server 8765` → open in browser
+- **E2E tests**: `npm test` or `python3 e2e_test.py` (219 tests, ~60s)
+- **Performance**: `npm run perf` or `python3 perf.py` (6 scenarios, ~60s)
 - **Bug hunt**: Use the `/bughunt` skill (static analysis + E2E)
+
+## Project Structure
+
+```
+src/
+  index.html      — HTML template (body structure only)
+  style.css       — All CSS
+  main.js         — Entry point (INCLUDE directives concat all modules)
+  imports.js      — Dynamic imports (web-llm, trystero, lz-string)
+  utils.js        — DMath, rand, fnv1aHash, toast, mobile, i18n, ads
+  save.js         — Save load + migration
+  forge.js        — LLM forge, recipe assembler, visual modifiers, spell forge
+  network.js      — P2P, heartbeat, signing, transmit, desync detection
+  battle-helpers.js — Behaviour API, avoidance, targeting
+  match.js        — Match object (lives, rounds, history)
+  rendering.js    — SpriteRenderer, procedural FX, audio
+  battle.js       — Battle object, spells, combat, sim
+  quests.js       — Daily quests, login streaks
+  bot.js          — Bot opponent + strategy
+  ui.js           — Visual recipes, UI screens, forge UI
+  game.js         — G object, init, PWA, event handlers
+vendor/           — trystero (P2P), lz-string (compression)
+vite.config.js    — Vite config with concat-modules plugin + singlefile
+```
+
+## How the Build Works
+
+1. `vite.config.js` has a custom `concat-modules` plugin that processes `// INCLUDE: ./file.js` comments in `src/main.js` and inlines the file contents
+2. All JS modules share scope (concatenated into one module — no export/import needed)
+3. `vite-plugin-singlefile` inlines all JS+CSS into a single `dist/index.html`
+4. Vendor files (trystero, lz-string) are bundled into the output
+5. web-llm is loaded from CDN at runtime (too large to bundle)
 
 ## Critical Rules (Never Break These)
 

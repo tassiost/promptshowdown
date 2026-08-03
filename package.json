@@ -1,0 +1,29 @@
+{
+  "name": "promptshowdown",
+  "version": "1.0.0",
+  "description": "An AI-forged auto-battler with P2P multiplayer, progression, and a procedural unit forge.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "python3 e2e_test.py",
+    "perf": "python3 perf.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tassiost/promptshowdown.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tassiost/promptshowdown/issues"
+  },
+  "homepage": "https://github.com/tassiost/promptshowdown#readme",
+  "devDependencies": {
+    "esbuild": "^0.28.1",
+    "vite": "^8.2.0",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}
