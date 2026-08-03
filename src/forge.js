@@ -220,14 +220,17 @@ async function initLLM(){
   const stats=$("forgeModelStats");
   if(stats)stats.innerText="";
   await updateAI("AI loading...",0);
-  // Use default Cache API (not IndexedDB) — matches the original monolith
-  // which worked reliably. Main-thread engine (no Web Worker) because the
-  // built single-file inlines workers into blob:/data: URLs that break
-  // cross-origin fetch + IndexedDB. The forge is user-initiated so main-
-  // thread inference is acceptable.
+  // IndexedDB cache backend: stores each model file individually after
+  // download completes, so a page reload mid-download only re-fetches the
+  // files that hadn't finished (unlike Cache API which is all-or-nothing).
+  // Main-thread engine (no Web Worker) — the built single-file inlines
+  // workers into blob:/data: URLs with opaque origins that break fetch.
+  const appConfig=W.prebuiltAppConfig
+    ? {...W.prebuiltAppConfig,cacheBackend:"indexeddb"}
+    : {cacheBackend:"indexeddb"};
   llmLoadPromise=(async()=>{
     try{
-      llm=await W.CreateMLCEngine(MODEL,{initProgressCallback:updateAIFromProgress});
+      llm=await W.CreateMLCEngine(MODEL,{appConfig,initProgressCallback:updateAIFromProgress});
       if(llmCancelled){llm=null;return null;}
       llmReady=true;
       await updateAI("AI READY",100);
