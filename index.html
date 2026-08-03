@@ -113,7 +113,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 #fsBtn:hover{color:var(--text);border-color:var(--accent);}
 .input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
 .input:focus{border-color:var(--accent);}
-#cv{background:#0d1526;touch-action:none;max-width:100%;}
+#cv{background:#0d1526;touch-action:none;max-width:100%;filter:contrast(1.04) saturate(1.08);}
 #battleLog{position:fixed;right:5px;top:70px;width:160px;max-height:180px;overflow:hidden;background:rgba(11,17,32,.85);border:1px solid var(--border);font-size:.65rem;padding:6px;border-radius:var(--radius-sm);color:var(--muted);pointer-events:none;}
 #battleLog div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.05);animation:logFade .5s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 @keyframes logFade{from{opacity:0;transform:translateX(10px);}to{opacity:1;transform:translateX(0);}}
@@ -8352,6 +8352,49 @@ const Battle={
     }
     c.fillStyle=this._vignetteCache;
     c.fillRect(0,0,vw,vh);
+    // Post-processing: bloom via downscale-upscale (no ctx.filter, GPU-accelerated).
+    // Draws the scene to a 1/4 res offscreen canvas (natural blur from downscaling),
+    // then composites back with additive blend for a soft glow on bright areas.
+    // Skipped on low/minimal quality or reduced motion (perf + accessibility).
+    this._applyBloom(c);
+  },
+
+  // PERF-R13: bloom post-processing via downscale-upscale.
+  // No ctx.filter (removed in PERF-R11 for being 10-50x slower). Instead uses
+  // browser's image smoothing on downscale → natural blur → additive composite.
+  // Cost: 2 drawImage calls (GPU-accelerated). ~0.3ms at 1080p.
+  _bloomCanvas:null,
+  _applyBloom(c){
+    const qTier=G.qualityTier?.()||"high";
+    if(qTier==="low"||qTier==="minimal")return;
+    if(G.save?.settings?.reducedMotion)return;
+    const cv=c.canvas;
+    const bw=Math.max(1,(cv.width/4)|0);
+    const bh=Math.max(1,(cv.height/4)|0);
+    if(!this._bloomCanvas||this._bloomCanvas.width!==bw||this._bloomCanvas.height!==bh){
+      this._bloomCanvas=document.createElement("canvas");
+      this._bloomCanvas.width=bw;
+      this._bloomCanvas.height=bh;
+    }
+    const bc=this._bloomCanvas;
+    const bctx=bc.getContext("2d");
+    bctx.imageSmoothingEnabled=true;
+    bctx.imageSmoothingQuality="high";
+    bctx.globalCompositeOperation="source-over";
+    bctx.globalAlpha=1;
+    bctx.clearRect(0,0,bw,bh);
+    bctx.drawImage(cv,0,0,bw,bh);
+    // Composite back at full size with additive blend (bright areas glow, dark areas unaffected).
+    c.save();
+    c.setTransform(1,0,0,1,0,0);
+    c.globalCompositeOperation="lighter";
+    c.globalAlpha=0.14;
+    c.imageSmoothingEnabled=true;
+    c.imageSmoothingQuality="high";
+    c.drawImage(bc,0,0,cv.width,cv.height);
+    c.globalAlpha=1;
+    c.globalCompositeOperation="source-over";
+    c.restore();
   },
 
   log(t){
@@ -9278,12 +9321,28 @@ const Bot={
 const SPRITE_RECIPES={
   Knight:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#888"},          // helmet
-      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#44aaff"},     // armor body
-      {t:"rect",x:-13,y:-10,w:6,h:10,c:"#ccc",joint:"arm_raise"}, // shield (left)
-      {t:"line",x1:9,y1:-8,x2:16,y2:-16,c:"#ccc",w:2,joint:"arm_raise"}, // sword (right)
-      {t:"rect",x:-5,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},  // left leg
-      {t:"rect",x:1,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},   // right leg
+      // Helmet with visor slit
+      {t:"circle",cx:0,cy:-18,r:6,c:"#888"},
+      {t:"rect",x:-4,y:-19,w:8,h:2,c:"#222"},          // visor slit
+      {t:"rect",x:-7,y:-22,w:14,h:3,c:"#aaa"},         // helmet brim/pauldron
+      // Armor body with chest plate
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#44aaff"},
+      {t:"rect",x:-4,y:-11,w:8,h:6,c:"#3399ee",outline:1}, // chest plate (darker)
+      {t:"line",x1:0,y1:-11,x2:0,y2:-5,c:"#226",w:1},  // chest plate center line
+      // Belt
+      {t:"rect",x:-5,y:-2,w:10,h:2,c:"#654"},          // belt
+      // Shield (left arm)
+      {t:"rect",x:-13,y:-10,w:6,h:10,c:"#ccc",joint:"arm_raise"},
+      {t:"rect",x:-12,y:-9,w:4,h:4,c:"#4af",joint:"arm_raise"}, // shield emblem
+      // Sword (right arm) with crossguard
+      {t:"line",x1:9,y1:-8,x2:16,y2:-16,c:"#ccc",w:2,joint:"arm_raise"}, // blade
+      {t:"line",x1:7,y1:-7,x2:11,y2:-7,c:"#aa4",w:2,joint:"arm_raise"}, // crossguard
+      {t:"circle",cx:8,cy:-7,r:1,c:"#aa4",joint:"arm_raise"}, // pommel
+      // Legs with armor
+      {t:"rect",x:-5,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},
+      {t:"rect",x:1,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#226",joint:"leg_swing"}, // boots
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#226",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9294,13 +9353,27 @@ const SPRITE_RECIPES={
   },
   Archer:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
-      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#4a7"},       // tunic
+      // Head with hood
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},
+      {t:"polygon",pts:[[-7,-22],[7,-22],[5,-18],[-5,-18]],c:"#4a7"}, // hood
+      // Tunic with belt
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#4a7"},
+      {t:"rect",x:-5,y:-2,w:10,h:2,c:"#372"},          // belt
+      // Quiver on back
+      {t:"rect",x:-10,y:-14,w:3,h:8,c:"#642"},         // quiver
+      {t:"line",x1:-9,y1:-15,x2:-9,y2:-13,c:"#ccc",w:1}, // arrow fletching
+      {t:"line",x1:-8,y1:-15,x2:-8,y2:-13,c:"#ccc",w:1},
+      // Bow with string
       {t:"arc",cx:12,cy:-10,r:8,start:-1,end:1,c:"#a72",w:2,joint:"bow_draw"}, // bow
-      {t:"rect",x:-9,y:-10,w:4,h:10,c:"#4a7",joint:"arm_raise"},  // left arm
-      {t:"rect",x:5,y:-10,w:4,h:10,c:"#4a7",joint:"arm_raise"},   // right arm
+      {t:"line",x1:8,y1:-17,x2:8,y2:-3,c:"#ddd",w:0.5,joint:"bow_draw"}, // bowstring
+      // Arms
+      {t:"rect",x:-9,y:-10,w:4,h:10,c:"#4a7",joint:"arm_raise"},
+      {t:"rect",x:5,y:-10,w:4,h:10,c:"#4a7",joint:"arm_raise"},
+      // Legs
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#372",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#372",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#241",joint:"leg_swing"}, // boots
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#241",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9311,12 +9384,25 @@ const SPRITE_RECIPES={
   },
   Slash:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#fdd"},          // head
-      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#f44"},       // body
-      {t:"line",x1:9,y1:-8,x2:18,y2:-18,c:"#ccc",w:3,joint:"arm_raise"}, // big sword
+      // Head with headband
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdd"},
+      {t:"rect",x:-6,y:-21,w:12,h:2,c:"#f44"},         // headband
+      // Body with chest strap
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#f44"},
+      {t:"line",x1:-5,y1:-10,x2:5,y2:2,c:"#a22",w:1.5}, // diagonal strap
+      // Belt
+      {t:"rect",x:-5,y:-2,w:10,h:2,c:"#621"},
+      // Big sword with crossguard + pommel
+      {t:"line",x1:9,y1:-8,x2:18,y2:-18,c:"#eee",w:3,joint:"arm_raise"}, // blade
+      {t:"line",x1:7,y1:-7,x2:12,y2:-7,c:"#cc4",w:2,joint:"arm_raise"}, // crossguard
+      {t:"circle",cx:8,cy:-7,r:1.5,c:"#cc4",joint:"arm_raise"}, // pommel
+      // Left arm
       {t:"rect",x:-9,y:-10,w:4,h:10,c:"#f44",joint:"arm_raise"},
+      // Legs with boots
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#a33",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#a33",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#622",joint:"leg_swing"},
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#622",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9327,10 +9413,19 @@ const SPRITE_RECIPES={
   },
   Priest:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
-      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#fd4"}, // robe (trapezoid)
-      {t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#fb0",w:2,joint:"arm_raise"}, // staff
-      {t:"circle",cx:8,cy:-25,r:3,c:"#fff"},          // staff orb
+      // Head with hood
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},
+      {t:"polygon",pts:[[-7,-22],[7,-22],[5,-18],[-5,-18]],c:"#fd4"}, // hood
+      // Robe (trapezoid) with holy symbol
+      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#fd4"},
+      {t:"line",x1:-2,y1:-8,x2:2,y2:-8,c:"#fff",w:1.5}, // holy cross horizontal
+      {t:"line",x1:0,y1:-10,x2:0,y2:-4,c:"#fff",w:1.5}, // holy cross vertical
+      // Belt/sash
+      {t:"rect",x:-6,y:-3,w:12,h:2,c:"#ea0"},
+      // Staff with orb
+      {t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#fb0",w:2,joint:"arm_raise"},
+      {t:"circle",cx:8,cy:-25,r:3,c:"#fff",glow:6},
+      // Left arm
       {t:"rect",x:-9,y:-10,w:4,h:10,c:"#fd4",joint:"arm_raise"},
     ],
     animations:{
@@ -9342,12 +9437,23 @@ const SPRITE_RECIPES={
   },
   Assassin:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#222"},          // hooded head
-      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#a4f"},       // dark body
-      {t:"line",x1:9,y1:-6,x2:13,y2:-12,c:"#ccc",w:1,joint:"arm_raise"},  // right dagger
-      {t:"line",x1:-9,y1:-6,x2:-13,y2:-12,c:"#ccc",w:1,joint:"arm_raise"}, // left dagger
+      // Hooded head with hood point
+      {t:"circle",cx:0,cy:-18,r:6,c:"#222"},
+      {t:"polygon",pts:[[-7,-22],[7,-22],[3,-26],[-3,-24]],c:"#222"}, // hood point
+      {t:"line",x1:-3,y1:-19,x2:3,y2:-19,c:"#f44",w:1}, // eye slit (red)
+      // Dark body with cloak
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#a4f"},
+      {t:"polygon",pts:[[-8,-8],[8,-8],[6,4],[-6,4]],c:"#82c",alpha:0.7}, // cloak skirt
+      // Dual daggers with crossguards
+      {t:"line",x1:9,y1:-6,x2:13,y2:-12,c:"#ccc",w:1.5,joint:"arm_raise"},  // right dagger
+      {t:"line",x1:8,y1:-7,x2:10,y2:-7,c:"#884",w:1,joint:"arm_raise"},    // right crossguard
+      {t:"line",x1:-9,y1:-6,x2:-13,y2:-12,c:"#ccc",w:1.5,joint:"arm_raise"}, // left dagger
+      {t:"line",x1:-10,y1:-7,x2:-8,y2:-7,c:"#884",w:1,joint:"arm_raise"},   // left crossguard
+      // Legs
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#82c",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#82c",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#519",joint:"leg_swing"}, // boots
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#519",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9358,12 +9464,25 @@ const SPRITE_RECIPES={
   },
   Engineer:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
-      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#f84"},       // body
-      {t:"line",x1:9,y1:-8,x2:14,y2:-14,c:"#888",w:2,joint:"arm_raise"}, // wrench
+      // Head with goggles
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},
+      {t:"circle",cx:-2,cy:-19,r:2.5,c:"#884",outline:1}, // left goggle lens
+      {t:"circle",cx:2,cy:-19,r:2.5,c:"#884",outline:1},  // right goggle lens
+      {t:"line",x1:-4,y1:-19,x2:4,y2:-19,c:"#442",w:1},   // goggle strap
+      // Body with tool belt
+      {t:"rect",x:-5,y:-12,w:10,h:14,c:"#f84"},
+      {t:"rect",x:-5,y:-2,w:10,h:2,c:"#642"},             // belt
+      {t:"rect",x:-3,y:-2,w:2,h:3,c:"#888"},              // belt pouch
+      // Wrench with detail
+      {t:"line",x1:9,y1:-8,x2:14,y2:-14,c:"#888",w:2,joint:"arm_raise"}, // wrench shaft
+      {t:"rect",x:12,y:-16,w:4,h:4,c:"#888",joint:"arm_raise"}, // wrench head
+      // Left arm
       {t:"rect",x:-9,y:-10,w:4,h:10,c:"#f84",joint:"arm_raise"},
+      // Legs with boots
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#a64",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#a64",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#742",joint:"leg_swing"},
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#742",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9374,12 +9493,21 @@ const SPRITE_RECIPES={
   },
   Wizard:{
     shapes:[
-      {t:"polygon",pts:[[-4,-24],[4,-24],[7,-18],[-7,-18]],c:"#6633aa"}, // hat
-      {t:"circle",cx:0,cy:-15,r:5,c:"#fdc"},          // face
-      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#bb44ff"}, // robe
-      {t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#fb0",w:2,joint:"arm_raise"}, // staff
-      {t:"circle",cx:8,cy:-26,r:3,c:"#ddf",glow:6},   // staff orb (glow)
-      {t:"rect",x:-9,y:-10,w:4,h:8,c:"#933",joint:"arm_raise"}, // left arm
+      // Pointed hat with brim
+      {t:"polygon",pts:[[-4,-24],[4,-24],[7,-18],[-7,-18]],c:"#6633aa"}, // hat cone
+      {t:"rect",x:-8,y:-19,w:16,h:2,c:"#5533aa"},        // hat brim
+      {t:"circle",cx:0,cy:-23,r:1,c:"#ddf",glow:4},      // hat star
+      // Face with beard
+      {t:"circle",cx:0,cy:-15,r:5,c:"#fdc"},
+      {t:"polygon",pts:[[-3,-13],[3,-13],[2,-8],[-2,-8]],c:"#eee"}, // beard
+      // Robe with rune
+      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#bb44ff"},
+      {t:"circle",cx:0,cy:-6,r:1.5,c:"#ddf",glow:3},     // robe rune
+      // Staff with crystal
+      {t:"line",x1:8,y1:-12,x2:8,y2:-24,c:"#fb0",w:2,joint:"arm_raise"},
+      {t:"polygon",pts:[[6,-26],[10,-26],[8,-30]],c:"#ddf",glow:6}, // crystal (triangle)
+      // Left arm
+      {t:"rect",x:-9,y:-10,w:4,h:8,c:"#933",joint:"arm_raise"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9396,10 +9524,20 @@ const SPRITE_RECIPES={
   },
   Plague:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#4a4"},          // sickly green head
-      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#88ff44"}, // tattered robe
-      {t:"line",x1:8,y1:-10,x2:14,y2:-16,c:"#6a6",w:2,joint:"arm_raise"}, // poisoned dart
+      // Sickly green head with hood
+      {t:"circle",cx:0,cy:-18,r:6,c:"#4a4"},
+      {t:"polygon",pts:[[-7,-22],[7,-22],[5,-18],[-5,-18]],c:"#484"}, // hood
+      {t:"line",x1:-2,y1:-19,x2:2,y2:-19,c:"#0f0",w:1}, // glowing eyes
+      // Tattered robe
+      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#88ff44"},
+      {t:"line",x1:-4,y1:0,x2:-3,y2:12,c:"#4a4",w:1},   // tatter lines
+      {t:"line",x1:3,y1:-2,x2:4,y2:12,c:"#4a4",w:1},
+      // Poisoned dart
+      {t:"line",x1:8,y1:-10,x2:14,y2:-16,c:"#6a6",w:2,joint:"arm_raise"},
+      {t:"polygon",pts:[[13,-16],[15,-16],[14,-18]],c:"#0f0",glow:3,joint:"arm_raise"}, // poison tip
+      // Left arm
       {t:"rect",x:-9,y:-10,w:4,h:10,c:"#5c5",joint:"arm_raise"},
+      // Legs
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#484",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#484",joint:"leg_swing"},
     ],
@@ -9412,10 +9550,18 @@ const SPRITE_RECIPES={
   },
   Cultist:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#222"},          // hooded head
-      {t:"polygon",pts:[[-8,-12],[8,-12],[6,12],[-6,12]],c:"#aa44ff"}, // dark robe
-      {t:"line",x1:8,y1:-12,x2:8,y2:-22,c:"#a4f",w:2,joint:"arm_raise"}, // ritual staff
-      {t:"circle",cx:8,cy:-24,r:3,c:"#c8f",glow:5},   // glowing orb
+      // Hooded head with glowing eyes
+      {t:"circle",cx:0,cy:-18,r:6,c:"#222"},
+      {t:"polygon",pts:[[-8,-22],[8,-22],[4,-26],[-4,-24]],c:"#222"}, // hood point
+      {t:"line",x1:-3,y1:-19,x2:-1,y2:-19,c:"#c4f",w:1.5}, // left eye (glow)
+      {t:"line",x1:1,y1:-19,x2:3,y2:-19,c:"#c4f",w:1.5},  // right eye (glow)
+      // Dark robe with sigil
+      {t:"polygon",pts:[[-8,-12],[8,-12],[6,12],[-6,12]],c:"#aa44ff"},
+      {t:"circle",cx:0,cy:-6,r:2,c:"#c4f",glow:4},       // chest sigil
+      // Ritual staff with glowing orb
+      {t:"line",x1:8,y1:-12,x2:8,y2:-22,c:"#a4f",w:2,joint:"arm_raise"},
+      {t:"circle",cx:8,cy:-24,r:3,c:"#c8f",glow:5},
+      // Left arm
       {t:"rect",x:-9,y:-10,w:4,h:10,c:"#82a",joint:"arm_raise"},
     ],
     animations:{
@@ -9427,12 +9573,26 @@ const SPRITE_RECIPES={
   },
   Berserker:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:7,c:"#f44"},          // angry red head
-      {t:"rect",x:-7,y:-12,w:14,h:14,c:"#ff6644"},    // muscular body
-      {t:"line",x1:10,y1:-8,x2:18,y2:-20,c:"#888",w:4,joint:"arm_raise"}, // big axe
+      // Angry red head with war paint
+      {t:"circle",cx:0,cy:-18,r:7,c:"#f44"},
+      {t:"line",x1:-4,y1:-20,x2:-1,y2:-18,c:"#fff",w:1.5}, // war paint stripe
+      {t:"line",x1:1,y1:-20,x2:4,y2:-18,c:"#fff",w:1.5},
+      // Muscular body with fur shoulders
+      {t:"rect",x:-7,y:-12,w:14,h:14,c:"#ff6644"},
+      {t:"polygon",pts:[[-9,-12],[-5,-14],[-5,-10]],c:"#955"}, // left fur shoulder
+      {t:"polygon",pts:[[9,-12],[5,-14],[5,-10]],c:"#955"},   // right fur shoulder
+      // Belt
+      {t:"rect",x:-7,y:-2,w:14,h:2,c:"#421"},
+      // Big axe with blade
+      {t:"line",x1:10,y1:-8,x2:18,y2:-20,c:"#888",w:3,joint:"arm_raise"}, // shaft
+      {t:"polygon",pts:[[16,-18],[20,-16],[18,-22],[14,-20]],c:"#ccc",joint:"arm_raise"}, // axe blade
+      // Left arm
       {t:"rect",x:-11,y:-10,w:4,h:10,c:"#f44",joint:"arm_raise"},
+      // Legs with boots
       {t:"rect",x:-5,y:2,w:5,h:10,c:"#a33",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:5,h:10,c:"#a33",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:5,h:3,c:"#622",joint:"leg_swing"},
+      {t:"rect",x:1,y:9,w:5,h:3,c:"#622",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1.5},{t:1,bob:0}],
@@ -9443,12 +9603,24 @@ const SPRITE_RECIPES={
   },
   Vamp:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#fcc"},          // pale face
-      {t:"polygon",pts:[[-9,-12],[9,-12],[6,12],[-6,12]],c:"#cc44aa"}, // cape/robe
-      {t:"line",x1:10,y1:-6,x2:14,y2:-14,c:"#f44",w:2,joint:"arm_raise"}, // fang strike
+      // Pale face with red eyes
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fcc"},
+      {t:"circle",cx:-2,cy:-19,r:1,c:"#f00"},           // left red eye
+      {t:"circle",cx:2,cy:-19,r:1,c:"#f00"},            // right red eye
+      // Cape/robe with collar
+      {t:"polygon",pts:[[-9,-12],[9,-12],[6,12],[-6,12]],c:"#cc44aa"},
+      {t:"polygon",pts:[[-8,-14],[-4,-10],[-6,-8]],c:"#a33"}, // left collar
+      {t:"polygon",pts:[[8,-14],[4,-10],[6,-8]],c:"#a33"},   // right collar
+      // Fang strike (claw)
+      {t:"line",x1:10,y1:-6,x2:14,y2:-14,c:"#f44",w:2,joint:"arm_raise"},
+      {t:"polygon",pts:[[13,-14],[15,-14],[14,-16]],c:"#fff",joint:"arm_raise"}, // fang tip
+      // Left arm
       {t:"rect",x:-10,y:-10,w:4,h:10,c:"#a3a",joint:"arm_raise"},
+      // Legs
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#728",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#728",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#516",joint:"leg_swing"},
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#516",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9459,11 +9631,17 @@ const SPRITE_RECIPES={
   },
   Bomber:{
     shapes:[
-      {t:"circle",cx:0,cy:-10,r:10,c:"#ff8844"},      // round bomb body
-      {t:"line",x1:0,y1:-20,x2:0,y2:-26,c:"#f80",w:2}, // fuse
-      {t:"circle",cx:0,cy:-27,r:2,c:"#ff0",glow:4},    // spark
+      // Round bomb body with shine
+      {t:"circle",cx:0,cy:-10,r:10,c:"#ff8844"},
+      {t:"circle",cx:-3,cy:-13,r:3,c:"#ffb"},           // shine highlight
+      // Fuse with spark
+      {t:"line",x1:0,y1:-20,x2:0,y2:-26,c:"#f80",w:2},
+      {t:"circle",cx:0,cy:-27,r:2,c:"#ff0",glow:4},
+      // Legs
       {t:"rect",x:-4,y:0,w:3,h:8,c:"#c64",joint:"leg_swing"},
       {t:"rect",x:1,y:0,w:3,h:8,c:"#c64",joint:"leg_swing"},
+      {t:"rect",x:-4,y:6,w:3,h:3,c:"#a42",joint:"leg_swing"}, // boots
+      {t:"rect",x:1,y:6,w:3,h:3,c:"#a42",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:1},{t:1,bob:0}],
@@ -9474,12 +9652,25 @@ const SPRITE_RECIPES={
   },
   Shielder:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#cdf"},          // head
-      {t:"rect",x:-6,y:-12,w:12,h:14,c:"#44aaff"},    // armored body
-      {t:"rect",x:-16,y:-14,w:8,h:18,c:"#ccc",joint:"arm_raise"}, // big shield (left)
-      {t:"line",x1:8,y1:-8,x2:12,y2:-16,c:"#888",w:2,joint:"arm_raise"}, // short sword (right)
+      // Head with helmet visor
+      {t:"circle",cx:0,cy:-18,r:6,c:"#cdf"},
+      {t:"rect",x:-5,y:-19,w:10,h:2,c:"#4af"},          // visor
+      // Armored body with chest plate
+      {t:"rect",x:-6,y:-12,w:12,h:14,c:"#44aaff"},
+      {t:"rect",x:-5,y:-11,w:10,h:8,c:"#3399ee",outline:1}, // chest plate
+      // Belt
+      {t:"rect",x:-6,y:-1,w:12,h:2,c:"#448"},
+      // Big shield with emblem (left)
+      {t:"rect",x:-16,y:-14,w:8,h:18,c:"#ccc",joint:"arm_raise"},
+      {t:"polygon",pts:[[-14,-10],[-10,-10],[-12,-6]],c:"#4af",joint:"arm_raise"}, // shield emblem (triangle)
+      // Short sword (right)
+      {t:"line",x1:8,y1:-8,x2:12,y2:-16,c:"#ccc",w:2,joint:"arm_raise"},
+      {t:"line",x1:6,y1:-7,x2:10,y2:-7,c:"#aa4",w:1.5,joint:"arm_raise"}, // crossguard
+      // Legs with armor
       {t:"rect",x:-5,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:4,h:10,c:"#338",joint:"leg_swing"},
+      {t:"rect",x:-5,y:9,w:4,h:3,c:"#226",joint:"leg_swing"}, // boots
+      {t:"rect",x:1,y:9,w:4,h:3,c:"#226",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:0.5},{t:1,bob:0}],
@@ -9490,10 +9681,20 @@ const SPRITE_RECIPES={
   },
   Healer:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},          // head
-      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#ffdd44"}, // robe
-      {t:"line",x1:8,y1:-12,x2:8,y2:-22,c:"#fb0",w:2,joint:"arm_raise"}, // staff
+      // Head with hood
+      {t:"circle",cx:0,cy:-18,r:6,c:"#fdc"},
+      {t:"polygon",pts:[[-7,-22],[7,-22],[5,-18],[-5,-18]],c:"#ffdd44"}, // hood
+      // Robe with cross symbol
+      {t:"polygon",pts:[[-7,-12],[7,-12],[5,12],[-5,12]],c:"#ffdd44"},
+      {t:"line",x1:-3,y1:-7,x2:3,y2:-7,c:"#fff",w:1.5},  // cross horizontal
+      {t:"line",x1:0,y1:-10,x2:0,y2:-3,c:"#fff",w:1.5},  // cross vertical
+      // Belt
+      {t:"rect",x:-6,y:-3,w:12,h:2,c:"#ea0"},
+      // Staff with cross glow
+      {t:"line",x1:8,y1:-12,x2:8,y2:-22,c:"#fb0",w:2,joint:"arm_raise"},
       {t:"rect",x:6,y:-18,w:4,h:4,c:"#fff",glow:5},   // cross glow on staff
+      {t:"line",x1:6,y1:-17,x2:10,y2:-17,c:"#fff",w:1,joint:"arm_raise"}, // cross horizontal
+      // Left arm
       {t:"rect",x:-9,y:-10,w:4,h:10,c:"#fc4",joint:"arm_raise"},
     ],
     animations:{
@@ -9505,12 +9706,26 @@ const SPRITE_RECIPES={
   },
   Tank:{
     shapes:[
-      {t:"circle",cx:0,cy:-18,r:7,c:"#aaa"},          // helmet
-      {t:"rect",x:-9,y:-12,w:18,h:16,c:"#888"},       // wide armored body
+      // Helmet with visor slit
+      {t:"circle",cx:0,cy:-18,r:7,c:"#aaa"},
+      {t:"rect",x:-5,y:-19,w:10,h:2,c:"#222"},          // visor slit
+      {t:"rect",x:-8,y:-22,w:16,h:3,c:"#bbb"},          // helmet brim
+      // Wide armored body with chest plate
+      {t:"rect",x:-9,y:-12,w:18,h:16,c:"#888"},
+      {t:"rect",x:-7,y:-11,w:14,h:10,c:"#777",outline:1}, // chest plate
+      {t:"line",x1:0,y1:-11,x2:0,y2:-1,c:"#555",w:1},   // chest center line
+      // Belt
+      {t:"rect",x:-9,y:0,w:18,h:2,c:"#433"},
+      // Arm guards (pauldrons)
+      {t:"polygon",pts:[[-14,-12],[-10,-14],[-10,-8]],c:"#999",joint:"arm_raise"}, // left pauldron
       {t:"rect",x:-14,y:-10,w:6,h:12,c:"#666",joint:"arm_raise"}, // left arm guard
+      {t:"polygon",pts:[[14,-12],[10,-14],[10,-8]],c:"#999",joint:"arm_raise"}, // right pauldron
       {t:"rect",x:8,y:-10,w:6,h:12,c:"#666",joint:"arm_raise"},  // right arm guard
+      // Legs with heavy armor
       {t:"rect",x:-6,y:2,w:5,h:10,c:"#555",joint:"leg_swing"},
       {t:"rect",x:1,y:2,w:5,h:10,c:"#555",joint:"leg_swing"},
+      {t:"rect",x:-6,y:9,w:5,h:4,c:"#333",joint:"leg_swing"}, // heavy boots
+      {t:"rect",x:1,y:9,w:5,h:4,c:"#333",joint:"leg_swing"},
     ],
     animations:{
       idle:[{t:0,bob:0},{t:0.5,bob:0.3},{t:1,bob:0}],
