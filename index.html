@@ -3326,12 +3326,15 @@ function _onHeartbeatTimeout(){
   }
   // In match — start grace period if not already.
   if(Match.active&&role==="host"&&!Match._graceActive){
+    Match._graceActive=true;
     Match.gracefulDisconnect();
   }else if(Match.active&&role==="guest"&&!Match._graceActive){
+    Match._graceActive=true;
     Match.active=false;
+    // NETFIX: capture opponent picks BEFORE stop() clears Battle.units.
+    const opponentPicks=(Battle._finalUnits||Battle.units||[]).filter(u=>u.team==="player").map(u=>unit(u));
     Battle.stop();
     G.stopSnapshots();
-    const opponentPicks=Battle.units.filter(u=>u.team==="player").map(u=>unit(u));
     showDisconnectPrompt(opponentPicks);
   }
 }
@@ -3422,13 +3425,15 @@ function _handlePeerLeave(){
   // Phase 18/34: mid-match disconnect — offer reconnect grace period (host)
   // or "Continue vs Bot" prompt (guest). Both sides get the option.
   if(Match.active&&role==="host"){
+    Match._graceActive=true;
     Match.gracefulDisconnect();
   }else if(Match.active&&role==="guest"){
     Match.active=false;
+    // NETFIX: capture opponent picks BEFORE stop() clears Battle.units.
+    const opponentPicks=(Battle._finalUnits||Battle.units||[]).filter(u=>u.team==="player").map(u=>unit(u));
     Battle.stop();
     G.stopSnapshots();
     // P2P: offer "Continue vs Bot" to guest too (not just host).
-    const opponentPicks=Battle.units.filter(u=>u.team==="player").map(u=>unit(u));
     showDisconnectPrompt(opponentPicks);
   }
   connState="DISCONNECTED";
@@ -4312,6 +4317,7 @@ const Match={
     this.history=[];
     this.onMatchEnd=onMatchEnd||null;
     this.active=true;
+    this._graceActive=false; // NETFIX: clear grace flag for new match.
     this.deathLog=[];  // Phase 16: accumulate deaths across rounds for hint.
     // DET: generate deterministic seed. Host creates it, guest receives via P2P.
     // Single-player (no connection) also seeds for reproducible bug reports.
@@ -4344,7 +4350,8 @@ const Match={
     // DET: desync detection — exchange state hashes with the peer at round end.
     // Both peers compute the hash from their (independent) sims; a mismatch means
     // the determinism contract broke and the next round falls back to snapshots.
-    if(connected&&_peerDetCapable){
+    // PERF-R13: only send in lockstep mode (snapshot mode is already fallback).
+    if(connected&&_peerDetCapable&&Battle._lockstepActive){
       const myHash=Battle.stateHash();
       const payload={round:this.round,winner,hash:myHash};
       transmit("round_hash",payload);
@@ -4391,6 +4398,7 @@ const Match={
   // Phase 34: graceful disconnect with reconnect grace period.
   gracefulDisconnect(){
     if(!this.active)return;
+    this._graceActive=true; // NETFIX: mark grace as active to prevent re-trigger.
     // Use stop() instead of just setting running=false to properly clean up
     // all timers (frame, interpRAF, autoTimer, music).
     if(Battle.running)Battle.stop();
@@ -6523,19 +6531,24 @@ const Battle={
     // Apply effects every 1 second to avoid per-frame overhead.
     if(this._mechanicT<1)return;
     this._mechanicT=0;
+    // PERF-R13: pooled environment synth (avoid per-death object allocation).
+    if(!this._envSynth)this._envSynth={team:"environment",n:"Arena",id:"arena_hazard",h:1,mh:1,d:0,baseD:0,r:0,x:0,y:0,role:"",crit:0,ability:"none",dmgDealt:0};
+    const envSynth=this._envSynth;
     if(arena.mechanic==="poison_aura"){
       // District Z: all units take 2 damage per second (poison environment).
-      for(const u of this.units){
+      for(let ui=0;ui<this.units.length;ui++){
+        const u=this.units[ui];
         if(u.h>0){
           u.h-=2;
-          if(u.h<=0){u.h=0;u.lastAttacker={team:"environment",n:"Arena",id:"arena_hazard"};this.onUnitDeath(u,null);}
+          if(u.h<=0){u.h=0;u.lastAttacker=envSynth;this.onUnitDeath(u,envSynth);}
         }
       }
     }else if(arena.mechanic==="speed_boost"){
       // Golden Goal: all units get +20% speed (faster-paced battles).
       // Applied once at battle start via _appliedSpeedBoost flag.
       if(!this._appliedSpeedBoost){
-        for(const u of this.units){
+        for(let ui=0;ui<this.units.length;ui++){
+          const u=this.units[ui];
           if(!u._baseS)u._baseS=u.s;
           u.s=Math.round(u._baseS*1.2);
         }
@@ -6543,10 +6556,11 @@ const Battle={
       }
     }else if(arena.mechanic==="damage_aura"){
       // Void Rift: all units take 3 damage per second (brutal environment).
-      for(const u of this.units){
+      for(let ui=0;ui<this.units.length;ui++){
+        const u=this.units[ui];
         if(u.h>0){
           u.h-=3;
-          if(u.h<=0){u.h=0;u.lastAttacker={team:"environment",n:"Arena",id:"arena_hazard"};this.onUnitDeath(u,null);}
+          if(u.h<=0){u.h=0;u.lastAttacker=envSynth;this.onUnitDeath(u,envSynth);}
         }
       }
     }
@@ -6556,6 +6570,8 @@ const Battle={
   // Both peers compute this at round end; mismatch → fall back to snapshot sync.
   // Quantizes positions to 0.001 units and HP to integers so float noise
   // below the DMath rounding threshold (1e-6) doesn't cause false positives.
+  // PERF-R13: exclude animState (render-only, can differ between peers at the
+  // same tick due to render timing → false desync positives).
   stateHash(){
     // _finalUnits is snapshotted before stop() clears this.units; use it as the
     // authoritative source at round end so the hash is computable post-stop.
@@ -6563,7 +6579,7 @@ const Battle={
     const snap=new Array(arr.length);
     for(let i=0;i<arr.length;i++){
       const u=arr[i];
-      snap[i]={i:u.id,x:Math.round(u.x*1000),y:Math.round(u.y*1000),h:Math.round(u.h),s:u.animState};
+      snap[i]={i:u.id,x:Math.round(u.x*1000),y:Math.round(u.y*1000),h:Math.round(u.h)};
     }
     return fnv1aHash(snap);
   },
@@ -8308,7 +8324,12 @@ const Battle={
   log(t){
     let el=$("battleLog");
     if(!el)return;
-    el.innerHTML+="<div>"+t+"</div>";
+    // PERF-R13: use DOM appendChild instead of innerHTML+= (avoids full reparse+reflow).
+    // Was: el.innerHTML+="<div>"+t+"</div>"; — reparsed ALL children every call.
+    const div=document.createElement("div");
+    div.innerHTML=t;
+    // Move the parsed child(ren) into the log (t may contain HTML spans).
+    while(div.firstChild)el.appendChild(div.firstChild);
     while(el.children.length>8){el.firstChild.remove();}
     // Auto-scroll to bottom.
     el.scrollTop=el.scrollHeight;
@@ -8606,13 +8627,18 @@ const Battle={
     const el=$("killFeed");
     if(!el)return;
     if(!this._killFeed||this._killFeed.length===0){el.style.display="none";return;}
-    // Filter out entries older than 6 seconds.
+    // PERF-R13: in-place compaction instead of filter() (avoid array allocation).
     const now=this.time;
-    this._killFeed=this._killFeed.filter(k=>now-k.t<6);
-    if(this._killFeed.length===0){el.style.display="none";return;}
+    let w=0;
+    for(let i=0;i<this._killFeed.length;i++){
+      if(now-this._killFeed[i].t<6){if(w!==i)this._killFeed[w]=this._killFeed[i];w++;}
+    }
+    this._killFeed.length=w;
+    if(w===0){el.style.display="none";return;}
     el.style.display="block";
     let html="";
-    for(const k of this._killFeed){
+    for(let ki=0;ki<w;ki++){
+      const k=this._killFeed[ki];
       const age=now-k.t;
       const opacity=Math.max(0.3,1-age/6);
       const killerColor=k.killerTeam==="player"?"var(--ok)":k.killerTeam==="enemy"?"var(--warn)":"var(--muted)";
@@ -8950,7 +8976,9 @@ const Battle={
     // NETFIX: use _curSnapIds for O(1) crit unit lookup (was O(n) find per crit).
     if(s.recentCrits){
       if(!this._processedCrits)this._processedCrits=new Set();
-      for(const rc of s.recentCrits){
+      // PERF-R13: index loop (avoid for...of iterator allocation at 20Hz).
+      for(let rci=0;rci<s.recentCrits.length;rci++){
+        const rc=s.recentCrits[rci];
         const key=rc.id+":"+rc.t;
         if(this._processedCrits.has(key))continue;
         this._processedCrits.add(key);
@@ -11457,8 +11485,9 @@ const G={
     // that would double-count history/lives (once here, once via round_end msg).
     // Guest quest/achievement tracking happens via onMatchEnd (match_end msg).
     // DET: in lockstep mode, both peers send their state hash for desync
-    // detection. This runs before the guest's early return so both sides emit.
-    if(connected&&_peerDetCapable&&Battle._lockstepActive){
+    // detection. Guest sends here (before early return); host sends from
+    // Match.onRoundEnd (avoids duplicate send — was sending twice).
+    if(connected&&_peerDetCapable&&Battle._lockstepActive&&role==="guest"){
       const myHash=Battle.stateHash();
       transmit("round_hash",{round:Match.round,winner,hash:myHash});
     }
@@ -12161,7 +12190,9 @@ const G={
     // Cap units to prevent memory exhaustion (max 200 units per side).
     if(snap.units.length>400)return;
     // Validate each unit has required numeric fields.
-    for(const u of snap.units){
+    // PERF-R13: index loop (avoid for...of iterator allocation at 20Hz).
+    for(let vui=0;vui<snap.units.length;vui++){
+      const u=snap.units[vui];
       if(!u||typeof u.x!=="number"||typeof u.y!=="number"||typeof u.h!=="number")return;
       // Clamp coordinates to game space.
       if(u.x<-1000||u.x>1000||u.y<-1000||u.y>1000)return;
@@ -12173,14 +12204,29 @@ const G={
     if(snap.projectiles&&!Array.isArray(snap.projectiles))snap.projectiles=[];
     if(snap.recentCrits&&!Array.isArray(snap.recentCrits))snap.recentCrits=[];
     // J3: Handle compressed snapshots (units have short keys).
+    // PERF-R13: reuse pooled objects for decompression (avoid N allocations at 20Hz).
     if(snap.units[0]&&snap.units[0].i!==undefined){
-      snap={...snap,units:snap.units.map(u=>({
-        id:u.i,n:u.n,x:u.x,y:u.y,h:u.h,mh:u.mh,team:u.t,
-        animState:u.s,c:u.c,z:u.z,r:u.r,
-        prevH:u.h,deathT:u.h<=0?0:undefined
-      })),projectiles:(snap.projectiles||[]).map(p=>({
-        x:p.x,y:p.y,tx:p.tx,ty:p.ty,c:p.c,d:p.d,team:p.t,dead:false,life:1
-      })),recentCrits:snap.rc||[]};
+      if(!Battle._decompPool)Battle._decompPool=[];
+      if(!Battle._decompProjPool)Battle._decompProjPool=[];
+      const dp=Battle._decompPool;
+      const dpp=Battle._decompProjPool;
+      const ulen=snap.units.length;
+      for(let i=0;i<ulen;i++){
+        if(i>=dp.length)dp[i]={};
+        const u=snap.units[i],o=dp[i];
+        o.id=u.i;o.n=u.n;o.x=u.x;o.y=u.y;o.h=u.h;o.mh=u.mh;o.team=u.t;
+        o.animState=u.s;o.c=u.c;o.z=u.z;o.r=u.r;
+        o.prevH=u.h;o.deathT=u.h<=0?0:undefined;
+      }
+      dp.length=ulen;
+      const plen=(snap.projectiles||[]).length;
+      for(let i=0;i<plen;i++){
+        if(i>=dpp.length)dpp[i]={};
+        const p=snap.projectiles[i],o=dpp[i];
+        o.x=p.x;o.y=p.y;o.tx=p.tx;o.ty=p.ty;o.c=p.c;o.d=p.d;o.team=p.t;o.dead=false;o.life=1;
+      }
+      dpp.length=plen;
+      snap={units:dp,projectiles:dpp,recentCrits:snap.rc||[],time:snap.time,winner:snap.winner};
     }
     // Guard: filter out any null/undefined units or units missing x/y.
     // NETFIX: filter in-place to avoid spread allocation (was {...snap,units:...}).
