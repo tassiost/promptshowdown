@@ -3502,22 +3502,11 @@ let suppressP2PErrors=false;
 //   round_deck    : guest→host {picks (serialized units with recipes)}
 function networkReceive(data){
   try{
-    // P2P security: rate limiting — drop floods.
-    if(!_p2pRateCheck()){console.warn("[P2P] Rate limit exceeded, dropping message:",data?.t);return;}
     // P2P security: reject non-objects or missing type.
     if(!data||typeof data!=="object"||typeof data.t!=="string")return;
-    // Guard: most message types require data.d; skip if missing.
-    if(data.t!=="role"&&data.t!=="ping"&&data.t!=="pong"&&!data.d)return;
-    // NETFIX: message dedup — drop messages with seq <= last seen (duplicates).
-    // Heartbeat pings/pongs don't have seq (sent as _internal), so skip check.
-    if(data.seq!==undefined){
-      if(data.seq<=_recvSeq){
-        console.debug("[P2P] Dropping duplicate/old message:",data.t,"seq:",data.seq,"<= ",_recvSeq);
-        return;
-      }
-      _recvSeq=data.seq;
-    }
-    // NETFIX: heartbeat ping/pong — also updates lastPongReceived for connection monitoring.
+    // NETFIX: handle heartbeat ping/pong BEFORE rate limiter — these are
+    // critical for connection monitoring and must not be dropped by the
+    // rate limit (which could happen during snapshot bursts at 20Hz).
     if(data.t==="ping"){
       transmit("pong",{ts:data.d?.ts},true);
       return;
@@ -3526,9 +3515,21 @@ function networkReceive(data){
       _lastPongReceived=Date.now();
       const latency=Date.now()-(data.d?.ts||0);
       G._p2pTestLog?.(`Pong received — latency: ${latency}ms`);
-      // NETFIX: update connection status UI with latency.
       _updateConnStatus(latency);
       return;
+    }
+    // P2P security: rate limiting — drop floods (after heartbeat exempt).
+    if(!_p2pRateCheck()){console.warn("[P2P] Rate limit exceeded, dropping message:",data?.t);return;}
+    // Guard: most message types require data.d; skip if missing.
+    if(data.t!=="role"&&!data.d)return;
+    // NETFIX: message dedup — drop messages with seq <= last seen (duplicates).
+    // Heartbeat pings/pongs don't have seq (sent as _internal), so skip check.
+    if(data.seq!==undefined){
+      if(data.seq<=_recvSeq){
+        console.debug("[P2P] Dropping duplicate/old message:",data.t,"seq:",data.seq,"<= ",_recvSeq);
+        return;
+      }
+      _recvSeq=data.seq;
     }
     if(data.t==="role"){
       // P2P security: version compatibility check.
@@ -6729,16 +6730,12 @@ const Battle={
     // Phase 17: update FX (particles, shake, round flash).
     BattleFX.update(dt);
     // 6. clamp positions to canvas bounds (prevent flee/kite from flying off).
-    // PERF-R12: iterate over alive arrays (already built) instead of this.units.
+    // NETFIX: unified single loop over all units (SP + MP share this path).
+    // Was 2 separate loops for players/enemies — same logic, now one pass.
     const cw=this.canvasW||400, ch=this.canvasH;
-    for(let i=0;i<players.length;i++){
-      const u=players[i];
-      const spriteH=(u.z||10)/10*1.8*26;
-      u.x=clamp(u.x,u.z,cw-u.z);
-      u.y=clamp(u.y,spriteH+12,ch-u.z);
-    }
-    for(let i=0;i<enemies.length;i++){
-      const u=enemies[i];
+    for(let i=0;i<this.units.length;i++){
+      const u=this.units[i];
+      if(u.h<=0)continue; // skip dead units (no position update needed)
       const spriteH=(u.z||10)/10*1.8*26;
       u.x=clamp(u.x,u.z,cw-u.z);
       u.y=clamp(u.y,spriteH+12,ch-u.z);
@@ -8727,16 +8724,32 @@ const Battle={
     };
   },
   // J3: Compressed snapshot for P2P — only essential fields per unit.
+  // NETFIX: reuse pooled arrays to avoid N+M allocations per snapshot (20Hz).
   compressedSnapshot(){
-    const cu=this.units.map(u=>({
-      i:u.id,n:u.n,x:Math.round(u.x),y:Math.round(u.y),
-      h:Math.round(u.h),mh:Math.round(u.mh),t:u.team,
-      s:u.animState,c:u.c,z:u.z,r:u.r
-    }));
-    const cp=this.projectiles.map(p=>({
-      x:Math.round(p.x),y:Math.round(p.y),tx:Math.round(p.tx),ty:Math.round(p.ty),
-      c:p.c,d:Math.round(p.d),t:p.team
-    }));
+    if(!this._snapPool)this._snapPool=[];
+    if(!this._snapProjPool)this._snapProjPool=[];
+    const cu=this._snapPool;
+    const unitsLen=this.units.length;
+    // Grow pool if needed (no shrink — avoids GC pressure).
+    for(let i=cu.length;i<unitsLen;i++)cu.push({});
+    cu.length=unitsLen;
+    for(let i=0;i<unitsLen;i++){
+      const u=this.units[i];
+      const o=cu[i];
+      o.i=u.id;o.n=u.n;o.x=Math.round(u.x);o.y=Math.round(u.y);
+      o.h=Math.round(u.h);o.mh=Math.round(u.mh);o.t=u.team;
+      o.s=u.animState;o.c=u.c;o.z=u.z;o.r=u.r;
+    }
+    const cp=this._snapProjPool;
+    const projLen=this.projectiles.length;
+    for(let i=cp.length;i<projLen;i++)cp.push({});
+    cp.length=projLen;
+    for(let i=0;i<projLen;i++){
+      const p=this.projectiles[i];
+      const o=cp[i];
+      o.x=Math.round(p.x);o.y=Math.round(p.y);o.tx=Math.round(p.tx);o.ty=Math.round(p.ty);
+      o.c=p.c;o.d=Math.round(p.d);o.t=p.team;
+    }
     return{
       time:Math.round(this.time*100)/100,
       units:cu,projectiles:cp,
@@ -8751,7 +8764,59 @@ const Battle={
   applySnapshot(s){
     if(!s||!s.units)return;
     const prev=this._prevSnapshot;
-    this.units=s.units.filter(u=>u&&u.x!==undefined).map(u=>({...u,mh:u.mh||u.h,prevH:u.prevH??u.h}));
+    // NETFIX: reuse unit objects to avoid N allocations per snapshot (20Hz).
+    // Match by ID — update existing units in place, create new ones only for
+    // new IDs, remove stale ones. With 100 units at 20Hz, this saves 2000 obj/sec.
+    if(!this._snapUnitMap)this._snapUnitMap=new Map();
+    const snapMap=this._snapUnitMap;
+    snapMap.clear();
+    // Build map of new snapshot units by ID.
+    for(let i=0;i<s.units.length;i++){
+      const u=s.units[i];
+      if(u&&u.x!==undefined)snapMap.set(u.id,u);
+    }
+    // Reuse existing unit array — update in place, collect stale for removal.
+    if(!this._snapReuseArr)this._snapReuseArr=[];
+    const reuse=this._snapReuseArr;
+    reuse.length=0;
+    let reuseLen=0;
+    // Update existing units + collect new ones.
+    if(!this._snapExistingMap)this._snapExistingMap=new Map();
+    const existing=this._snapExistingMap;
+    existing.clear();
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
+      const snap_u=snapMap.get(u.id);
+      if(snap_u){
+        // Update in place — avoid allocating a new object.
+        u.x=snap_u.x;u.y=snap_u.y;u.h=snap_u.h;
+        u.mh=snap_u.mh||snap_u.h;
+        u.prevH=u.prevH??snap_u.h;
+        if(snap_u.n!==undefined)u.n=snap_u.n;
+        if(snap_u.team!==undefined)u.team=snap_u.team;
+        if(snap_u.animState!==undefined)u.animState=snap_u.animState;
+        if(snap_u.s!==undefined)u.animState=snap_u.s;
+        if(snap_u.c!==undefined)u.c=snap_u.c;
+        if(snap_u.z!==undefined)u.z=snap_u.z;
+        if(snap_u.r!==undefined)u.r=snap_u.r;
+        if(snap_u.t!==undefined)u.team=snap_u.t;
+        existing.set(u.id,true);
+        reuse[reuseLen++]=u;
+      }
+    }
+    // Add new units (not in existing array).
+    for(let i=0;i<s.units.length;i++){
+      const su=s.units[i];
+      if(su&&su.x!==undefined&&!existing.has(su.id)){
+        const u={...su,mh:su.mh||su.h,prevH:su.prevH??su.h};
+        if(su.t!==undefined)u.team=su.t;
+        if(su.s!==undefined)u.animState=su.s;
+        reuse[reuseLen++]=u;
+      }
+    }
+    // Copy reuse array into this.units (no new array allocation).
+    this.units.length=reuseLen;
+    for(let i=0;i<reuseLen;i++)this.units[i]=reuse[i];
     if(s.projectiles)this.projectiles=s.projectiles;
     // Phase 17: state-derived FX from snapshot deltas.
     if(prev&&prev.units){
@@ -8761,8 +8826,12 @@ const Battle={
       prevMap.clear();
       // PERF-R12: index loop (avoid for...of iterator allocation).
       for(let pui=0;pui<prev.units.length;pui++)prevMap.set(prev.units[pui].id,prev.units[pui]);
+      // NETFIX: reuse curSnapIds Set + curUnitMap for crit lookup (BUG 6 fix).
+      if(!this._curSnapIds)this._curSnapIds=new Set();
+      this._curSnapIds.clear();
       for(let ui=0;ui<this.units.length;ui++){
         const u=this.units[ui];
+        this._curSnapIds.add(u.id);
         const pu=prevMap.get(u.id);
         if(!pu){
           // New unit → spawn FX.
@@ -8773,9 +8842,6 @@ const Battle={
         }
       }
       // Units that disappeared → death FX.
-      if(!this._curSnapIds)this._curSnapIds=new Set();
-      this._curSnapIds.clear();
-      for(let ui=0;ui<this.units.length;ui++)this._curSnapIds.add(this.units[ui].id);
       for(let pui=0;pui<prev.units.length;pui++){
         const pu=prev.units[pui];
         if(!this._curSnapIds.has(pu.id)&&pu.h>0){
@@ -8784,14 +8850,17 @@ const Battle={
       }
     }
     // Phase 17: crit FX from recentCrits in snapshot.
+    // NETFIX: use _curSnapIds for O(1) crit unit lookup (was O(n) find per crit).
     if(s.recentCrits){
       if(!this._processedCrits)this._processedCrits=new Set();
       for(const rc of s.recentCrits){
         const key=rc.id+":"+rc.t;
         if(this._processedCrits.has(key))continue;
         this._processedCrits.add(key);
-        const u=this.units.find(x=>x.id===rc.id);
-        if(u)BattleFX.onCrit(u);
+        if(this._curSnapIds&&this._curSnapIds.has(rc.id)){
+          const u=this.units.find(x=>x.id===rc.id);
+          if(u)BattleFX.onCrit(u);
+        }
       }
       // Prune old processed crits (keep last 100 entries).
       if(this._processedCrits.size>100){
@@ -12024,10 +12093,34 @@ const G={
       })),recentCrits:snap.rc||[]};
     }
     // Guard: filter out any null/undefined units or units missing x/y.
-    snap={...snap,units:snap.units.filter(u=>u&&u.x!==undefined&&u.y!==undefined)};
+    // NETFIX: filter in-place to avoid spread allocation (was {...snap,units:...}).
+    let validUnits=snap.units;
+    let hasInvalid=false;
+    for(let i=0;i<validUnits.length;i++){
+      if(!validUnits[i]||validUnits[i].x===undefined||validUnits[i].y===undefined){hasInvalid=true;break;}
+    }
+    if(hasInvalid){
+      validUnits=validUnits.filter(u=>u&&u.x!==undefined&&u.y!==undefined);
+      snap.units=validUnits;
+    }
     // J3: Store interpolation state — from = current units, to = new snapshot.
+    // NETFIX: reuse pooled array for interpFrom units (avoids N allocations per snapshot).
     if(Battle.units.length>0&&snap.units.length>0){
-      Battle._interpFrom={units:Battle.units.map(u=>({id:u.id,x:u.x,y:u.y,h:u.h})),time:Battle.time};
+      if(!Battle._interpFromPool)Battle._interpFromPool=[];
+      const pool=Battle._interpFromPool;
+      const poolLen=Math.min(Battle.units.length,pool.length);
+      let pi=0;
+      for(;pi<Battle.units.length;pi++){
+        const u=Battle.units[pi];
+        if(!pool[pi])pool[pi]={id:0,x:0,y:0,h:0};
+        pool[pi].id=u.id;pool[pi].x=u.x;pool[pi].y=u.y;pool[pi].h=u.h;
+      }
+      pool.length=Battle.units.length;
+      Battle._interpFrom={units:pool,time:Battle.time};
+      // NETFIX: force fromMap rebuild in _interpRender — the pool array is
+      // reused (same reference), so the _interpFromUnits!==check would skip
+      // the rebuild, leaving the fromMap with stale positions.
+      Battle._interpFromUnits=null;
       Battle._interpTo=snap;
       Battle._interpStart=performance.now();
       Battle._interpDur=0.1; // 100ms interpolation window
@@ -12035,15 +12128,31 @@ const G={
     Battle.applySnapshot(snap);
     Battle.projectiles=snap.projectiles||[];
     Battle.time=snap.time||0;
-    Battle.renderOnly();
+    // NETFIX: only render immediately on first snapshot (no interp state yet).
+    // On subsequent snapshots, the interp loop handles rendering — calling
+    // renderOnly() here would render the NEW positions without interpolation,
+    // causing a 1-frame visual "snap" before the interp loop kicks in.
+    if(!Battle._interpFrom)Battle.renderOnly();
     // J3: Start interpolation render loop for smooth guest rendering.
     if(Battle.running)Battle._startInterpLoop();
     // HUD: from the guest's perspective, "enemy" team is the guest's own army.
-    const myAlive=Battle.units.filter(u=>u.team==="enemy"&&u.h>0).length;
-    const hostAlive=Battle.units.filter(u=>u.team==="player"&&u.h>0).length;
-    setText("battleHP",myAlive);
-    setText("battleEnemy",hostAlive);
-    setText("turn","T"+Math.floor(Battle.time));
+    // NETFIX: use count loops instead of filter() (was 2 filter allocations per snapshot).
+    // NETFIX: throttle guest HUD to 10fps (matches SP path, was 20Hz).
+    Battle._guestHudT=(Battle._guestHudT||0)+0.05; // 50ms per snapshot
+    if(Battle._guestHudT>=0.1){
+      Battle._guestHudT=0;
+      let myAlive=0,hostAlive=0;
+      for(let i=0;i<Battle.units.length;i++){
+        const u=Battle.units[i];
+        if(u.h>0){
+          if(u.team==="enemy")myAlive++;
+          else if(u.team==="player")hostAlive++;
+        }
+      }
+      setText("battleHP",myAlive);
+      setText("battleEnemy",hostAlive);
+      setText("turn","T"+Math.floor(Battle.time));
+    }
     if(snap.winner){
       // Host's "player" = host won → guest lost. Host's "enemy" = guest won.
       const guestWinner=snap.winner==="enemy"?"player":(snap.winner==="player"?"enemy":"draw");
