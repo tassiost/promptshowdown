@@ -129,3 +129,18 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .screen::-webkit-scrollbar{width:4px;}
 .screen::-webkit-scrollbar-track{background:transparent;}
 .screen::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+/* Custom tooltip — works on hover (desktop) + tap (mobile) */
+#cardTooltip{
+  position:fixed;z-index:10001;max-width:280px;
+  background:linear-gradient(180deg,var(--card2),var(--card));
+  border:1px solid var(--accent);border-radius:var(--radius-sm);
+  padding:10px 14px;font-size:.72rem;color:var(--text);
+  box-shadow:var(--shadow-lg),var(--glow-accent);
+  display:none;pointer-events:none;line-height:1.5;
+  animation:fadeIn .15s ease;
+}
+#cardTooltip .ttTitle{font-weight:800;font-size:.85rem;margin-bottom:4px;}
+#cardTooltip .ttStats{color:var(--muted);margin-bottom:4px;}
+#cardTooltip .ttAbility{color:var(--accent2);font-weight:700;margin-top:4px;}
+#cardTooltip .ttAbDesc{color:var(--muted);font-size:.65rem;margin-top:2px;}
+#cardTooltip .ttRole{color:var(--muted);font-size:.65rem;margin-top:2px;}

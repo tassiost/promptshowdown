@@ -1928,19 +1928,11 @@ const G={
       return card;
     }
     card.className="card rar-"+u.rar;
-    // QUICKWIN: native tooltip with full stats + ability description.
-    const draftAbDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?ABILITY_DESCRIPTIONS[u.ability]:"";
-    const draftTooltip=[`${u.h} HP · ${u.d} DMG · Range ${u.r} · Speed ${u.s} · Atk ${u.a}s`];
-    if(u.ability&&u.ability!=="none")draftTooltip.push(`Ability: ${u.ability}${draftAbDesc?" — "+draftAbDesc:""}`);
-    if(u.role)draftTooltip.push(`Role: ${u.role}`);
-    draftTooltip.push(`Rarity: ${u.rar} · Cost: ${u.cost}`);
-    card.title=draftTooltip.join("\n");
     // Phase 16: check if this unit fills a missing role (only after first pick).
     const pickedRoles=this.roundDraftState.picks.map(p=>p.role);
     const missingRole=this.roundDraftState.picks.length>0&&!pickedRoles.includes(u.role);
     const roleFillHint=missingRole?`<br><span style="color:var(--ok)">fills ${u.role}</span>`:"";
     const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${u.ability}</span>`:"";
-    const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?`<br><span style="color:var(--muted);font-size:.65rem">${ABILITY_DESCRIPTIONS[u.ability]}</span>`:"";
     const roleLabel=u.role?`<br><span style="color:var(--muted)">${u.role}</span>`:"";
     // Count badge: each pick deploys 3 copies.
     const countBadge=`<div class="cardCount">×3</div>`;
@@ -1948,8 +1940,10 @@ const G={
       countBadge+
       `<div class="rarityTag ${u.rar}">${u.rar.toUpperCase()}</div>`+
       `<div class="title" style="color:${u.c}">${u.n}</div>`+
-      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${abDesc}${roleLabel}${roleFillHint}</div>`;
+      `<div class="detail">${u.h} HP · ${u.d} DMG<br>R${u.r} · 💰${u.cost}${abLabel}${roleLabel}${roleFillHint}</div>`;
     if(missingRole)card.style.borderColor="var(--ok)";
+    // Custom tooltip (hover + tap) — shows full stats + ability description.
+    CardTooltip.attach(card,()=>CardTooltip.unitHtml(u));
     card.onclick=()=>this.pickDraft(u);
     return card;
   },
@@ -3957,18 +3951,13 @@ const G={
       }
       const card=document.createElement("div");
       card.className="card";
-      // QUICKWIN: native tooltip with full stats + ability description on hover.
-      const abDescText=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?ABILITY_DESCRIPTIONS[u.ability]:"";
-      const tooltipParts=[`${u.h} HP · ${u.d} DMG · Range ${u.r} · Speed ${u.s} · Atk ${u.a}s`];
-      if(u.ability&&u.ability!=="none")tooltipParts.push(`Ability: ${u.ability}${abDescText?" — "+abDescText:""}`);
-      if(u.role)tooltipParts.push(`Role: ${u.role}`);
-      tooltipParts.push(`Rarity: ${u.rar} · Cost: ${u.cost}`);
-      card.title=tooltipParts.join("\n");
       card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${masteryBadge}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       // F2: info button opens unit detail view.
       const infoBtn=card.querySelector("button");
       if(infoBtn)infoBtn.onclick=(e)=>{e.stopPropagation();this.showUnitDetail(u);};
+      // Custom tooltip (hover + tap) — shows full stats + ability description.
+      CardTooltip.attach(card,()=>CardTooltip.unitHtml(u));
       if(canFuse){
         card.style.borderColor="var(--legendary)";
         card.onclick=()=>this.fuseUnit(u.n);
@@ -4886,6 +4875,88 @@ const G={
         }
       });
     }catch(e){toast("Import failed: "+(e.message||e));}
+  }
+};
+
+// Custom tooltip — works on hover (desktop) + tap (mobile).
+// Replaces native title attribute which doesn't show on touch devices.
+const CardTooltip={
+  _el:null,_timer:null,_currentCard:null,
+  _el2(){if(!this._el)this._el=$("cardTooltip");return this._el;},
+  show(card,html){
+    const el=this._el2();if(!el)return;
+    el.innerHTML=html;
+    el.style.display="block";
+    // Position below the card, clamped to viewport.
+    const rect=card.getBoundingClientRect();
+    const tw=el.offsetWidth,th=el.offsetHeight;
+    let x=rect.left+rect.width/2-tw/2;
+    let y=rect.bottom+6;
+    // Clamp horizontally.
+    x=Math.max(8,Math.min(innerWidth-tw-8,x));
+    // If no room below, show above.
+    if(y+th>innerHeight-8)y=rect.top-th-6;
+    el.style.left=x+"px";
+    el.style.top=y+"px";
+  },
+  hide(){
+    const el=this._el2();if(el)el.style.display="none";
+    this._currentCard=null;
+    if(this._timer){clearTimeout(this._timer);this._timer=null;}
+  },
+  // Attach hover + tap handlers to a card element.
+  // htmlFn(card) returns the tooltip HTML string.
+  attach(card,htmlFn){
+    // Hover (desktop).
+    card.addEventListener("mouseenter",()=>{
+      if(this._currentCard&&this._currentCard!==card)this.hide();
+      this._currentCard=card;
+      this._timer=setTimeout(()=>this.show(card,htmlFn(card)),300);
+    });
+    card.addEventListener("mouseleave",()=>{this.hide();});
+    card.addEventListener("mousemove",()=>{
+      // Reset show timer on mouse move (debounce).
+      if(this._currentCard===card&&this._timer){
+        clearTimeout(this._timer);
+        this._timer=setTimeout(()=>this.show(card,htmlFn(card)),300);
+      }
+    });
+    // Tap (mobile) — long-press shows tooltip, tap hides.
+    let touchStart=0,touchMoved=false;
+    card.addEventListener("pointerdown",(e)=>{
+      if(e.pointerType!=="touch")return;
+      touchStart=Date.now();touchMoved=false;
+      this._currentCard=card;
+      this._timer=setTimeout(()=>{
+        this.show(card,htmlFn(card));
+      },400);
+    });
+    card.addEventListener("pointermove",(e)=>{
+      if(e.pointerType!=="touch")return;
+      touchMoved=true;this.hide();
+    });
+    card.addEventListener("pointerup",(e)=>{
+      if(e.pointerType!=="touch")return;
+      if(this._timer){clearTimeout(this._timer);this._timer=null;}
+      // If tooltip is showing, keep it visible (don't hide on tap-release).
+      const el=this._el2();
+      if(el&&el.style.display==="block")return;
+      // Otherwise, this was a quick tap — let the card's onclick fire.
+    });
+  },
+  // Build tooltip HTML for a unit.
+  unitHtml(u){
+    const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?ABILITY_DESCRIPTIONS[u.ability]:"";
+    const abIcon={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"}[u.ability]||"";
+    let html=`<div class="ttTitle" style="color:${u.c}">${u.n}</div>`;
+    html+=`<div class="ttStats">${u.h} HP · ${u.d} DMG · Range ${u.r} · Speed ${u.s} · Atk ${u.a}s</div>`;
+    if(u.ability&&u.ability!=="none"){
+      html+=`<div class="ttAbility">${abIcon} ${u.ability}</div>`;
+      if(abDesc)html+=`<div class="ttAbDesc">${abDesc}</div>`;
+    }
+    if(u.role)html+=`<div class="ttRole">Role: ${u.role}</div>`;
+    html+=`<div class="ttRole">Rarity: ${u.rar} · Cost: ${u.cost}</div>`;
+    return html;
   }
 };
 
