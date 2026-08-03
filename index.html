@@ -11456,6 +11456,13 @@ const G={
       const allUnits=Battle._allUnits||Battle._finalUnits||Battle.units||[];
       this.playerSurvivors=this._cleanSurvivors(allUnits,"player");
       this.enemySurvivors=this._cleanSurvivors(allUnits,"enemy");
+      // DET: in lockstep, sim uses host's team labeling (player=host, enemy=guest).
+      // Swap survivor arrays for the guest so playerSurvivors = guest's own units.
+      if(connected&&role==="guest"&&Battle._lockstepActive){
+        const tmp=this.playerSurvivors;
+        this.playerSurvivors=this.enemySurvivors;
+        this.enemySurvivors=tmp;
+      }
     }
     // Phase 16: accumulate death log across rounds for post-match hint.
     if(Battle.deathLog&&Battle.deathLog.length){
@@ -11463,8 +11470,13 @@ const G={
       Match.deathLog.push(...Battle.deathLog);
     }
     // Phase 19a: track last surviving player unit's role for Role Master.
-    if(winner==="player"){
-      // In P2P guest mode, the guest's units are team "enemy" in snapshots.
+    // DET: in lockstep, winner is in host's labeling (player=host, enemy=guest).
+    // Translate for the guest so we track the guest's wins, not the host's.
+    const roleWinner=(connected&&role==="guest"&&Battle._lockstepActive)
+      ?(winner==="enemy"?"player":winner==="player"?"enemy":"draw")
+      :winner;
+    if(roleWinner==="player"){
+      // In P2P guest mode, the guest's units are team "enemy" in snapshots/sim.
       const teamForRole=connected&&role==="guest"?"enemy":"player";
       // Use _finalUnits snapshot — Battle.units is cleared by stop() before onBattleEnd runs.
       const finalUnits=Battle._finalUnits||Battle.units||[];
