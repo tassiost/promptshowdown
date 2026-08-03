@@ -3264,6 +3264,8 @@ const _p2pRateBucket={count:0,resetAt:0};
 let _cmdRate=null; // P2P command rate limiter (10/sec)
 let _cmdLockRate=null; // DET: lockstep command rate limiter (20/sec)
 let _peerDetCapable=false; // DET: peer supports determinism (lockstep)
+let _peerRelayCapable=false; // RELAY: peer supports host-authoritative relay
+let _useRelay=false; // RELAY: active relay mode (host runs sim, guest renders)
 // NETFIX: ICE servers for NAT traversal — STUN for direct P2P, TURN for relay.
 // Without these, WebRTC fails on mobile (CG NAT), corporate networks, symmetric NAT.
 const ICE_SERVERS=[
@@ -3349,10 +3351,13 @@ function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=nul
   connState="DISCONNECTED";
   // DET: clear lockstep state so the sim doesn't stall waiting for peer acks.
   _peerDetCapable=false;
+  // RELAY: clear relay state.
+  _peerRelayCapable=false;_useRelay=false;
   if(typeof Battle!=="undefined"){
     Battle._lockstepActive=false;
     Battle._peerConfirmedTick=null;
     Battle._stallStart=null;
+    Battle._useRelay=false;
   }
   // NETFIX: reset sequence numbers + stop heartbeat on full disconnect.
   _sendSeq=0;
@@ -3553,6 +3558,8 @@ function networkReceive(data){
         if(role==="none")role=data.d.role||"guest";
         // DET: peer advertises determinism (lockstep) support.
         _peerDetCapable=!!data.d.det;
+        // RELAY: peer advertises host-authoritative relay support.
+        _peerRelayCapable=!!data.d.relay;
       }else if(typeof data.d==="string"){
         if(role==="host"&&data.d==="host"){
           // Both players joined the queue room — use tiebreaker to decide roles.
@@ -3639,6 +3646,26 @@ function networkReceive(data){
       if(role==="guest"&&data.d&&typeof data.d.seed==="number"){
         Match._receivedSeed=data.d.seed>>>0;
         Match.seed=data.d.seed>>>0; // DET: set Match.seed so Battle.start() uses it
+      }
+    }
+    // RELAY: host starts a relay battle — guest enters render-only mode.
+    // Guest does NOT run the sim. It renders state from host snapshots.
+    if(data.t==="relay_start"){
+      if(role==="guest"){
+        const d=data.d;
+        if(!d||typeof d!=="object")return;
+        // P2P security: sanitize spells received from the host.
+        const sanList=arr=>Array.isArray(arr)?arr.map(s=>sanitizeSpell(s)).filter(Boolean):[];
+        const spells={player:sanList(d.playerSpells),enemy:sanList(d.enemySpells)};
+        G.screen("battle");
+        G.updateLivesHUD();
+        // Guest's local team is "enemy" in the host's sim labeling.
+        Battle._localTeam="enemy";
+        Battle._useRelay=true;
+        Battle._lockstepActive=false;
+        // Guest starts Battle with empty armies — units will arrive via snapshots.
+        // We pass the spells so the spell bar renders correctly.
+        Battle.start([],[],winner=>G.onBattleEnd(winner),spells);
       }
     }
     // DET: host starts a lockstep battle — guest runs the sim independently
@@ -3733,6 +3760,30 @@ function networkReceive(data){
         else if(c==="skip")Battle.skip();
         else if(c==="speed")G.cycleSpeed();
         else if(c==="pause")G.togglePause();
+      }
+    }
+    // RELAY: host receives a relay-mode command from the guest (spell cast).
+    // The host validates and executes it; the effect appears in the next state snapshot.
+    if(data.t==="command"){
+      if(role==="host"&&Battle._useRelay){
+        const c=data.d;
+        if(!c||typeof c!=="object"||typeof c.type!=="string")return;
+        // Rate limit relay commands (prevents spam).
+        if(!_cmdRate)_cmdRate={count:0,resetAt:0};
+        const now=Date.now();
+        if(now>_cmdRate.resetAt){_cmdRate.count=0;_cmdRate.resetAt=now+1000;}
+        _cmdRate.count++;
+        if(_cmdRate.count>10)return;
+        if(c.type==="spell_cast"){
+          // Validate spell index.
+          if(typeof c.spellIdx!=="number")return;
+          // Guest's team is "enemy" in the host's sim labeling.
+          const team="enemy";
+          const teamSpells=Battle._allPlayerSpells&&Battle._allPlayerSpells[team];
+          if(!teamSpells||!teamSpells[c.spellIdx])return;
+          // Execute the spell cast on the host's sim.
+          Battle._executeSpellCast(team,c.spellIdx,c.targetX||0,c.targetY||0);
+        }
       }
     }
     if(data.t==="forge"){
@@ -3849,7 +3900,7 @@ function networkReceive(data){
     if(!["role","role_tiebreak","request_deck","deck","snap","cmd","forge",
          "match_start","round_start","opponent_picks","round_end",
          "match_end","round_deck","spell_used","seed","cmd_lock","tick_ack",
-         "round_hash","lockstep_start"].includes(data.t)){
+         "round_hash","lockstep_start","relay_start","command"].includes(data.t)){
       console.warn("Unknown network message type:",data.t);
     }
   }catch(e){
@@ -6485,6 +6536,7 @@ const Battle={
     this._peerConfirmedTick=null;   // latest tick the peer has acknowledged
     this._lockstepActive=false;     // set true when both peers run the sim
     this._desyncFallback=false;     // set true on hash mismatch → snapshot fallback
+    this._useRelay=false;           // RELAY: host runs sim, guest renders from snapshots
     this._stallStart=null;          // DET: lockstep stall watchdog timestamp
     // DET: the local player's team in the sim. Host/solo → "player". Guest in
     // lockstep → "enemy" (the sim keeps the host's labeling on both peers so the
@@ -6673,6 +6725,32 @@ const Battle={
     // DET: feed real frame time (×speed) into the accumulator, drain in fixed steps.
     const FIXED_DT=1/60;
     this._accumulator=(this._accumulator||0)+frameTime*effectiveSpeed;
+    // RELAY: guest in relay mode does NOT run the sim — it only renders state
+    // received from the host via snapshots. Skip the update loop entirely.
+    // The host runs the sim normally (no lockstep constraints in relay mode).
+    if(this._useRelay&&connected&&role==="guest"){
+      // Guest: just render. State arrives via snap messages (applyRemoteSnapshot).
+      // Interpolation is handled by _interpTo in the render path.
+      this._lastDt=frameTime;
+      try{
+        this.render();
+      }catch(e){
+        showError("Render error: "+(e&&e.message||e));
+        this.stop();
+        return;
+      }
+      // Update spell bar cooldown display (throttled).
+      this._spellBarT=(this._spellBarT||0)+frameTime;
+      if(this._spellBarT>=0.5){
+        this._spellBarT=0;
+        this._renderSpellBar();
+        this._renderBattleStats();
+        this._renderKillFeed();
+      }
+      // Guest doesn't call checkEnd — host sends round_result/match_end messages.
+      this.frame=requestAnimationFrame(this._loopBound);
+      return;
+    }
     // DET: lockstep pacing — don't simulate too far ahead of the confirmed peer.
     // When not in lockstep (single-player or snapshot mode), _peerConfirmedTick is
     // undefined and maxTick is Infinity, so pacing is a no-op.
@@ -8832,6 +8910,13 @@ const Battle={
     if(!this.running||!this.playerSpells||!this.playerSpells[idx])return;
     const ps=this.playerSpells[idx];
     if(ps.cooldown>0||ps._pendingCast)return;
+    // RELAY: guest sends command to host, host executes and state reflects in next snapshot.
+    if(this._useRelay&&connected&&role==="guest"){
+      transmit("command",{type:"spell_cast",spellIdx:idx,targetX:targetX||0,targetY:targetY||0});
+      ps._pendingCast=true; // UI-only: prevent spam until snapshot reflects the cast
+      BattleFX.onSpell(ps.spec,{x:targetX||200,y:targetY||275},[],this._localTeam);
+      return;
+    }
     if(this._lockstepActive){
       // DET: schedule execution LOCKSTEP_DELAY ticks in the future so the peer's
       // command arrives in time. Both peers execute the command at the same tick.
@@ -11625,6 +11710,29 @@ const G={
     const guestArmy=[...guestSurvivors,...guestNew];
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
+    // RELAY: host-authoritative relay mode — only host runs the sim, guest
+    // renders from state snapshots. Eliminates desync bugs entirely.
+    // Preferred over lockstep when both peers support it.
+    // Lockstep code is preserved for fallback (if relay has issues, set
+    // _useRelay=false to revert to lockstep or snapshot sync).
+    if(_peerRelayCapable&&_peerDetCapable&&!Battle._desyncFallback){
+      // Send relay_start so the guest knows to enter render-only mode.
+      // Guest does NOT receive armies — it will get state via snapshots.
+      const payload={
+        playerSpells:spells.player,enemySpells:spells.enemy,
+        round:Match.round
+      };
+      transmit("relay_start",payload);
+      Battle._useRelay=true;
+      Battle._localTeam="player";
+      // Host runs the sim normally (no lockstep, no DMath/rand constraints).
+      Battle._lockstepActive=false;
+      Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
+      this.updateLivesHUD();
+      // Start broadcasting state snapshots to the guest at 15Hz.
+      this.startSnapshots();
+      return;
+    }
     // DET: lockstep mode — both peers run the sim from the same seed + armies.
     if(_peerDetCapable&&!Battle._desyncFallback){
       // Host shares both armies + spells so the guest starts from identical state.
@@ -12389,12 +12497,14 @@ const G={
   // Manual tick/auto/skip would advance only the local sim → desync. Disable them.
   tick(){
     if(Battle._lockstepActive)return; // DET: no manual tick in lockstep
+    // RELAY: guest in relay mode forwards commands to host (same as non-lockstep P2P).
     if(connected&&role==="guest"){transmit("cmd",{cmd:"tick"});return;}
     Battle.tick();
   },
   auto(){
     // DET: no auto-play in lockstep — sim runs via loop() on both peers.
     if(Battle._lockstepActive)return;
+    // RELAY: guest in relay mode uses the same cmd path as non-lockstep P2P.
     // Toggle auto-play button state (for both host/solo and guest).
     const btn=$("autoBtn");
     if(Battle.autoTimer||this._guestAutoActive){
@@ -12422,6 +12532,14 @@ const G={
     Battle.skip();
   },
   cycleSpeed(){
+    // RELAY: guest in relay mode sends simple cmd (host applies, no tick scheduling).
+    if(connected&&role==="guest"&&Battle._useRelay){
+      transmit("cmd",{cmd:"speed"});
+      // Update local UI — actual speed change arrives via snapshot.
+      const newSpeed=Battle.speed===1?2:Battle.speed===2?4:1;
+      const btn=$("speedBtn");if(btn)btn.textContent=newSpeed+"×";
+      return;
+    }
     // DET: in lockstep, speed changes must apply on both peers at the same tick.
     if(connected&&Battle._lockstepActive){
       const newSpeed=Battle.speed===1?2:Battle.speed===2?4:1;
@@ -12448,6 +12566,15 @@ const G={
     if(Battle.autoTimer)Battle.auto();
   },
   togglePause(){
+    // RELAY: guest in relay mode sends simple cmd (host applies, no tick scheduling).
+    if(connected&&role==="guest"&&Battle._useRelay){
+      transmit("cmd",{cmd:"pause"});
+      // Update local UI — actual pause state arrives via snapshot.
+      const nowPaused=!Battle.paused;
+      const btn=$("pauseBtn");if(btn)btn.textContent=nowPaused?"▶":"⏸";
+      Battle.paused=nowPaused; // local preview
+      return;
+    }
     // DET: in lockstep, pause/resume must apply on both peers at the same tick.
     if(connected&&Battle._lockstepActive){
       const nowPaused=!Battle.paused;
@@ -14177,7 +14304,7 @@ G.p2pTestHost=function(){
     G._p2pTestLog("Network setup OK, waiting for peer...");
     G._p2pTestStartWaitTimer();
     // Send role announcement after 500ms (same as normal host).
-    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION,det:true});G._p2pTestLog("Sent role: host");},500);
+    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION,det:true,relay:true});G._p2pTestLog("Sent role: host");},500);
   }else{
     G._p2pTestLog("Network setup FAILED");
   }
@@ -14192,7 +14319,7 @@ G.p2pTestJoin=function(){
   if(setupNetwork(roomName)){
     G._p2pTestLog("Network setup OK, waiting for host...");
     G._p2pTestStartWaitTimer();
-    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION,det:true});G._p2pTestLog("Sent role: guest");},500);
+    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION,det:true,relay:true});G._p2pTestLog("Sent role: guest");},500);
   }else{
     G._p2pTestLog("Network setup FAILED");
   }
@@ -14241,7 +14368,7 @@ G.host=function(roomName,silent,password){
   }
   const ok=setupNetwork(room,password);
   if(ok){
-    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION,det:true});},500);
+    setTimeout(()=>{transmit("role",{role:"host",v:CURRENT_VERSION,det:true,relay:true});},500);
     if(!silent){
       const c=$("connection");
       if(c)c.innerText="Status: hosting room "+room+(password?" (protected)":"");
@@ -14253,7 +14380,7 @@ G.join=function(password){
   role="guest";
   const rid=$("roomId");
   if(setupNetwork(rid?rid.value:"room1",password)){
-    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION,det:true});},500);
+    setTimeout(()=>{transmit("role",{role:"guest",v:CURRENT_VERSION,det:true,relay:true});},500);
   }
 };
 
@@ -14262,7 +14389,7 @@ window.Match=Match;
 window.Battle=Battle;
 window.Bot=Bot;
 // DET: expose P2P state for testing (module-scoped let vars aren't on window by default).
-window.__setP2PState=(c,r,d)=>{connected=c;role=r;_peerDetCapable=d;};
+window.__setP2PState=(c,r,d,rl)=>{connected=c;role=r;_peerDetCapable=d;_peerRelayCapable=!!rl;_useRelay=!!rl;};
 window.Quests=Quests;
 window.Analytics=Analytics;
 window.AdSDK=AdSDK;
