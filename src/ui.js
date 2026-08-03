@@ -426,16 +426,16 @@ const G={
   arenas:[
     {n:"Training Yard",c:"#4a4",lives:3,unlock:0,maxHp:100,maxDmg:30,
      bgTheme:"forest",mechanic:"none",
-     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Wizard"]},
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Wizard","Samurai","Frost Archer","Ice Wolf"]},
     {n:"District Z",c:"#8a4",lives:3,unlock:3,maxHp:130,maxDmg:35,
      bgTheme:"plague",mechanic:"poison_aura",
-     botPool:["Plague","Cultist","Berserker","Knight","Archer","Assassin"]},
+     botPool:["Plague","Cultist","Berserker","Plague Doctor","Scorpion","Shadow Ninja","Crystal Golem"]},
     {n:"Golden Goal",c:"#fa4",lives:3,unlock:8,maxHp:160,maxDmg:45,
      bgTheme:"desert",mechanic:"speed_boost",
-     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber"]},
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Sniper","Phoenix","Harpy","Minotaur"]},
     {n:"Void Rift",c:"#a4f",lives:4,unlock:15,maxHp:200,maxDmg:50,
      bgTheme:"void",mechanic:"damage_aura",
-     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserker","Shielder","Healer","Tank"]},
+     botPool:["Knight","Archer","Slash","Priest","Assassin","Engineer","Vamp","Bomber","Berserker","Shielder","Healer","Tank","Void Mage","Goblin Bomber","Clockwork","Mushroom Shaman"]},
   ],
   // Phase 10/11: starter roster with Behaviour Composition API fields + recipes.
   // 6 hand-authored units; each sets the 5 behaviour fields directly + visual recipe.
@@ -614,7 +614,7 @@ const G={
   // Phase 6: player level derived from XP (100 xp per level).
   playerLevel(){return 1+Math.max(0,F((this.save.xp||0)/100));},
   // Phase 6: per-unit upgrade level (0 if none).
-  unitLevel(name){return this.save.upgrades[name]||0;},
+  unitLevel(name){return(this.save.upgrades&&this.save.upgrades[name])||0;},
   // Phase 6: apply upgrade bonuses to a cloned unit (+10% hp/d per level).
   // Capped at level 10 (200% bonus) to prevent runaway stats.
   applyUpgrades(u){
@@ -683,7 +683,7 @@ const G={
   // Phase 13: deckUnits returns the loadout (4 cards) resolved to unit objects.
   // This is the draft pool per match.
   loadoutUnits(){
-    const loadout=this.save.loadout||["Knight","Archer","Slash","Wizard"];
+    const loadout=this.save.loadout||["Knight","Frost Archer","Slash","Wizard","Samurai","Phoenix"];
     const coll=this.save.collection||[];
     return loadout.map(name=>{
       // Find in collection first, then base roster.
