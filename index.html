@@ -1372,6 +1372,10 @@ function updateAIFromProgress(p){
   updateAI(text,pct);
   const stats=$("forgeModelStats");
   if(stats)stats.innerText=`${pct}% downloaded · ${speed.toFixed(1)}% per second · ${eta}`;
+  // Also update the aiStatus badge so it's visible even if the progress
+  // panel isn't shown (e.g. on another screen).
+  const aiStatus=$("aiStatus");
+  if(aiStatus)aiStatus.innerText=`AI: ${pct}% downloaded`;
   llmLastSample={p:p.progress,t:now};
 }
 
@@ -1470,6 +1474,22 @@ async function initLLM(){
 async function preloadAI(){
   if(!navigator.gpu)return;       // no point trying without WebGPU
   if(!W||!W.CreateMLCEngine)return;// web-llm module not loaded
+  // Start a global status poller so the aiStatus badge stays updated
+  // even when the user is not on the forge screen.
+  if(!window._aiStatusPoll){
+    window._aiStatusPoll=setInterval(()=>{
+      const aiStatus=$("aiStatus");
+      if(!aiStatus)return;
+      if(llmReady){aiStatus.innerText="AI: Ready";clearInterval(window._aiStatusPoll);window._aiStatusPoll=null;}
+      else if(llmLoading){
+        const pct=aiProgress.pct||0;
+        aiStatus.innerText=`AI: Downloading ${pct}%`;
+      }else if(llmCancelled){
+        aiStatus.innerText="AI: Cancelled (templates)";
+        clearInterval(window._aiStatusPoll);window._aiStatusPoll=null;
+      }
+    },500);
+  }
   try{await initLLM();}catch(e){console.warn("AI preload skipped:",e.message);}
 }
 
@@ -11832,7 +11852,7 @@ const G={
     // I1: Start ambient forge music.
     GameAudio.init();GameAudio.stopMusic();GameAudio.startAmbient();
     const aiStatus=$("aiStatus");
-    if(aiStatus)aiStatus.innerText=llmReady?"AI: Ready":llmLoading?"AI: Loading...":"AI: "+(navigator.gpu?"Idle":"Unavailable (templates)");
+    if(aiStatus)aiStatus.innerText=llmReady?"AI: Ready":llmLoading?"AI: Downloading model...":(navigator.gpu?"AI: Idle (will download on first forge)":"AI: Unavailable (templates)");
     const preview=$("forgePreview");
     if(preview)preview.innerHTML="";
     const actions=$("forgeActions");
@@ -11842,8 +11862,14 @@ const G={
     // Phase 12: show Skip button (template fallback without ad).
     const skipBtn=$("forgeSkipBtn");
     if(skipBtn)skipBtn.style.display="inline-block";
-    // Phase 12: hide model progress on screen entry.
-    this._hideModelProgress();
+    // Show model download progress if the model is still loading in the
+    // background (from preloadAI). This way the user sees the progress bar
+    // immediately on entering the forge, not just after tapping "Generate".
+    if(llmLoading&&!llmReady){
+      this._showModelProgress();
+    }else{
+      this._hideModelProgress();
+    }
     if(btn)btn.innerText="📺 Watch Ad to Generate";
   },
 
@@ -13739,11 +13765,13 @@ window.addEventListener("orientationchange",()=>setTimeout(resizeCanvas,100));
 // Phase 1 + Phase 7: kick off module load + init. Errors surface in the panel.
 // Phase 4: preload AI in the background once modules are available.
 // Phase 7: crash recovery — wrap init so a corrupt save can't brick the game.
+// Note: preloadAI() is already called inside loadModules() right after W loads,
+// so the model download starts before trystero/LZString are imported.
 loadModules()
   .then(()=>{
     try{
       G.init();
-      preloadAI();setupPWA();
+      setupPWA();
       // Bug #126: hideSplash is now called only from _initRest() (or the
       // safety timeout). Do NOT call it here — doing so could hide the
       // splash before the async IDB fallback completes, exposing
