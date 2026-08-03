@@ -6293,6 +6293,8 @@ const Battle={
     u.stun=0;          // stun remaining seconds
     u.mh=u.mh||u.h;    // max hp
     u.baseD=u.baseD||u.d; // Phase 20: base damage for ramp cap
+    u._baseH=u._baseH||u.h; // PERF-R13: base HP for composition bonus (prevents compounding across rounds)
+    u._baseSpd=u._baseSpd||u.s; // PERF-R13: base speed for composition bonus (prevents compounding)
     u._baseSpeedMod=u.moveSpeedMod||100; // base speed for buff_speed (prevents stacking)
     u.fxType=u.fxType||deriveFxType(u); // Phase 24e: cached aura type
     u.patrolT=0;       // Phase 10: patrol movement timer
@@ -6323,14 +6325,19 @@ const Battle={
   },
 
   // Team composition bonuses: rewards role diversity with stat bonuses.
+  // PERF-R13: apply to base stats (stored in initRuntime) to prevent compounding
+  // across rounds. Without this, a 20% HP bonus would compound to 488% over 5 rounds.
   applyCompositionBonuses(){
     const bonuses=this.calcCompositionBonuses(this.units.filter(u=>u.team==="player"));
     const enemyBonuses=this.calcCompositionBonuses(this.units.filter(u=>u.team==="enemy"));
     for(const u of this.units){
       const b=u.team==="player"?bonuses:enemyBonuses;
-      if(b.hpPct){u.h=Math.round(u.h*(1+b.hpPct));u.mh=u.h;}
-      if(b.dmgPct)u.d=Math.round(u.d*(1+b.dmgPct));
-      if(b.speedPct)u.s=Math.round(u.s*(1+b.speedPct));
+      const baseH=u._baseH||u.h;
+      const baseD=u.baseD||u.d;
+      const baseS=u._baseSpd||u.s;
+      if(b.hpPct){u.h=Math.round(baseH*(1+b.hpPct));u.mh=u.h;}
+      if(b.dmgPct)u.d=Math.round(baseD*(1+b.dmgPct));
+      if(b.speedPct)u.s=Math.round(baseS*(1+b.speedPct));
     }
     this.playerBonuses=bonuses;
     this.enemyBonuses=enemyBonuses;
