@@ -220,25 +220,14 @@ async function initLLM(){
   const stats=$("forgeModelStats");
   if(stats)stats.innerText="";
   await updateAI("AI loading...",0);
-  // Phase 12: cache the downloaded model so it only downloads once.
-  // web-llm supports "cache" (Cache API, default), "indexeddb", "opfs".
-  // IndexedDB is the most reliable for large binary blobs across browsers,
-  // and works on http(s) origins (NOT file:// — serve over HTTP to cache).
-  const appConfig=W.prebuiltAppConfig
-    ? {...W.prebuiltAppConfig,cacheBackend:"indexeddb"}
-    : {cacheBackend:"indexeddb"};
+  // Use default Cache API (not IndexedDB) — matches the original monolith
+  // which worked reliably. Main-thread engine (no Web Worker) because the
+  // built single-file inlines workers into blob:/data: URLs that break
+  // cross-origin fetch + IndexedDB. The forge is user-initiated so main-
+  // thread inference is acceptable.
   llmLoadPromise=(async()=>{
     try{
-      // Phase 12: prefer Web Worker to keep LLM inference off the main thread.
-      if(W.CreateWebWorkerMLCEngine){
-        const workerCode='import{WebWorkerMLCEngineHandler}from"https://esm.run/@mlc-ai/web-llm";const h=new WebWorkerMLCEngineHandler();self.onmessage=m=>h.onmessage(m);';
-        const blob=new Blob([workerCode],{type:"application/javascript"});
-        llmWorker=new Worker(URL.createObjectURL(blob),{type:"module"});
-        llm=await W.CreateWebWorkerMLCEngine(llmWorker,MODEL,{appConfig,initProgressCallback:updateAIFromProgress});
-      }else{
-        // Fallback: main-thread engine (older web-llm versions).
-        llm=await W.CreateMLCEngine(MODEL,{appConfig,initProgressCallback:updateAIFromProgress});
-      }
+      llm=await W.CreateMLCEngine(MODEL,{initProgressCallback:updateAIFromProgress});
       if(llmCancelled){llm=null;return null;}
       llmReady=true;
       await updateAI("AI READY",100);

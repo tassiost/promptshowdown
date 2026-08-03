@@ -1,28 +1,30 @@
 // Phase 1: dynamic imports with graceful fallback.
-// Static `import` cannot be wrapped in try/catch, so we use dynamic import()
-// and let the game run even if CDNs are unreachable.
+// web-llm loaded from CDN at runtime via Function() to bypass Vite's static
+// import() analysis (which breaks in the built single-file because
+// import.meta.url points to a blob:). This mirrors the original monolith
+// which used a static `import * as W from "https://esm.run/@mlc.ai/web-llm"`.
 let W = null;       // web-llm
 let joinRoom = null; // trystero
 let LZString = null; // lz-string for P2P recipe compression (Phase 18)
 let moduleLoadErrors = [];
 
 async function loadModules(){
-  // web-llm: try multiple CDNs. This is a heavy WebGPU/WASM package that may
-  // not be available on all CDNs; the procedural forge fallback covers failures.
+  // web-llm: native dynamic import from CDN. Function() prevents Vite
+  // from wrapping this in its import helper (which uses import.meta.url).
   const webllmUrls=[
     "https://esm.run/@mlc-ai/web-llm",
     "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm/+esm"
   ];
+  const _dynImport=new Function("u","return import(u)");
   for(const url of webllmUrls){
     try{
-      W = await import(/* @vite-ignore */ url);
+      W = await _dynImport(url);
       break;
     }catch(e){
-      // Expected on many setups — don't show a scary error panel, just log.
       console.warn("web-llm import failed ("+url+"): "+(e&&e.message||e));
     }
   }
-  // NEW: start the LLM download as soon as the module is available.
+  // Start the LLM download as soon as the module is available.
   if(W && navigator.gpu){
     preloadAI().catch(e=>console.warn("early preloadAI error:",e.message));
   }
