@@ -276,11 +276,85 @@ The only SP/MP divergence is:
 
 These are necessary divergences — the core sim and render paths are unified.
 
+## Round 3c Bugs Found & Fixed (9 bugs)
+
+### BUG 31: Guest lockstep survivor display swap
+- **Location:** `G.onBattleEnd()` line ~11455
+- **Impact:** Guest's survivor counts displayed backwards in `roundResult`
+- **Fix:** Swap survivor arrays for the guest in `onBattleEnd`
+
+### BUG 32: Guest lockstep roleWins tracking
+- **Location:** `G.onBattleEnd()` line ~11472
+- **Impact:** `roleWins` achievement tracking checked `winner==="player"` but in lockstep
+  mode the `winner` parameter uses the host's labeling ("player"=host won)
+- **Fix:** Translate the winner for the guest before checking
+
+### BUG 33: Composition bonus compounding across rounds
+- **Location:** `Battle.applyCompositionBonuses()` line ~6327
+- **Impact:** Composition bonuses compounded multiplicatively across rounds. With a 20%
+  HP bonus over 5 rounds: 100→120→144→173→207→249 instead of staying at 120 each round.
+- **Fix:** Store base stats (`_baseH`, `_baseSpd`) in `initRuntime`. Apply bonus to base
+  stats, not current stats. `_baseH`/`_baseSpd` preserved across rounds via `_cleanSurvivors`.
+
+### BUG 34: Lockstep desync from missing base stats in deserialize
+- **Location:** `deserializeArmyForPeer()` line ~2768
+- **Impact:** `deserializeArmyForPeer` did not restore `_baseH`, `_baseSpd`, `baseD` from
+  serialized data. Guest's survivors would have these set to current stats (which include
+  composition bonus) instead of original base stats → different HP/damage/speed → desync.
+- **Fix:** Restore `_baseH`, `_baseSpd`, `baseD` from serialized data with clamping.
+
+### BUG 35: tick/auto/skip not disabled in lockstep mode
+- **Location:** `G.tick()`, `G.auto()`, `G.skip()` line ~12134
+- **Impact:** Manual tick/auto/skip would advance only the local sim, causing a desync.
+  `tick()`: host advances by extra 50ms step, guest doesn't. `auto()`: host runs
+  setInterval at 20fps on top of loop(), guest doesn't. `skip()`: host fast-forwards
+  to battle end, guest stays at current tick.
+- **Fix:** Add early return guard in `G.tick()`, `G.auto()`, `G.skip()` when
+  `Battle._lockstepActive` is true.
+
+### BUG 36: Lockstep desync from viewport-dependent clamping/midpoint
+- **Location:** `MOVEMENT.hold_midpoint` line ~4231, `Battle.update()` clamp line ~6850
+- **Impact:** `hold_midpoint` used `Battle.canvasH` (viewport CSS pixels) and position
+  clamping used `Battle.canvasW/canvasH`. In lockstep, if host and guest have different
+  screen sizes (desktop vs mobile), these values differ → units at different positions
+  → desync.
+- **Fix:** Use `Battle.GAME_W` (400) and `Battle.GAME_H` (550) — the fixed game
+  coordinate space dimensions — instead of viewport-dependent `canvasW/canvasH`.
+
+### BUG 37: Lockstep spell cast firing wrong team's spell
+- **Location:** `Battle._castPlayerSpell()` line ~8784, `Battle._executeSpellCast()` line ~8810
+- **Impact:** `playerSpells` was per-team (host had "player" spells, guest had "enemy"
+  spells). When host cast spell at index 0, the cmd_lock command only contained
+  `{spellIdx:0}`. Both peers looked up `playerSpells[0]` — a DIFFERENT spell on each
+  peer. Guest fired its own spell instead of the host's, and its spell went on cooldown.
+- **Fix:** Store both teams' manual spells in `_allPlayerSpells={player:[],enemy:[]}`.
+  Include casting team in cmd_lock: `{type:"spell_cast",team,...}`. `_executeSpellCast`
+  takes `(team, idx, ...)` and looks up `_allPlayerSpells[team][idx]`.
+
+### BUG 38: P2P battle never starting after draft (startBattle)
+- **Location:** `G.startBattle()` line ~11321
+- **Impact:** `startBattle()` (the continuous-draft flow) never set `pendingHostArmy`
+  or sent `request_deck` for the host. Only `battle()` (the old scout-screen flow) did
+  that. Since the draft calls `startBattle()`, the host showed the battle screen but
+  never started the sim. Both peers were stuck on the battle screen with no battle running.
+- **Fix:** In `startBattle()` for the host, set `pendingHostArmy`, send `request_deck`,
+  and call `startHostBattle` if the guest deck is already pending.
+
+### BUG 39: Guest Match.seed never set (lockstep desync from tick 1)
+- **Location:** `seed` message handler line ~3638, `lockstep_start` handler line ~3655
+- **Impact:** The guest's `Match.seed` was never set from the received seed. The host
+  generates a random seed and sends it via the `seed` message. The guest's handler set
+  `Match._receivedSeed` but NOT `Match.seed`. `Battle.start()` uses `(Match.seed||0)`
+  to seed the PRNG, so the guest used seed 0 while the host used the actual seed.
+  This caused a complete desync from the very first tick.
+- **Fix:** Set `Match.seed` directly in both the `seed` message handler and the
+  `lockstep_start` handler.
+
 ## Verification
 
-- **E2E tests:** 211 PASS, 0 FAIL, 0 WARN (Round 3)
+- **E2E tests:** 211 PASS, 0 FAIL, 0 WARN (Round 3c)
 - **Perf:** All 6 scenarios at 60 FPS / 60 TPS
 - **p95 frame time:** ~18.5-19.0ms (under 20ms threshold) in all scenarios
 - **Slow frames:** 0-14 per 600 frames (<3%) in all scenarios (system load dependent)
 - **Memory:** Stable (8-22MB JS heap, well within limits)
-- **Total bugs found & fixed:** 29 (Round 1: 10, Round 2: 8, Round 3: 11)
+- **Total bugs found & fixed:** 38 (Round 1: 10, Round 2: 8, Round 3: 11, Round 3c: 9)
