@@ -2771,6 +2771,12 @@ function deserializeArmyForPeer(data){
       u.y=clamp(Number(d.y)||0,-1000,1000);
       u.mh=clamp(Number(d.mh)||u.h,1,1000);
       u.h=clamp(Number(d.h)||u.mh,1,u.mh);
+      // PERF-R13: restore base stats that unit() drops (needed for lockstep determinism).
+      // Without this, survivors' _baseH/_baseSpd/baseD would be reset to current stats
+      // (which include composition bonus / ramp), causing desync between host and guest.
+      if(d._baseH)u._baseH=clamp(Number(d._baseH),1,1000);
+      if(d._baseSpd)u._baseSpd=clamp(Number(d._baseSpd),10,300);
+      if(d.baseD)u.baseD=clamp(Number(d.baseD),1,200);
       out.push(u);
     }catch(e){/* skip bad unit */}
   }
