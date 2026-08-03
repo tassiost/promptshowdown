@@ -4228,7 +4228,8 @@ const MOVEMENT={
   flee:(u,target,dt)=>{if(target&&target.h>0)moveAway(u,target,effSpeed(u)*dt);},
   hold:(u,target,dt)=>{/* no movement */},
   hold_midpoint:(u,target,dt)=>{
-    const mid=u.team==="player"?Battle.canvasH*0.6:Battle.canvasH*0.4;
+    // DET: use GAME_H (fixed 550) not canvasH (viewport-dependent) for lockstep determinism.
+    const mid=u.team==="player"?Battle.GAME_H*0.6:Battle.GAME_H*0.4;
     const sp=effSpeed(u)*dt;
     if(target&&target.h>0){
       // PERF-R12: squared distance check (avoid Math.sqrt).
@@ -6846,7 +6847,9 @@ const Battle={
     // 6. clamp positions to canvas bounds (prevent flee/kite from flying off).
     // NETFIX: unified single loop over all units (SP + MP share this path).
     // Was 2 separate loops for players/enemies — same logic, now one pass.
-    const cw=this.canvasW||400, ch=this.canvasH;
+    // DET: use GAME_W/GAME_H (fixed 400×550) not canvasW/canvasH (viewport-dependent)
+    // for lockstep determinism. Units live in game coordinate space, not screen space.
+    const cw=this.GAME_W, ch=this.GAME_H;
     for(let i=0;i<this.units.length;i++){
       const u=this.units[i];
       if(u.h<=0)continue; // skip dead units (no position update needed)
