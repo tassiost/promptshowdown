@@ -90,6 +90,18 @@
 - [x] Verified: No hidden class divergence in `initRuntime()` (consistent property order)
 - [x] Verified: No per-frame allocations in hot paths (all use pooled arrays/objects)
 
+### Phase F: Mobile Safe Area + Fullscreen Fixes
+- [x] Fixed: `env(safe-area-inset-bottom)` returns 0px in iOS Safari portrait mode and in
+  PWA standalone mode (WebKit bug #254868). Added `--standalone-gap` CSS variable measured
+  via JS (`screen.height - innerHeight`) and used `max(env(), var())` for all bottom padding.
+- [x] Fixed: `100vh` doesn't account for iOS browser chrome. Added `100dvh` (dynamic viewport
+  height) as fallback after `100vh` for body and fullscreen screens.
+- [x] Fixed: iPhone Fullscreen API (`requestFullscreen`) not supported for arbitrary elements
+  (only `<video>`). Added pseudo-fullscreen CSS class toggle as fallback for iPhone.
+  Native Fullscreen API still used on desktop/iPad/Android.
+- [x] Fixed: `#fsBtn` positioning didn't account for safe-area insets. Added
+  `env(safe-area-inset-left/top)` to its position.
+
 ### Phase E: Hot Path Optimization
 - [x] Profiled 50v50 with sub-function timing — all sub-functions well under budget
 - [x] `act()`: 508ms total / 59k calls = 0.009ms avg — already optimized (spatial grid, cached targets)
