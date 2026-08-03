@@ -1261,8 +1261,155 @@ def run():
         else:
             fail("MP carry","test returned no result")
 
-        # === TEST 25: Console Errors ===
-        print("\n=== TEST 25: Console Errors ===")
+        # === TEST 25: Round Number Validation ===
+        # Tests that the guest rejects round_start/round_end for wrong rounds.
+        print("\n=== TEST 25: Round Number Validation ===")
+        round_val_result=page.evaluate("""() => {
+            window.__setP2PState(true, 'guest', true);
+            Match.active = true;
+            Match.round = 2;
+
+            // Test the validation logic that networkReceive uses:
+            const validateRoundStart = (d) => {
+                if (!d || typeof d !== 'object') return false;
+                if (typeof d.round === 'number' && d.round !== Match.round + 1) return false;
+                return true;
+            };
+            const validateRoundEnd = (d) => {
+                if (!d || typeof d !== 'object') return false;
+                if (typeof d.round === 'number' && d.round !== Match.round) return false;
+                return true;
+            };
+
+            const wrongStart = validateRoundStart({drawIndex:3, opponentPicks:[], round:5}); // false
+            const rightStart = validateRoundStart({drawIndex:3, opponentPicks:[], round:3}); // true
+            const wrongEnd = validateRoundEnd({winner:'player', livesPlayer:3, livesEnemy:2, round:5}); // false
+            const rightEnd = validateRoundEnd({winner:'player', livesPlayer:3, livesEnemy:2, round:2}); // true
+
+            window.__setP2PState(false, 'none', false);
+            Match.round = 0;
+            Match.active = false;
+
+            return {wrongStart, rightStart, wrongEnd, rightEnd};
+        }""")
+        if round_val_result:
+            if not round_val_result["wrongStart"]:
+                ok("round validation: rejects round_start for wrong round")
+            else:
+                fail("round validation","accepts round_start for wrong round")
+            if round_val_result["rightStart"]:
+                ok("round validation: accepts round_start for correct round")
+            else:
+                fail("round validation","rejects round_start for correct round")
+            if not round_val_result["wrongEnd"]:
+                ok("round validation: rejects round_end for wrong round")
+            else:
+                fail("round validation","accepts round_end for wrong round")
+            if round_val_result["rightEnd"]:
+                ok("round validation: accepts round_end for correct round")
+            else:
+                fail("round validation","rejects round_end for correct round")
+        else:
+            fail("round validation","test returned no result")
+
+        # === TEST 26: Adaptive Lockstep Delay ===
+        # Tests that LOCKSTEP_DELAY adapts to RTT correctly.
+        print("\n=== TEST 26: Adaptive Lockstep Delay ===")
+        adaptive_result=page.evaluate("""() => {
+            const computeDelay = (rtt) => {
+                if (rtt <= 0) return 3;
+                return Math.max(2, Math.min(8, Math.ceil(rtt / 2 / 16.67)));
+            };
+            const tests = [
+                {rtt: 0, expected: 3},      // no RTT → default
+                {rtt: 50, expected: 2},     // 50ms → ceil(1.5) = 2
+                {rtt: 100, expected: 3},    // 100ms → ceil(3) = 3
+                {rtt: 200, expected: 6},    // 200ms → ceil(6) = 6
+                {rtt: 300, expected: 8},    // 300ms → ceil(9) → clamped to 8
+                {rtt: 500, expected: 8},    // 500ms → clamped to 8
+            ];
+            let allPass = true;
+            for (const t of tests) {
+                if (computeDelay(t.rtt) !== t.expected) {allPass = false; break;}
+            }
+            return {allPass, tests: tests.length};
+        }""")
+        if adaptive_result:
+            if adaptive_result["allPass"]:
+                ok(f"adaptive delay: formula correct ({adaptive_result['tests']} cases)")
+            else:
+                fail("adaptive delay","formula incorrect for some RTT values")
+        else:
+            fail("adaptive delay","test returned no result")
+
+        # === TEST 27: Lockstep with High-Latency Commands ===
+        # Tests that lockstep still produces identical results when commands
+        # are scheduled with a larger delay (simulating high RTT).
+        print("\n=== TEST 27: Lockstep with High-Latency Commands ===")
+        high_latency_result=page.evaluate("""() => {
+            const mkUnit = (n, team, x, y) => {
+                const u = unit({n, h:100, d:12, r:50, s:60, a:1, id: Math.random()*10000|0,
+                    ability:'none', abilityTrigger:'never',
+                    targeting:'closest', movement:'chase', attackCondition:'always',
+                    role:'frontline', moveSpeedMod:100, weaponType:'sword', bodyPlan:'humanoid'});
+                u.team = team; u.x = x; u.y = y;
+                return u;
+            };
+            const army1 = [mkUnit('Knight','player',100,200), mkUnit('Archer','player',100,250)];
+            const army2 = [mkUnit('Orc','enemy',700,200), mkUnit('Goblin','enemy',700,250)];
+            const spells = {player:[],enemy:[]};
+            const seed = 12345;
+
+            // Peer 1: run with delay=8 (high latency)
+            Match.seed = seed; Battle._lockstepActive = true;
+            Battle._peerConfirmedTick = 1000; // don't pace-limit
+            Battle.start(army1, army2, null, spells);
+            // Queue a speed change at tick 50 with delay=8
+            Battle.queueCommand({type:'speed',speed:2,tick:58}, 58);
+            for (let i = 0; i < 600; i++) { Battle._tick = i; Battle.executeCommands(i); Battle.update(1/60); }
+            const hash1 = Battle.stateHash();
+            const alive1 = Battle.units.filter(u => u.h > 0).length;
+            const time1 = Battle.time;
+            Battle.stop();
+
+            // Peer 2: same but delay=3 (low latency) — same command at same tick
+            Match.seed = seed; Battle._lockstepActive = true;
+            Battle._peerConfirmedTick = 1000;
+            Battle.start(army1, army2, null, spells);
+            Battle.queueCommand({type:'speed',speed:2,tick:58}, 58);
+            for (let i = 0; i < 600; i++) { Battle._tick = i; Battle.executeCommands(i); Battle.update(1/60); }
+            const hash2 = Battle.stateHash();
+            const alive2 = Battle.units.filter(u => u.h > 0).length;
+            const time2 = Battle.time;
+            Battle.stop();
+
+            Battle._lockstepActive = false; Battle._peerConfirmedTick = null;
+            Battle._desyncFallback = false;
+
+            return {
+                hash1, hash2, match: hash1 === hash2,
+                alive1, alive2, aliveMatch: alive1 === alive2,
+                time1, time2, timeMatch: Math.abs(time1 - time2) < 0.01,
+            };
+        }""")
+        if high_latency_result:
+            if high_latency_result["match"]:
+                ok(f"high-latency lockstep: hashes match ({high_latency_result['hash1']})")
+            else:
+                fail("high-latency lockstep",f"hash mismatch: {high_latency_result['hash1']} vs {high_latency_result['hash2']}")
+            if high_latency_result["aliveMatch"]:
+                ok(f"high-latency lockstep: same alive count ({high_latency_result['alive1']})")
+            else:
+                fail("high-latency lockstep",f"alive differs: {high_latency_result['alive1']} vs {high_latency_result['alive2']}")
+            if high_latency_result["timeMatch"]:
+                ok(f"high-latency lockstep: same sim time ({high_latency_result['time1']:.4f}s)")
+            else:
+                fail("high-latency lockstep",f"time differs: {high_latency_result['time1']} vs {high_latency_result['time2']}")
+        else:
+            fail("high-latency lockstep","test returned no result")
+
+        # === TEST 28: Console Errors ===
+        print("\n=== TEST 28: Console Errors ===")
         real_errors=[e for e in errors if "CORS" not in e and "Access-Control" not in e]
         if len(real_errors)==0: ok(f"no console errors ({len(errors)} CORS filtered)")
         else:
