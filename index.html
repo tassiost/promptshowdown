@@ -3286,6 +3286,7 @@ let connState="DISCONNECTED";
 let _heartbeatInterval=null;
 let _lastPongReceived=0;
 let _pingSeq=0;
+let _currentRTT=0; // NETHARDEN: smoothed RTT for adaptive lockstep delay
 const HEARTBEAT_INTERVAL_MS=2000;
 const HEARTBEAT_TIMEOUT_MS=6000; // 3 missed pings
 // NETFIX: message sequence numbers — dedup + ordering.
@@ -3353,12 +3354,24 @@ function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=nul
   _peerDetCapable=false;
   // RELAY: clear relay state.
   _peerRelayCapable=false;_useRelay=false;
+  // NETHARDEN: clear all network-related Battle state to prevent stale data.
   if(typeof Battle!=="undefined"){
     Battle._lockstepActive=false;
     Battle._peerConfirmedTick=null;
     Battle._stallStart=null;
     Battle._useRelay=false;
+    Battle._desyncFallback=false;
+    Battle._cmdBuffer=new Map();
+    Battle._interpFrom=null;
+    Battle._interpTo=null;
+    Battle._snapUnitMap=null;
+    Battle._prevSnapshot=null;
   }
+  // NETHARDEN: clear deck retransmit timer.
+  if(G._deckRetransmitTimer){clearTimeout(G._deckRetransmitTimer);G._deckRetransmitTimer=null;}
+  // NETHARDEN: reset RTT + transmit failure tracking.
+  _currentRTT=0;
+  _transmitFailCount=0;
   // NETFIX: reset sequence numbers + stop heartbeat on full disconnect.
   _sendSeq=0;
   _recvSeq=0;
@@ -3397,30 +3410,48 @@ function setupNetwork(id,password){
       setText("netText","ON");
       const nb=$("networkBadge");if(nb)nb.style.display="block";
       G.cancelReconnect();
-      // RELAY: if the guest rejoined during a grace period in relay mode,
-      // resync by sending a fresh relay_start + immediate snapshot.
-      if(Match._graceActive&&role==="host"&&Battle._useRelay&&Match.active){
-        // Restart the battle sim (it was stopped by gracefulDisconnect).
-        if(!Battle.running){
-          // Resume the battle — the host's sim state is still intact (units, time, etc).
-          Battle.running=true;
-          Battle.last=performance.now();
-          Battle._loopBound=Battle.loop.bind(Battle);
-          Battle.frame=requestAnimationFrame(Battle._loopBound);
+      // NETHARDEN: if the guest rejoined during a grace period, resync.
+      if(Match._graceActive&&role==="host"&&Match.active){
+        if(Battle._useRelay){
+          // RELAY resync: restart sim + send relay_start + immediate snapshot.
+          if(!Battle.running){
+            Battle.running=true;
+            Battle.last=performance.now();
+            Battle._loopBound=Battle.loop.bind(Battle);
+            Battle.frame=requestAnimationFrame(Battle._loopBound);
+          }
+          const spells={player:Match.playerSpells||G.playerSpells||[],enemy:Match.enemySpells||G.enemySpells||[]};
+          transmit("relay_start",{playerSpells:spells.player,enemySpells:spells.enemy,round:Match.round});
+          G.startSnapshots();
+          const snap=Battle.compressedSnapshot();
+          snap.round=Match.round;
+          snap.livesPlayer=Match.livesPlayer;
+          snap.livesEnemy=Match.livesEnemy;
+          snap.drawIndex=G.roundDraftState?.drawIndex||0;
+          transmit("snap",snap);
+          Match._graceActive=false;
+        }else if(Battle._lockstepActive||Battle._desyncFallback){
+          // LOCKSTEP resync: send a fresh relay_start (fallback to relay for
+          // the remainder of this round — can't resume lockstep mid-battle
+          // because the guest's sim state is gone).
+          if(!Battle.running){
+            Battle.running=true;
+            Battle.last=performance.now();
+            Battle._loopBound=Battle.loop.bind(Battle);
+            Battle.frame=requestAnimationFrame(Battle._loopBound);
+          }
+          Battle._lockstepActive=false;
+          Battle._useRelay=true;
+          const spells={player:Match.playerSpells||G.playerSpells||[],enemy:Match.enemySpells||G.enemySpells||[]};
+          transmit("relay_start",{playerSpells:spells.player,enemySpells:spells.enemy,round:Match.round});
+          G.startSnapshots();
+          const snap=Battle.compressedSnapshot();
+          snap.round=Match.round;
+          snap.livesPlayer=Match.livesPlayer;
+          snap.livesEnemy=Match.livesEnemy;
+          transmit("snap",snap);
+          Match._graceActive=false;
         }
-        // Re-send relay_start so the guest re-enters render-only mode.
-        const spells={player:Match.playerSpells||G.playerSpells||[],enemy:Match.enemySpells||G.enemySpells||[]};
-        transmit("relay_start",{playerSpells:spells.player,enemySpells:spells.enemy,round:Match.round});
-        // Restart snapshot broadcast.
-        G.startSnapshots();
-        // Send immediate snapshot for instant resync.
-        const snap=Battle.compressedSnapshot();
-        snap.round=Match.round;
-        snap.livesPlayer=Match.livesPlayer;
-        snap.livesEnemy=Match.livesEnemy;
-        snap.drawIndex=G.roundDraftState?.drawIndex||0;
-        transmit("snap",snap);
-        Match._graceActive=false;
       }
       // NETFIX: start heartbeat on peer join.
       _startHeartbeat();
@@ -3497,6 +3528,8 @@ function _updateConnStatus(latency){
   else{nb.style.color="var(--danger)";nb.style.borderColor="var(--danger)";nb.style.background="rgba(248,113,113,.1)";nb.textContent="🌐 "+latency+"ms ⚠";}
 }
 
+// NETHARDEN: track consecutive transmit failures — after 3, connection is dead.
+let _transmitFailCount=0;
 // NETFIX: transmit with sequence number. _internal=true skips seq (for heartbeat).
 function transmit(type,data,_internal){
   if(connected&&sendNet){
@@ -3507,8 +3540,26 @@ function transmit(type,data,_internal){
       // P2P security: enforce message size limit on send.
       const size=JSON.stringify(msg).length;
       if(size>P2P_MAX_MSG_SIZE){console.warn("[P2P] Dropping oversized message:",type,size);return;}
-      const r=sendNet(msg);if(r&&r.catch)r.catch(e=>console.error("[P2P] send error:",e.message));
-    }catch(e){showError("Network send failed: "+(e&&e.message||e));}
+      const r=sendNet(msg);
+      if(r&&r.catch){
+        r.catch(e=>{
+          console.error("[P2P] send error:",e.message);
+          _transmitFailCount++;
+          if(_transmitFailCount>=3){
+            console.warn("[P2P] 3 consecutive transmit failures — connection dead.");
+            _handlePeerLeave();
+          }
+        });
+      }
+      _transmitFailCount=0; // reset on success
+    }catch(e){
+      showError("Network send failed: "+(e&&e.message||e));
+      _transmitFailCount++;
+      if(_transmitFailCount>=3){
+        console.warn("[P2P] 3 consecutive transmit failures — connection dead.");
+        _handlePeerLeave();
+      }
+    }
   }
 }
 
@@ -3551,9 +3602,10 @@ let suppressP2PErrors=false;
 //   match_start   : host→guest {arena, lives, firstPlayer}
 //   round_start   : host→guest {drawIndex, opponentPicks (serialized)}
 //   opponent_picks: host→guest {picks (serialized units with recipes)}
-//   round_end     : host→guest {winner, livesPlayer, livesEnemy, nextDrawIndex}
+//   round_end     : host→guest {winner, livesPlayer, livesEnemy, round}
 //   match_end     : host→guest {winner, rewards}
 //   round_deck    : guest→host {picks (serialized units with recipes)}
+//   battle_error  : host→guest {msg} — Battle.start failed, return to menu
 function networkReceive(data){
   try{
     // P2P security: reject non-objects or missing type.
@@ -3568,7 +3620,9 @@ function networkReceive(data){
     if(data.t==="pong"){
       _lastPongReceived=Date.now();
       const latency=Date.now()-(data.d?.ts||0);
-      G._p2pTestLog?.(`Pong received — latency: ${latency}ms`);
+      // NETHARDEN: smoothed RTT (exponential moving average) for adaptive delay.
+      _currentRTT=_currentRTT?Math.round(_currentRTT*0.7+latency*0.3):latency;
+      G._p2pTestLog?.(`Pong received — latency: ${latency}ms (smoothed: ${_currentRTT}ms)`);
       _updateConnStatus(latency);
       return;
     }
@@ -3826,6 +3880,9 @@ function networkReceive(data){
           const team="enemy";
           const teamSpells=Battle._allPlayerSpells&&Battle._allPlayerSpells[team];
           if(!teamSpells||!teamSpells[c.spellIdx])return;
+          // NETHARDEN: validate spell is off cooldown (anti-cheat).
+          const ps=teamSpells[c.spellIdx];
+          if(ps.cooldown>0||ps._pendingCast)return;
           // Execute the spell cast on the host's sim.
           Battle._executeSpellCast(team,c.spellIdx,c.targetX||0,c.targetY||0);
         }
@@ -3883,6 +3940,11 @@ function networkReceive(data){
       if(role==="guest"){
         const d=data.d;
         if(!d||typeof d!=="object")return;
+        // NETHARDEN: validate round number matches expected (prevents replay attacks).
+        if(typeof d.round==="number"&&d.round!==Match.round+1){
+          console.warn("[P2P] round_start for wrong round:",d.round,"expected:",Match.round+1);
+          return;
+        }
         // Increment round to match host (host increments in Match.startRound).
         Match.round++;
         // Store host-sent draw count before startRoundDraft overwrites roundDraftState.
@@ -3903,6 +3965,11 @@ function networkReceive(data){
         const d=data.d;
         if(!d||typeof d!=="object")return;
         if(d.winner!=="player"&&d.winner!=="enemy"&&d.winner!=="draw")return;
+        // NETHARDEN: validate round number matches current (prevents replay attacks).
+        if(typeof d.round==="number"&&d.round!==Match.round){
+          console.warn("[P2P] round_end for wrong round:",d.round,"expected:",Match.round);
+          return;
+        }
         // Translate winner to guest perspective and record in history.
         const w=d.winner==="player"?"enemy":d.winner==="enemy"?"player":"draw";
         Match.history.push({round:Match.round,winner:w});
@@ -3932,6 +3999,24 @@ function networkReceive(data){
       // Guest sends their drafted picks to the host.
       if(role==="host"){
         G.guestPicks=deserializeUnitsFromPeer(data.d.picks);
+        // NETHARDEN: send acknowledgment so guest knows we received the deck.
+        transmit("deck_ack",{});
+      }
+      // NETHARDEN: guest receives deck acknowledgment — clears retransmit timer.
+      if(role==="guest"&&G._deckRetransmitTimer){
+        clearTimeout(G._deckRetransmitTimer);
+        G._deckRetransmitTimer=null;
+      }
+    }
+    // NETHARDEN: host reports battle start failure — guest returns to menu.
+    if(data.t==="battle_error"){
+      if(role==="guest"){
+        console.error("[P2P] Host reported battle error:",data.d?.msg);
+        showError("Host error: "+(data.d?.msg||"battle failed"));
+        Battle.stop();
+        G.stopSnapshots();
+        Match.active=false;
+        G.screen("menu");
       }
     }
     // Bug #7: Host notifies guest when a guest-team spell fired, so guest
@@ -4446,7 +4531,7 @@ const Match={
       // Send host's actual picks from previous round (or empty for round 1).
       const hostPicks=this.round>1&&G.prevPlayerPicks?G.prevPlayerPicks:[];
       const opponentPicks=serializeUnitsForPeer(hostPicks);
-      transmit("round_start",{drawIndex:guestDrawCount,opponentPicks});
+      transmit("round_start",{drawIndex:guestDrawCount,opponentPicks,round:this.round});
     }
     // G.start handles the draft UI; Match just tracks state.
     G.startRoundDraft();
@@ -4479,7 +4564,7 @@ const Match={
     }
     // Phase 18: send round_end to guest.
     if(connected&&role==="host"){
-      transmit("round_end",{winner,livesPlayer:this.livesPlayer,livesEnemy:this.livesEnemy});
+      transmit("round_end",{winner,livesPlayer:this.livesPlayer,livesEnemy:this.livesEnemy,round:this.round});
     }
     // Match continues — show round result, then next round on button.
     G.roundResult(winner,this.livesPlayer,this.livesEnemy);
@@ -8965,7 +9050,12 @@ const Battle={
     if(this._lockstepActive){
       // DET: schedule execution LOCKSTEP_DELAY ticks in the future so the peer's
       // command arrives in time. Both peers execute the command at the same tick.
-      const LOCKSTEP_DELAY=3;
+      // NETHARDEN: adaptive delay based on smoothed RTT — clamp 2-8 ticks.
+      // At 60Hz, 1 tick = 16.67ms. delay = ceil(RTT/2 / 16.67) ensures the
+      // command reaches the peer before the target tick.
+      const LOCKSTEP_DELAY=_currentRTT>0
+        ?Math.max(2,Math.min(8,Math.ceil(_currentRTT/2/16.67)))
+        :3;
       const targetTick=(this._tick||0)+LOCKSTEP_DELAY;
       // DET: include the casting team so the peer fires the correct spell.
       // Without this, spellIdx maps to different spells on host vs guest
@@ -11197,6 +11287,17 @@ const G={
       this.currentOffering=null; // Clear stale offering
       if(connected&&role==="guest"){
         transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
+        // NETHARDEN: retransmit round_deck if no ack received within 5s.
+        // WebRTC is reliable, but connection drops at this critical moment
+        // would leave the host waiting forever for the guest's deck.
+        let retries=0;
+        const retransmit=()=>{
+          if(retries>=3){console.warn("[P2P] round_deck: no ack after 3 retries.");return;}
+          retries++;
+          transmit("round_deck",{picks:serializeUnitsForPeer(st.picks)});
+          G._deckRetransmitTimer=setTimeout(retransmit,5000);
+        };
+        G._deckRetransmitTimer=setTimeout(retransmit,5000);
       }
       // Skip scout — go straight to battle (continuous draft model).
       this.startBattle();
@@ -11772,6 +11873,19 @@ const G={
     const guestArmy=[...guestSurvivors,...guestNew];
     // Phase 23: pass spells (host = player, guest = enemy).
     const spells={player:this.playerSpells||[],enemy:this.enemySpells||[]};
+    // NETHARDEN: helper to start battle with error notification to peer.
+    const safeStart=(armyP,armyE,cb,sp)=>{
+      try{
+        Battle.start(armyP,armyE,cb,sp);
+      }catch(e){
+        console.error("[P2P] Battle.start failed:",e);
+        showError("Battle failed to start: "+(e&&e.message||e));
+        transmit("battle_error",{msg:"Battle start failed"});
+        Battle.stop();
+        Match.active=false;
+        this.screen("menu");
+      }
+    };
     // DET: lockstep is the primary mode (like Clash Royale). Both peers run the
     // sim from the same seed + armies, syncing only commands. This gives the
     // lowest bandwidth (~200 bytes/s) and lowest input latency (3 ticks).
@@ -11791,7 +11905,7 @@ const G={
       Battle._localTeam="player";
       Battle._lockstepActive=true;
       Battle._useRelay=false;
-      Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
+      safeStart(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
       this.updateLivesHUD();
       // No snapshots in lockstep mode — both peers run the sim independently.
       return;
@@ -11810,7 +11924,7 @@ const G={
       Battle._useRelay=true;
       Battle._localTeam="player";
       Battle._lockstepActive=false;
-      Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
+      safeStart(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
       this.updateLivesHUD();
       this.startSnapshots();
       // Send an immediate snapshot so the guest doesn't see an empty screen.
@@ -11824,7 +11938,7 @@ const G={
     }
     // Legacy fallback: peer doesn't support relay or determinism.
     Battle._localTeam="player";
-    Battle.start(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
+    safeStart(this.pendingHostArmy,guestArmy,winner=>this.onBattleEnd(winner),spells);
     this.updateLivesHUD();
     this.startSnapshots();
   },
