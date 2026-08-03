@@ -287,8 +287,12 @@ function setupPWA(){
   }catch(e){/* PWA setup is best-effort */}
 }
 
-// Phase 7: tap the battle canvas to advance one tick (touch control).
+// Phase 7: tap the battle canvas to advance one tick (desktop click fallback).
+// TOUCH: on touch devices, canvas taps are handled by Battle's pointer handlers
+// (tap-to-inspect, pinch-to-zoom). This only fires for non-touch pointer events.
 document.addEventListener("pointerdown",e=>{
+  // Skip if the canvas has its own pointer handler (battle mode).
+  if(e.target&&e.target.id==="cv"&&e.pointerType==="touch")return;
   if(e.target&&e.target.id==="cv"){e.preventDefault();try{G.tick();}catch(err){/* ignore */}}
 },{passive:false});
 

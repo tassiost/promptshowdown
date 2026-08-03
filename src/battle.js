@@ -444,25 +444,55 @@ const Battle={
   // The canvas fills the full viewport; this transform maps game space to screen.
   GAME_W:400,
   GAME_H:550,
+  // TOUCH: zoom/pan state for pinch-to-zoom and drag-to-pan.
+  _zoom:1,           // zoom multiplier (1 = fit, 2 = 2× zoom)
+  _panX:0,           // pan offset in game-space pixels
+  _panY:0,
+  _maxZoom:3,        // max zoom level
   // Compute the "contain" transform: fit game space within viewport, center.
   // The background fills the full screen; game content is letterboxed/pillarboxed.
   // Returns {scale, offsetX, offsetY} in CSS pixels.
   _gameTransform(){
     // PERF-R12: cache the transform — it only changes when canvas size changes.
     const vw=this.canvasW||innerWidth, vh=this.canvasH||innerHeight;
-    if(this._gtCache&&this._gtCacheVW===vw&&this._gtCacheVH===vh)return this._gtCache;
+    // TOUCH: include zoom/pan in cache key so transform recalculates on zoom.
+    if(this._gtCache&&this._gtCacheVW===vw&&this._gtCacheVH===vh&&
+       this._gtCacheZ===this._zoom&&this._gtCachePX===this._panX&&this._gtCachePY===this._panY)
+      return this._gtCache;
     const sx=vw/this.GAME_W, sy=vh/this.GAME_H;
-    const scale=Math.min(sx,sy); // contain: fit within viewport
-    const offsetX=(vw-this.GAME_W*scale)/2;
-    const offsetY=(vh-this.GAME_H*scale)/2;
+    const baseScale=Math.min(sx,sy); // contain: fit within viewport
+    // TOUCH: apply zoom multiplier + pan offset.
+    const scale=baseScale*this._zoom;
+    const baseOffsetX=(vw-this.GAME_W*baseScale)/2;
+    const baseOffsetY=(vh-this.GAME_H*baseScale)/2;
+    // Pan offsets are in game-space, convert to screen-space.
+    const offsetX=baseOffsetX+this._panX*baseScale;
+    const offsetY=baseOffsetY+this._panY*baseScale;
     this._gtCache={scale,offsetX,offsetY};
     this._gtCacheVW=vw;this._gtCacheVH=vh;
+    this._gtCacheZ=this._zoom;this._gtCachePX=this._panX;this._gtCachePY=this._panY;
     return this._gtCache;
   },
   // Convert screen (CSS pixel) coordinates to game-space coordinates (for click detection).
   screenToGame(sx,sy){
     const t=this._gameTransform();
     return {x:(sx-t.offsetX)/t.scale, y:(sy-t.offsetY)/t.scale};
+  },
+  // TOUCH: reset zoom/pan to default (double-tap or battle start).
+  _resetZoomPan(){
+    this._zoom=1;this._panX=0;this._panY=0;
+    this._gtCache=null; // invalidate cache
+  },
+  // TOUCH: clamp pan so the game area doesn't go completely off-screen.
+  _clampPan(){
+    const vw=this.canvasW||innerWidth, vh=this.canvasH||innerHeight;
+    const sx=vw/this.GAME_W, sy=vh/this.GAME_H;
+    const baseScale=Math.min(sx,sy);
+    // Max pan = half the zoomed overflow in each direction.
+    const maxX=(this.GAME_W*(this._zoom-1))/2;
+    const maxY=(this.GAME_H*(this._zoom-1))/2;
+    this._panX=Math.max(-maxX,Math.min(maxX,this._panX));
+    this._panY=Math.max(-maxY,Math.min(maxY,this._panY));
   },
   onEnd:null,        // (winner:"player"|"enemy"|"draw")=>void
   autoTimer:null,
@@ -594,25 +624,110 @@ const Battle={
     if(!ctx)return null;
     ctx.scale(dpr,dpr);
     this.ctx=ctx;
-    // Unit inspection click handler (battle mode only).
+    // TOUCH: unified pointer handler — tap-to-inspect, pinch-to-zoom, drag-to-pan.
     if(!opts.skipClick){
-      cv.onclick=(e)=>{
-        if(!e||!this.running)return;
-        const rect=cv.getBoundingClientRect();
-        const sx=(e.clientX-rect.left);
-        const sy=(e.clientY-rect.top);
+      // Pointer state for multi-touch tracking.
+      const pointers=new Map(); // pointerId → {x,y}
+      let pinchDist=0,pinchZoom=1;
+      let dragStartX=0,dragStartY=0,dragStartPanX=0,dragStartPanY=0;
+      let tapStart=0,tapX=0,tapY=0,tapMoved=false;
+      let lastTapTime=0; // for double-tap detection
+      const TAP_THRESHOLD=10; // max movement to count as tap (px)
+      const DOUBLE_TAP_MS=300; // max time between taps for double-tap
+      const _findUnitAt=(sx,sy)=>{
         const gt=this._gameTransform();
         const x=(sx-gt.offsetX)/gt.scale;
         const y=(sy-gt.offsetY)/gt.scale;
         let closest=null,closestDist=Infinity;
-        for(const u of this.units){
+        for(let i=0;i<this.units.length;i++){
+          const u=this.units[i];
           if(u.h<=0)continue;
           const dx=u.x-x,dy=u.y-y;
           const d=Math.sqrt(dx*dx+dy*dy);
           if(d<closestDist&&d<u.z+10){closest=u;closestDist=d;}
         }
-        if(closest)this._showUnitInspector(closest);
-        else this._hideUnitInspector();
+        return closest;
+      };
+      cv.onpointerdown=(e)=>{
+        if(!this.running)return;
+        e.preventDefault();
+        cv.setPointerCapture(e.pointerId);
+        pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+        if(pointers.size===1){
+          tapStart=Date.now();tapX=e.clientX;tapY=e.clientY;tapMoved=false;
+          dragStartX=e.clientX;dragStartY=e.clientY;
+          dragStartPanX=this._panX;dragStartPanY=this._panY;
+        }else if(pointers.size===2){
+          // Start pinch — record initial distance and zoom.
+          const pts=[...pointers.values()];
+          pinchDist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+          pinchZoom=this._zoom;
+          tapMoved=true; // cancel tap
+        }
+      };
+      cv.onpointermove=(e)=>{
+        if(!this.running||!pointers.has(e.pointerId))return;
+        e.preventDefault();
+        pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+        if(pointers.size===1){
+          const dx=e.clientX-dragStartX,dy=e.clientY-dragStartY;
+          // Check if this is a tap (minimal movement) or a drag.
+          if(!tapMoved&&Math.hypot(e.clientX-tapX,e.clientY-tapY)>TAP_THRESHOLD)tapMoved=true;
+          if(tapMoved&&this._zoom>1){
+            // Drag-to-pan (only when zoomed in).
+            const gt=this._gameTransform();
+            const baseScale=Math.min(this.canvasW/this.GAME_W,this.canvasH/this.GAME_H);
+            this._panX=dragStartPanX+dx/baseScale;
+            this._panY=dragStartPanY+dy/baseScale;
+            this._clampPan();
+            this._gtCache=null; // invalidate transform cache
+          }
+        }else if(pointers.size===2){
+          // Pinch-to-zoom.
+          const pts=[...pointers.values()];
+          const newDist=Math.hypot(pts[0].x-pts[1].x,pts[0].y-pts[1].y);
+          if(pinchDist>0){
+            const ratio=newDist/pinchDist;
+            this._zoom=Math.max(1,Math.min(this._maxZoom,pinchZoom*ratio));
+            this._clampPan();
+            this._gtCache=null; // invalidate transform cache
+          }
+        }
+      };
+      cv.onpointerup=(e)=>{
+        if(!this.running)return;
+        pointers.delete(e.pointerId);
+        if(pointers.size<2)pinchDist=0;
+        if(pointers.size===0){
+          // Check if this was a tap (quick, minimal movement).
+          const elapsed=Date.now()-tapStart;
+          if(!tapMoved&&elapsed<500){
+            const rect=cv.getBoundingClientRect();
+            const sx=e.clientX-rect.left;
+            const sy=e.clientY-rect.top;
+            // Double-tap detection → reset zoom.
+            if(Date.now()-lastTapTime<DOUBLE_TAP_MS){
+              this._resetZoomPan();
+              lastTapTime=0;
+            }else{
+              lastTapTime=Date.now();
+              // Single tap → inspect unit.
+              const closest=_findUnitAt(sx,sy);
+              if(closest)this._showUnitInspector(closest);
+              else this._hideUnitInspector();
+            }
+          }
+        }
+      };
+      cv.onpointercancel=(e)=>{pointers.delete(e.pointerId);if(pointers.size<2)pinchDist=0;};
+      cv.onwheel=(e)=>{
+        if(!this.running)return;
+        e.preventDefault();
+        // Mouse wheel zoom (desktop).
+        const delta=e.deltaY>0?0.9:1.1;
+        this._zoom=Math.max(1,Math.min(this._maxZoom,this._zoom*delta));
+        this._clampPan();
+        this._gtCache=null;
       };
     }
     return ctx;
@@ -2866,9 +2981,11 @@ const Battle={
     if(this.snapTimer){clearInterval(this.snapTimer);this.snapTimer=null;}
     // Stop battle music in all code paths (error, timeout, disconnect).
     GameAudio.stopMusic();
-    // Clean up canvas click handler to prevent memory leak.
+    // Clean up canvas pointer handlers to prevent memory leak.
     const cv=$("cv");
-    if(cv)cv.onclick=null;
+    if(cv){cv.onclick=null;cv.onpointerdown=null;cv.onpointermove=null;cv.onpointerup=null;cv.onpointercancel=null;cv.onwheel=null;}
+    // TOUCH: reset zoom/pan on battle end.
+    this._resetZoomPan();
     // Reset auto-play button state when battle ends.
     const autoBtn=$("autoBtn");if(autoBtn)autoBtn.classList.remove("primary");
     // Clean up all battle state.
