@@ -3287,6 +3287,9 @@ let _heartbeatInterval=null;
 let _lastPongReceived=0;
 let _pingSeq=0;
 let _currentRTT=0; // NETHARDEN: smoothed RTT for adaptive lockstep delay
+// VOIDSTRIKE: full latency stats — jitter, packet loss, min/max RTT.
+let _latencyStats={currentRTT:0,avgRTT:0,minRTT:Infinity,maxRTT:0,jitter:0,packetsLost:0,packetsSent:0};
+let _pendingPings=new Map(); // pingId → timestamp (for packet loss detection)
 const HEARTBEAT_INTERVAL_MS=2000;
 const HEARTBEAT_TIMEOUT_MS=10000; // NETHARDEN: 5 missed pings (was 6s/3 pings — too aggressive for mobile)
 // NETFIX: message sequence numbers — dedup + ordering.
@@ -3330,11 +3333,22 @@ function _startHeartbeat(){
   _stopHeartbeat();
   _lastPongReceived=Date.now();
   _pingSeq=0;
+  _latencyStats={currentRTT:0,avgRTT:0,minRTT:Infinity,maxRTT:0,jitter:0,packetsLost:0,packetsSent:0};
+  _pendingPings=new Map();
   _heartbeatInterval=setInterval(()=>{
     if(!connected){_stopHeartbeat();return;}
     _pingSeq++;
-    transmit("ping",{ts:Date.now(),ps:_pingSeq},true);
-    // Check for timeout — 3 consecutive missed pongs.
+    const ts=Date.now();
+    _pendingPings.set(_pingSeq,ts);
+    _latencyStats.packetsSent++;
+    transmit("ping",{ts,ps:_pingSeq},true);
+    // VOIDSTRIKE: count pings older than 5s as lost (no pong received).
+    let lostCount=0;
+    for(const [id,pingTs] of _pendingPings){
+      if(ts-pingTs>5000){_pendingPings.delete(id);lostCount++;}
+    }
+    if(lostCount>0){_latencyStats.packetsLost+=lostCount;}
+    // Check for timeout — peer unresponsive.
     if(Date.now()-_lastPongReceived>HEARTBEAT_TIMEOUT_MS){
       console.warn("[P2P] Heartbeat timeout — peer unresponsive for "+((Date.now()-_lastPongReceived)/1000).toFixed(1)+"s");
       _onHeartbeatTimeout();
@@ -3392,6 +3406,10 @@ function disconnect(){if(room){try{room.leave();}catch(e){}room=null;sendNet=nul
   // NETHARDEN: reset RTT + transmit failure tracking.
   _currentRTT=0;
   _transmitFailCount=0;
+  // VOIDSTRIKE: clear command buffer + latency stats on full disconnect.
+  _commandBuffer=[];
+  _latencyStats={currentRTT:0,avgRTT:0,minRTT:Infinity,maxRTT:0,jitter:0,packetsLost:0,packetsSent:0};
+  _pendingPings.clear();
   // NETFIX: reset sequence numbers + stop heartbeat on full disconnect.
   _sendSeq=0;
   _recvSeq=0;
@@ -3475,6 +3493,8 @@ function setupNetwork(id,password){
       }
       // NETFIX: start heartbeat on peer join.
       _startHeartbeat();
+      // VOIDSTRIKE: flush any buffered commands from during disconnect.
+      if(_commandBuffer.length>0)_flushCommandBuffer();
       // Matchmaking: peer joined the queue room — show "opponent found".
       if(G.matchmakingWaitInterval){
         setText("matchmakingStatus","Opponent found! Negotiating roles...");
@@ -3539,19 +3559,46 @@ function _handlePeerLeave(){
   connState="DISCONNECTED";
 }
 
-// NETFIX: update connection status badge with latency.
+// VOIDSTRIKE: connection quality — excellent/good/poor/critical based on RTT + jitter.
+function _getConnectionQuality(){
+  const rtt=_currentRTT,jitter=_latencyStats.jitter,loss=_latencyStats.packetsLost;
+  if(rtt<50&&jitter<20&&loss<3)return"excellent";
+  if(rtt<100&&jitter<50&&loss<10)return"good";
+  if(rtt<250&&jitter<100&&loss<30)return"poor";
+  return"critical";
+}
+// NETFIX: update connection status badge with latency + quality.
 function _updateConnStatus(latency){
   const nb=$("networkBadge");
   if(!nb)return;
-  if(latency<100){nb.style.color="var(--ok)";nb.style.borderColor="var(--ok)";nb.style.background="rgba(52,211,153,.1)";nb.textContent="🌐 "+latency+"ms";}
-  else if(latency<250){nb.style.color="var(--warn)";nb.style.borderColor="var(--warn)";nb.style.background="rgba(245,158,11,.1)";nb.textContent="🌐 "+latency+"ms";}
+  const q=_getConnectionQuality();
+  const jitter=_latencyStats.jitter;
+  if(q==="excellent"){nb.style.color="var(--ok)";nb.style.borderColor="var(--ok)";nb.style.background="rgba(52,211,153,.1)";nb.textContent="🌐 "+latency+"ms";}
+  else if(q==="good"){nb.style.color="var(--ok)";nb.style.borderColor="var(--ok)";nb.style.background="rgba(52,211,153,.08)";nb.textContent="🌐 "+latency+"ms";}
+  else if(q==="poor"){nb.style.color="var(--warn)";nb.style.borderColor="var(--warn)";nb.style.background="rgba(245,158,11,.1)";nb.textContent="🌐 "+latency+"ms ±"+jitter;}
   else{nb.style.color="var(--danger)";nb.style.borderColor="var(--danger)";nb.style.background="rgba(248,113,113,.1)";nb.textContent="🌐 "+latency+"ms ⚠";}
 }
 
 // NETHARDEN: track consecutive transmit failures — after 3, connection is dead.
 let _transmitFailCount=0;
+// VOIDSTRIKE: command buffer — stores commands during disconnect, flushed on reconnect.
+let _commandBuffer=[];
+const MAX_BUFFERED_COMMANDS=500;
+function _bufferCommand(type,data){
+  if(_commandBuffer.length>=MAX_BUFFERED_COMMANDS)_commandBuffer.shift();
+  _commandBuffer.push({type,data,ts:Date.now()});
+}
+function _flushCommandBuffer(){
+  if(_commandBuffer.length===0)return;
+  console.log("[P2P] Flushing "+_commandBuffer.length+" buffered commands.");
+  const buffered=_commandBuffer;
+  _commandBuffer=[];
+  for(const cmd of buffered){transmit(cmd.type,cmd.data);}
+}
 // NETFIX: transmit with sequence number. _internal=true skips seq (for heartbeat).
 function transmit(type,data,_internal){
+  // VOIDSTRIKE: buffer lockstep commands during disconnect for flush on reconnect.
+  if(!connected&&type==="cmd_lock"&&Match.active){_bufferCommand(type,data);return;}
   if(connected&&sendNet){
     try{
       const msg={t:type,d:data};
@@ -3640,10 +3687,19 @@ function networkReceive(data){
     if(data.t==="pong"){
       _lastPongReceived=Date.now();
       const latency=Date.now()-(data.d?.ts||0);
+      const pingId=data.d?.ps;
+      // VOIDSTRIKE: remove from pending pings (not lost).
+      if(pingId!==undefined)_pendingPings.delete(pingId);
       // NETHARDEN: smoothed RTT (exponential moving average) for adaptive delay.
       _currentRTT=_currentRTT?Math.round(_currentRTT*0.7+latency*0.3):latency;
-      G._p2pTestLog?.(`Pong received — latency: ${latency}ms (smoothed: ${_currentRTT}ms)`);
-      _updateConnStatus(latency);
+      // VOIDSTRIKE: full latency stats — jitter = |currentRTT - avgRTT|.
+      _latencyStats.currentRTT=latency;
+      _latencyStats.avgRTT=_currentRTT;
+      _latencyStats.minRTT=Math.min(_latencyStats.minRTT,latency);
+      _latencyStats.maxRTT=Math.max(_latencyStats.maxRTT,latency);
+      _latencyStats.jitter=Math.round(Math.abs(latency-_currentRTT));
+      G._p2pTestLog?.(`Pong — RTT: ${latency}ms (avg: ${_currentRTT}ms, jitter: ${_latencyStats.jitter}ms, lost: ${_latencyStats.packetsLost})`);
+      _updateConnStatus(_currentRTT);
       return;
     }
     // P2P security: rate limiting — drop floods (after heartbeat exempt).
@@ -3855,6 +3911,16 @@ function networkReceive(data){
         const myHash=Battle.stateHash();
         if(peer.hash!==myHash){
           console.error("[DET] DESYNC at round",peer.round,"my:",myHash,"peer:",peer.hash);
+          // VOIDSTRIKE: Merkle tree analysis — find WHICH units diverged.
+          if(peer.merkle){
+            const localTree=Battle.merkleTree();
+            const diverged=Battle.findDivergence(localTree,peer.merkle);
+            if(diverged.length>0){
+              console.error("[DET] Divergent units:",diverged.map(d=>
+                `${d.n}(${d.team}) ${d.issue} local:${JSON.stringify(d.local)}${d.remote?" remote:"+JSON.stringify(d.remote):""}`
+              ).join(", "));
+            }
+          }
           // Fall back to snapshot sync for the next round.
           Battle._desyncFallback=true;
         }else if(G._pendingRoundHash&&G._pendingRoundHash.round===peer.round){
@@ -4567,7 +4633,8 @@ const Match={
     // PERF-R13: only send in lockstep mode (snapshot mode is already fallback).
     if(connected&&_peerDetCapable&&Battle._lockstepActive){
       const myHash=Battle.stateHash();
-      const payload={round:this.round,winner,hash:myHash};
+      const myMerkle=Battle.merkleTree();
+      const payload={round:this.round,winner,hash:myHash,merkle:{root:myMerkle.root,player:myMerkle.player,enemy:myMerkle.enemy,playerNodes:myMerkle.playerNodes,enemyNodes:myMerkle.enemyNodes}};
       transmit("round_hash",payload);
     }
     this.history.push({round:this.round,winner});
@@ -6817,6 +6884,51 @@ const Battle={
       snap[i]={i:u.id,x:Math.round(u.x*1000),y:Math.round(u.y*1000),h:Math.round(u.h)};
     }
     return fnv1aHash(snap);
+  },
+  // VOIDSTRIKE: Merkle tree desync detection — O(log n) identification of
+  // WHICH units diverged, not just that they diverged.
+  // Tree: root → teams (player/enemy) → individual unit hashes.
+  merkleTree(){
+    const arr=(this.units&&this.units.length)?this.units:(this._finalUnits||[]);
+    const playerNodes=[],enemyNodes=[];
+    for(let i=0;i<arr.length;i++){
+      const u=arr[i];
+      // Per-unit hash: id + position + HP + cooldown + ability state.
+      const unitHash=fnv1aHash({i:u.id,x:Math.round(u.x*1000),y:Math.round(u.y*1000),h:Math.round(u.h),cd:Math.round((u.cool||0)*100),ab:Math.round((u.abCool||0)*100)});
+      const node={hash:unitHash,id:u.id,n:u.n,team:u.team,x:Math.round(u.x),y:Math.round(u.y),h:Math.round(u.h)};
+      if(u.team==="player")playerNodes.push(node);
+      else enemyNodes.push(node);
+    }
+    // Sort by ID for deterministic ordering.
+    playerNodes.sort((a,b)=>a.id-b.id);
+    enemyNodes.sort((a,b)=>a.id-b.id);
+    const playerHash=fnv1aHash(playerNodes.map(n=>n.hash));
+    const enemyHash=fnv1aHash(enemyNodes.map(n=>n.hash));
+    const rootHash=fnv1aHash([playerHash,enemyHash]);
+    return {root:rootHash,player:playerHash,enemy:enemyHash,playerNodes,enemyNodes};
+  },
+  // VOIDSTRIKE: find which units diverged between local and remote Merkle trees.
+  findDivergence(localTree,remoteTree){
+    const diverged=[];
+    if(localTree.player!==remoteTree.player){
+      const remoteMap=new Map();
+      for(const n of remoteTree.playerNodes||[])remoteMap.set(n.id,n);
+      for(const n of localTree.playerNodes||[]){
+        const r=remoteMap.get(n.id);
+        if(!r)diverged.push({id:n.id,team:"player",n:n.n,issue:"missing remotely",local:{x:n.x,y:n.y,h:n.h}});
+        else if(n.hash!==r.hash)diverged.push({id:n.id,team:"player",n:n.n,issue:"state mismatch",local:{x:n.x,y:n.y,h:n.h},remote:{x:r.x,y:r.y,h:r.h}});
+      }
+    }
+    if(localTree.enemy!==remoteTree.enemy){
+      const remoteMap=new Map();
+      for(const n of remoteTree.enemyNodes||[])remoteMap.set(n.id,n);
+      for(const n of localTree.enemyNodes||[]){
+        const r=remoteMap.get(n.id);
+        if(!r)diverged.push({id:n.id,team:"enemy",n:n.n,issue:"missing remotely",local:{x:n.x,y:n.y,h:n.h}});
+        else if(n.hash!==r.hash)diverged.push({id:n.id,team:"enemy",n:n.n,issue:"state mismatch",local:{x:n.x,y:n.y,h:n.h},remote:{x:r.x,y:r.y,h:r.h}});
+      }
+    }
+    return diverged;
   },
 
   // DET: lockstep command buffer. Commands are scheduled for a future tick and
@@ -12088,7 +12200,8 @@ const G={
     // Match.onRoundEnd (avoids duplicate send — was sending twice).
     if(connected&&_peerDetCapable&&Battle._lockstepActive&&role==="guest"){
       const myHash=Battle.stateHash();
-      transmit("round_hash",{round:Match.round,winner,hash:myHash});
+      const myMerkle=Battle.merkleTree();
+      transmit("round_hash",{round:Match.round,winner,hash:myHash,merkle:{root:myMerkle.root,player:myMerkle.player,enemy:myMerkle.enemy,playerNodes:myMerkle.playerNodes,enemyNodes:myMerkle.enemyNodes}});
     }
     if(connected&&role==="guest"){
       return;
