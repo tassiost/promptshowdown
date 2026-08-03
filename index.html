@@ -12133,11 +12133,16 @@ const G={
 
   // Phase 5: battle control. Host/solo drive Battle directly; guest forwards
   // commands to the host (authoritative simulation).
+  // DET: in lockstep mode, the sim runs automatically via loop() on both peers.
+  // Manual tick/auto/skip would advance only the local sim → desync. Disable them.
   tick(){
+    if(Battle._lockstepActive)return; // DET: no manual tick in lockstep
     if(connected&&role==="guest"){transmit("cmd",{cmd:"tick"});return;}
     Battle.tick();
   },
   auto(){
+    // DET: no auto-play in lockstep — sim runs via loop() on both peers.
+    if(Battle._lockstepActive)return;
     // Toggle auto-play button state (for both host/solo and guest).
     const btn=$("autoBtn");
     if(Battle.autoTimer||this._guestAutoActive){
@@ -12159,6 +12164,8 @@ const G={
     }
   },
   skip(){
+    // DET: no skip in lockstep — would advance only local sim → desync.
+    if(Battle._lockstepActive)return;
     if(connected&&role==="guest"){transmit("cmd",{cmd:"skip"});return;}
     Battle.skip();
   },
