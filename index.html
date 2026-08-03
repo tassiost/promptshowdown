@@ -3288,7 +3288,7 @@ let _lastPongReceived=0;
 let _pingSeq=0;
 let _currentRTT=0; // NETHARDEN: smoothed RTT for adaptive lockstep delay
 const HEARTBEAT_INTERVAL_MS=2000;
-const HEARTBEAT_TIMEOUT_MS=6000; // 3 missed pings
+const HEARTBEAT_TIMEOUT_MS=10000; // NETHARDEN: 5 missed pings (was 6s/3 pings — too aggressive for mobile)
 // NETFIX: message sequence numbers — dedup + ordering.
 let _sendSeq=0;
 let _recvSeq=0;
@@ -3302,6 +3302,26 @@ function _p2pRateCheck(){
   if(now>_p2pRateBucket.resetAt){_p2pRateBucket.count=0;_p2pRateBucket.resetAt=now+P2P_RATE_WINDOW;}
   _p2pRateBucket.count++;
   return _p2pRateBucket.count<=P2P_RATE_MAX;
+}
+// NETHARDEN: per-message-type rate limits (prevents one message type from
+// starving others). Limits are per-second.
+const _p2pTypeLimits={
+  snap:30,cmd_lock:30,command:10,round_deck:5,deck:5,
+  role:3,role_tiebreak:5,seed:2,lockstep_start:2,relay_start:2,
+  round_start:3,round_end:3,match_start:2,match_end:2,
+  opponent_picks:3,spell_used:20,tick_ack:10,round_hash:3,
+  battle_error:2,deck_ack:5,forge:3,request_deck:3,
+};
+const _p2pTypeCounts={};
+function _p2pTypeRateCheck(type){
+  const limit=_p2pTypeLimits[type];
+  if(!limit)return true; // unlisted types: no per-type limit
+  const now=Date.now();
+  if(!_p2pTypeCounts[type]||now>_p2pTypeCounts[type].resetAt){
+    _p2pTypeCounts[type]={count:0,resetAt:now+1000};
+  }
+  _p2pTypeCounts[type].count++;
+  return _p2pTypeCounts[type].count<=limit;
 }
 // P2P security: room password (optional). Set by host, verified by guest.
 let _roomPassword=null;
@@ -3628,6 +3648,8 @@ function networkReceive(data){
     }
     // P2P security: rate limiting — drop floods (after heartbeat exempt).
     if(!_p2pRateCheck()){console.warn("[P2P] Rate limit exceeded, dropping message:",data?.t);return;}
+    // NETHARDEN: per-message-type rate limiting.
+    if(!_p2pTypeRateCheck(data.t)){console.warn("[P2P] Per-type rate limit exceeded:",data.t);return;}
     // Guard: most message types require data.d; skip if missing.
     if(data.t!=="role"&&!data.d)return;
     // NETFIX: message dedup — drop messages with seq <= last seen (duplicates).
@@ -14793,9 +14815,28 @@ document.addEventListener("keydown",e=>{
 
 // Phase 7: reset Battle.last on visibility change so dt doesn't jump.
 // Phase 30: pause/resume music on visibility change.
+// NETHARDEN: in lockstep mode, send pause/resume to peer on tab switch
+// to prevent the stall watchdog from firing during intentional backgrounding.
 document.addEventListener("visibilitychange",()=>{
-  if(!document.hidden&&Battle.running&&Battle.last){Battle.last=performance.now();if(GameAudio.enabled)GameAudio.startMusic();}
-  else{GameAudio.stopMusic();}
+  if(document.hidden){
+    // NETHARDEN: send pause command to peer in lockstep mode.
+    if(connected&&Battle._lockstepActive&&Battle.running&&!Battle.paused){
+      const targetTick=(Battle._tick||0)+3;
+      const cmd={type:"pause",tick:targetTick};
+      Battle.queueCommand(cmd,targetTick);
+      transmit("cmd_lock",cmd);
+    }
+    GameAudio.stopMusic();
+  }else{
+    if(Battle.running&&Battle.last){Battle.last=performance.now();if(GameAudio.enabled)GameAudio.startMusic();}
+    // NETHARDEN: send resume command to peer in lockstep mode.
+    if(connected&&Battle._lockstepActive&&Battle.running&&Battle.paused){
+      const targetTick=(Battle._tick||0)+3;
+      const cmd={type:"resume",tick:targetTick};
+      Battle.queueCommand(cmd,targetTick);
+      transmit("cmd_lock",cmd);
+    }
+  }
   // Phase 35: flush analytics on visibility change.
   if(document.hidden)Analytics.flushNow();
 });
