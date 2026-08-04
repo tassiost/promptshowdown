@@ -123,13 +123,18 @@ independently from the same seed + armies, syncing only commands.
 
 ## Documentation
 
-- **[docs/FILE_MAP.md](docs/FILE_MAP.md)** — Line-by-line map of index.html (where everything lives)
+- **[docs/FILE_MAP.md](docs/FILE_MAP.md)** — Line-by-line map of src/ modules (where everything lives)
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Full system architecture
+- **[GAPS.md](GAPS.md)** — Feature gap analysis vs. similar games (what's still missing)
+- **[ISSUES.md](ISSUES.md)** — Known issues & fix log
+- **[FEEDBACK.md](FEEDBACK.md)** — User feedback & response log
 - **[RESEARCH.md](RESEARCH.md)** — Autobattler research findings (Machine Guard, Pokemon Auto Chess,
   chibi-arena, Lagless, OpenFront, TFT, Phaser-AI-First-Starter, multiplayer architecture comparison)
 - **[NETRELAY.md](NETRELAY.md)** — Host-authoritative relay plan (eliminate desync, preserve lockstep)
 - **[PERF-R12.md](PERF-R12.md)** — Performance optimization details (90 optimizations)
-- **[BUGS.md](BUGS.md)** — Bug hunt log (213 bugs found and fixed)
+- **[PERF-R13.md](PERF-R13.md)** — Further performance optimizations
+- **[OPTIMIZATION-R14.md](OPTIMIZATION-R14.md) through [OPTIMIZATION-R20.md](OPTIMIZATION-R20.md)** — Ongoing audit/bug hunt/optimization rounds
+- **[BUGS.md](BUGS.md)** — Bug hunt log (180+ bugs found and fixed, 0 open)
 - **[reference/](reference/)** — Cloned reference projects (gitignored, local only)
   - **Machine-Guard-Corps/** — Sci-fi lane defense autobattler (vanilla JS, same constraints as us)
 - **[archive/](archive/)** — Historical session logs + removed features archive

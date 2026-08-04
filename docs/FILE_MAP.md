@@ -26,7 +26,7 @@ src/main.js              entry point — INCLUDE directives inline all modules
 
 ## File Details
 
-### src/forge.js (~2016 lines)
+### src/forge.js (~2048 lines)
 - `unit(x)` — unit factory (line 9): sanitizes names, clamps stats, builds recipes
 - `cloneUnit(u)` — deep clone via `unit(deepClone(u))` (line 84)
 - `$()`, `setText()`, `setStyle()` — DOM helpers (line 87+)
@@ -40,7 +40,7 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - `WEAPONS` — shape definitions for 14+ weapon types
 - Spell forge: `sanitizeSpell()`, `SPELL_ENUM`, spell validation
 
-### src/battle.js (~3550 lines)
+### src/battle.js (~3584 lines)
 - `Battle` object — main simulation
 - `Battle.start()` — initialize battle with armies + seed
 - `Battle.update(dt)` — fixed-timestep sim (always 1/60)
@@ -53,7 +53,7 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - Serialization: `serializeArmyForPeer()`, `deserializeArmyForPeer()`
 - `BattleFX` — particles, hit flashes, screen shake, status rings
 
-### src/rendering.js (~1393 lines)
+### src/rendering.js (~1382 lines)
 - `SpriteRenderer` — sprite drawing, caching, preview
 - `_getSpriteCacheKey()` — cache key with z-scale + recipe ID
 - `_renderSpriteToCache()` — offscreen canvas pre-render
@@ -63,7 +63,7 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - `GameAudio` — procedural Web Audio (no asset files)
 - `BattleFX` — particle system, hit flashes, screen shake
 
-### src/ui.js (~5024 lines)
+### src/ui.js (~5015 lines)
 - `G.screen(id)` — screen switching, canvas reparenting, back button visibility
 - `G.menu()` — main menu rendering, arena badge, forge button, tooltip attachment
 - `G.deck()` — deck builder: 3 interaction patterns (tap slot, drag, slot picker)
@@ -78,7 +78,7 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - `CardTooltip` — unit card tooltips (hover + long-press)
 - Onboarding: `_onboardNext()`, `_showCoachmark()`
 
-### src/game.js (~452 lines)
+### src/game.js (~455 lines)
 - `G` object — main game state holder
 - `G.init()` — initialization sequence
 - PWA: service worker registration, manifest
@@ -92,13 +92,13 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - Desync detection: `stateHash()` comparison
 - Lockstep command sync
 
-### src/battle-helpers.js (~720 lines)
+### src/battle-helpers.js (~722 lines)
 - Behaviour Composition API: targeting, movement, attackCondition, abilityTrigger
 - `acquireTarget()` — targeting logic (closest, lowest_hp, etc.)
 - `moveUnit()` — movement behaviors (chase, hold, kite, etc.)
 - Avoidance: collision separation, spatial grid
 
-### src/utils.js (~472 lines)
+### src/utils.js (~469 lines)
 - `DMath` — deterministic math (sqrt, sin, cos, hypot via lookup tables)
 - `rand()`, `randRange()` — seeded PRNG
 - `R()`, `Q()` — non-deterministic random (UI only)
@@ -106,7 +106,7 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - `toast()` — notification system
 - Mobile detection, i18n, ads
 
-### src/save.js (~131 lines)
+### src/save.js (~141 lines)
 - `loadData()`, `loadDataAsync()` — localStorage + IndexedDB fallback
 - `saveData()`, `saveDataDebounced()` — persistence
 - `migrateSave()` — version migrations

@@ -111,6 +111,15 @@ PLAN.md             # development roadmap and phase tracking
 
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — full system architecture: game objects, screens, LLM generation, P2P protocol, battle system, sprite rendering, progression
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — development setup, code conventions, testing, commit style
-- **[PLAN.md](PLAN.md)** — development roadmap with phase tracking
+- **[PLAN.md](PLAN.md)** — development roadmap with phase tracking (all phases complete)
 - **[AGENTS.md](AGENTS.md)** — engineering notes: rules for battle system, P2P, sprites, performance, and all gotchas
-- **[PERF-R12.md](PERF-R12.md)** — performance optimization: 90 optimizations, 60 FPS in all scenarios, CPU/GPU/memory stats
+- **[GAPS.md](GAPS.md)** — feature gap analysis vs. similar games (what's still missing)
+- **[ISSUES.md](ISSUES.md)** — known issues & fix log
+- **[FEEDBACK.md](FEEDBACK.md)** — user feedback & response log
+- **[BUGS.md](BUGS.md)** — bug hunt log (180+ bugs found and fixed, 0 open)
+- **[PERF-R12.md](PERF-R12.md)** — performance optimization: 90 optimizations, 60 FPS in all scenarios
+- **[PERF-R13.md](PERF-R13.md)** — further performance optimizations (pooled env synth, etc.)
+- **[OPTIMIZATION-R14.md](OPTIMIZATION-R14.md) through [OPTIMIZATION-R20.md](OPTIMIZATION-R20.md)** — ongoing audit, bug hunt, and optimization rounds
+- **[NETRELAY.md](NETRELAY.md)** — host-authoritative relay plan (eliminate desync)
+- **[RESEARCH.md](RESEARCH.md)** — autobattler research findings (reference projects)
+- **[docs/FILE_MAP.md](docs/FILE_MAP.md)** — line-by-line map of source modules

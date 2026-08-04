@@ -98,7 +98,7 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 | C5 | **Bleed / stacking DoT** | SAP, HS BG | P2 | S | Like poison but stacks. Different damage profile. |
 | C6 | **Buff auras (team-wide)** | TFT traits, Machine Guard bosses | P1 | M | Unit emits aura that buffs nearby allies. Pairs with synergy system. |
 | C7 | **Ground / flying split** | Machine Guard, Storybook Brawl | P2 | M | Flying units avoid melee + ground-targeted spells. Adds a tactical axis. |
-| C8 | **Active player skills (cooldown)** | Machine Guard (Q/W/E) | P0 | M | Player-castable skills during battle. RESEARCH.md flags as Low-effort, Medium-impact. Gives player agency during auto-battle. |
+| C8 | **Active player skills (cooldown)** | Machine Guard (Q/W/E) | P0 | M | ✅ **IMPLEMENTED** — spell bar UI with manual casting + power-based cooldowns (3-10s). Spells are drafted 30% chance and castable during battle (`battle.js:499,811`). |
 | C9 | **Armor penetration** | TFT items | P2 | S | Counter-stat for U1. |
 | C10 | **True damage** | TFT, Pokemon AC | P2 | S | Bypasses all resist. Important for U1/U2 balance. |
 
@@ -119,7 +119,7 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 
 | # | Feature | In | Priority | Effort | Notes |
 |---|---------|----|---------|--------|-------|
-| M1 | **Round time limit** | HS BG, Storybook Brawl | P1 | S | Cap battle duration; resolve by unit count / HP total if time expires. Prevents stalemates. |
+| M1 | **Round time limit** | HS BG, Storybook Brawl | P1 | S | ✅ **IMPLEMENTED** — 90s battle timeout, resolves by HP total (`battle.js:2958`). |
 | M2 | **Sudden death / overtime** | (genre variant) | P2 | S | If round timer expires, both sides take escalating damage. Pairs with M1. |
 | M3 | **Best-of-N series** | MTG Traditional | P2 | S | Match = best of 3/5 rounds instead of lives. Arena config option. |
 | M4 | **PvE / neutral rounds** | TFT minions, Pokemon AC portals | P1 | M | Every Nth round is vs neutral creeps that drop items/gold. Breaks up PvP, gives comeback room. |
@@ -294,14 +294,14 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 
 | # | Feature | In | Priority | Effort | Notes |
 |---|---------|----|---------|--------|-------|
-| P1 | **Ranked ladder tiers** | TFT (Iron→Challenger), Marvel Snap, MTG | P1 | S | Convert ELO into named tiers with promotion matches. |
+| P1 | **Ranked ladder tiers** | TFT (Iron→Challenger), Marvel Snap, MTG | P1 | S | ✅ **IMPLEMENTED** — Bronze→Legend tiers via `rankedTier()` (`ui.js:794-802`). |
 | P2 | **Seasonal resets** | TFT, HS BG, Marvel Snap | P2 | S | Partial rank reset each season. |
 | P3 | **Battle pass** | TFT, Marvel Snap, SAP | P2 | L | Free + premium reward tracks. Monetization. |
 | P4 | **Cosmetics (skins, boards)** | TFT, HS BG, Marvel Snap | P2 | L | Cosmetic-only unlocks. Pairs with F6. |
 | P5 | **Guild / clan system** | (genre variant) | P2 | XL | Social meta-layer. Big scope. |
 | P6 | **Quest variety expansion** | HS BG quests, Marvel Snap missions | P2 | S | More quest types beyond current 3 dailies. |
 | P7 | **Weekly events** | SAP (weekly packs), TFT (set events) | P2 | M | Time-limited modes/rewards. |
-| P8 | **Tutorial / onboarding expansion** | TFT, Marvel Snap | P1 | S | We have a basic tutorial (`ui.js:712-763`); expand with interactive lessons. |
+| P8 | **Tutorial / onboarding expansion** | TFT, Marvel Snap | P1 | S | ✅ **IMPLEMENTED** — 6-step interactive onboarding tutorial (`ui.js:721-763`). |
 
 ---
 
@@ -322,7 +322,7 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 | # | Feature | In | Priority | Effort | Notes |
 |---|---------|----|---------|--------|-------|
 | X1 | **In-game chat / emote wheel** | HS BG, TFT, Marvel Snap | P1 | S | Pairs with N1. |
-| X2 | **Match summary / post-game stats** | TFT, Marvel Snap, Backpack Battles | P1 | S | Detailed damage breakdown, MVP, kill feed after match. |
+| X2 | **Match summary / post-game stats** | TFT, Marvel Snap, Backpack Battles | P1 | S | ✅ **IMPLEMENTED** — MVP display, match analysis, highlights, performance ranking (`ui.js:2780-2852`). |
 | X3 | **Codex / unit database** | (we have a codex screen) | P2 | S | Expand codex with stats, synergies, lore. |
 | X4 | **Tier list (community)** | TFT community tools | P2 | M | We have a tier list screen; could add community data. |
 | X5 | **Color themes beyond arena** | (UX convention) | P2 | S | Player-selectable UI themes. |
@@ -348,7 +348,7 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 | R1 | **Per-unit bespoke drawing** | Machine Guard (drawInfantry, drawDog...) | P2 | L | Hand-crafted draw per unit type. Currently all procedural. |
 | R2 | **Weather / environment FX** | (genre convention) | P2 | M | Rain, snow, fog per arena theme. |
 | R3 | **Boss visual escalation** | Machine Guard (6 boss tiers) | P2 | M | Pairs with M5. |
-| R4 | **Status ring overlays** | Machine Guard | P1 | S | Colored rings for slow/stun/shield. We have some; expand to all statuses. |
+| R4 | **Status ring overlays** | Machine Guard | P1 | S | ✅ **IMPLEMENTED** — colored rings for shield (white), stun (yellow), poison (green), slow (blue) (`battle.js:2448-2460`). |
 | R5 | **Projectile trail variety** | Machine Guard (7-point history) | P2 | S | More trail types per weapon. |
 
 ---
@@ -356,44 +356,44 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 ## Priority Summary
 
 ### P0 — Must Have (core genre conventions we lack)
-| ID | Feature | Effort |
-|----|---------|--------|
-| S1+S2+S3 | Origin/class traits with tiered thresholds | L |
-| U4 / F5 | Unit evolution paths (forge + battle) | L |
-| E1 | In-match economy (per-round income) | M |
-| C8 | Active player skills (cooldown) | M |
+| ID | Feature | Effort | Status |
+|----|---------|--------|--------|
+| S1+S2+S3 | Origin/class traits with tiered thresholds | L | ❌ Missing |
+| U4 / F5 | Unit evolution paths (forge + battle) | L | ❌ Missing |
+| E1 | In-match economy (per-round income) | M | ❌ Missing |
+| ~~C8~~ | ~~Active player skills (cooldown)~~ | ~~M~~ | ✅ Implemented (spell bar) |
 
 ### P1 — High Value
-| ID | Feature | Effort |
-|----|---------|--------|
-| U1 | Armor stat | M |
-| U3 | Mana / energy resource | L |
-| U5 | 3-copy merge (golden units) | M |
-| C1 | Silence status | S |
-| C2 | Stealth | M |
-| C6 | Buff auras | M |
-| M1 | Round time limit | S |
-| M4 | PvE / neutral rounds | M |
-| M5 | Boss rounds | L |
-| E2 | Interest on savings | S |
-| E3 | Loss streak bonus | S |
-| E4 | Sell / refund units | S |
-| D1 | Ban/pick phase | M |
-| D3 | Shared carousel round | M |
-| D5 | Freeze/lock shop offering | S |
-| S5 | Active synergy indicators in draft | S |
-| I1+I2+I3 | Item system (components + combine + slots) | M-L |
-| F1 | Live visual preview in forge | S |
-| F4 | Trait assignment in forge | S |
-| N1 / X1 | Chat / emote wheel | S |
-| N5 | MMR-based matchmaking | M |
-| N6 | Mid-match reconnect | M |
-| B4 | Bot uses active skills | S |
-| B5 | Bot uses synergies | M |
-| P1 | Ranked ladder tiers | S |
-| P8 | Expanded onboarding | S |
-| X2 | Post-game match summary | S |
-| R4 | Status ring overlays | S |
+| ID | Feature | Effort | Status |
+|----|---------|--------|--------|
+| U1 | Armor stat | M | ❌ Missing |
+| U3 | Mana / energy resource | L | ❌ Missing |
+| U5 | 3-copy merge (golden units) | M | ❌ Missing |
+| C1 | Silence status | S | ❌ Missing |
+| C2 | Stealth | M | ❌ Missing |
+| C6 | Buff auras | M | ❌ Missing |
+| ~~M1~~ | ~~Round time limit~~ | ~~S~~ | ✅ Implemented (90s timeout) |
+| M4 | PvE / neutral rounds | M | ❌ Missing |
+| M5 | Boss rounds | L | ❌ Missing |
+| E2 | Interest on savings | S | ❌ Missing |
+| E3 | Loss streak bonus | S | ❌ Missing |
+| E4 | Sell / refund units | S | ❌ Missing |
+| D1 | Ban/pick phase | M | ❌ Missing |
+| D3 | Shared carousel round | M | ❌ Missing |
+| D5 | Freeze/lock shop offering | S | ❌ Missing |
+| S5 | Active synergy indicators in draft | S | ❌ Missing (needs S1/S2 first) |
+| I1+I2+I3 | Item system (components + combine + slots) | M-L | ❌ Missing |
+| F1 | Live visual preview in forge | S | ❌ Missing |
+| F4 | Trait assignment in forge | S | ❌ Missing (needs S1/S2 first) |
+| N1 / X1 | Chat / emote wheel | S | ❌ Missing |
+| N5 | MMR-based matchmaking | M | ❌ Missing |
+| N6 | Mid-match reconnect | M | ❌ Missing |
+| B4 | Bot uses active skills | S | ❌ Missing |
+| B5 | Bot uses synergies | M | ❌ Missing (needs S1/S2 first) |
+| ~~P1~~ | ~~Ranked ladder tiers~~ | ~~S~~ | ✅ Implemented (Bronze→Legend) |
+| ~~P8~~ | ~~Expanded onboarding~~ | ~~S~~ | ✅ Implemented (6-step tutorial) |
+| ~~X2~~ | ~~Post-game match summary~~ | ~~S~~ | ✅ Implemented (MVP + analysis) |
+| ~~R4~~ | ~~Status ring overlays~~ | ~~S~~ | ✅ Implemented (shield/stun/poison/slow) |
 
 ### P2 — Nice to Have
 Everything else in the tables above (cosmetics, seasons, guilds, 2v2, spectator,
@@ -403,21 +403,21 @@ premium currency, weather FX, etc.). Defer until P0/P1 are in.
 
 ## Suggested Roadmap
 
-A reasonable build order that respects dependencies:
+A reasonable build order that respects dependencies. Items marked ✅ are done.
 
-1. **Traits (S1+S2+S3)** — foundation; everything else builds on it
-2. **In-match economy (E1+E2+E3)** — gives meaning to drafting choices
-3. **Sell/refund (E4) + Freeze shop (D5)** — QoL that the new economy needs
-4. **3-copy merge (U5)** — uses the economy; pairs with traits
-5. **Active skills (C8) + Bot skills (B4)** — player agency during battle
-6. **Item system v1 (I1+I3)** — simple stat items from PvE rounds
-7. **PvE rounds (M4) + Boss rounds (M5)** — source for items, breaks up PvP
-8. **Evolution paths (U4+F5)** — deep upgrade tree (RESEARCH.md top pick)
-9. **Armor + magic resist (U1+U2)** — balance for new damage sources
-10. **Round time limit (M1)** — once battles get more complex
-11. **Silence + stealth (C1+C2)** — new status effects for spell variety
-12. **Ranked tiers (P1) + MMR (N5)** — competitive structure
-13. **Chat/emotes (N1) + post-game summary (X2)** — multiplayer polish
+1. **Traits (S1+S2+S3)** — foundation; everything else builds on it ❌
+2. **In-match economy (E1+E2+E3)** — gives meaning to drafting choices ❌
+3. **Sell/refund (E4) + Freeze shop (D5)** — QoL that the new economy needs ❌
+4. **3-copy merge (U5)** — uses the economy; pairs with traits ❌
+5. ~~**Active skills (C8) + Bot skills (B4)** — player agency during battle~~ ✅ (C8 done via spell bar; B4 still missing)
+6. **Item system v1 (I1+I3)** — simple stat items from PvE rounds ❌
+7. **PvE rounds (M4) + Boss rounds (M5)** — source for items, breaks up PvP ❌
+8. **Evolution paths (U4+F5)** — deep upgrade tree (RESEARCH.md top pick) ❌
+9. **Armor + magic resist (U1+U2)** — balance for new damage sources ❌
+10. ~~**Round time limit (M1)** — once battles get more complex~~ ✅
+11. **Silence + stealth (C1+C2)** — new status effects for spell variety ❌
+12. ~~**Ranked tiers (P1)** + MMR (N5)** — competitive structure~~ ✅ (P1 done; N5 still missing)
+13. ~~**Chat/emotes (N1)** + post-game summary (X2)** — multiplayer polish~~ ✅ (X2 done; N1 still missing)
 
 Each phase is independently shippable. Traits + economy alone would close the
 biggest genre-convention gap and make the game feel like a "real" autobattler.

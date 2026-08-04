@@ -29,6 +29,6 @@
 ## Performance
 
 - **60 FPS in all scenarios**: All scenarios (empty, 5v5, 20v20, 50v50, MP guest) run at 60 FPS with 0 slow frames. 50v50 (100 units + projectiles + combat) uses only 2.45ms CPU — 15% of the 16.67ms frame budget (85% headroom). On a 6x slower machine, still 60 FPS.
-  - **Progress**: 90 optimizations in PERF-R12.md including sprite caching (pre-rendered offscreen canvases), object pooling (zero GC in hot paths), spatial grids (flat-array O(n) avoidance + separation), render batching (HP bars, status rings, shadows, damage numbers), per-frame targeting cache, index loops, squared distance checks, and single/multiplayer render unification.
+  - **Progress**: 90 optimizations in PERF-R12.md + further optimizations in PERF-R13.md and OPTIMIZATION-R14 through R20 (sprite caching, object pooling, spatial grids, render batching, per-frame targeting cache, index loops, squared distance checks, helper extraction, particle budget checks, formation constant hoisting). 216 E2E tests pass with 0 real bugs.
   - **CPU vs GPU**: CPU (JS update + render) = 2.45ms, GPU (canvas paint + vsync) = ~14.4ms. GPU is dominated by vsync wait, not actual GPU work.
   - **Memory**: 14.5MB empty → 17.0MB full battle → 20.0MB MP guest. No memory leaks.
