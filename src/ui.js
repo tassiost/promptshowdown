@@ -714,12 +714,12 @@ const G={
   },
   _onboardNext(){
     const steps=[
-      {text:"Welcome! Your 4-card loadout is your army. Tap DECK to see it.",target:"deck",screen:"menu"},
-      {text:"Tap FIGHT to start a match. You'll draft 3 units per round.",target:"matchmaking",screen:"menu"},
-      {text:"Pick 1 card from each draw. Reroll if you don't like them.",target:"draft",screen:"draft"},
-      {text:"Scout! Tap to reveal what your opponent picked.",target:"scout",screen:"scout"},
-      {text:"FIGHT! Units auto-battle. Watch and adapt for round 2.",target:"battle",screen:"battle"},
-      {text:"Win 3 rounds to take the match. Good luck!",target:"result",screen:"result"},
+      {text:"Welcome to Prompt Showdown! Your 4-card loadout is your army. Tap DECK to manage it.",target:"deck",screen:"menu"},
+      {text:"In the Deck screen: tap a slot to select it, then tap a unit to fill it. Or drag units onto slots. Or tap a unit to pick which slot to replace.",target:"deck",screen:"deck"},
+      {text:"Tap FIGHT to start a match. You'll draft 3 units per round from your loadout.",target:"matchmaking",screen:"menu"},
+      {text:"Pick 1 card from each draw. Press R to reroll if you don't like the options (3 rerolls per match).",target:"draft",screen:"draft"},
+      {text:"Units auto-battle! Watch the fight unfold. Press P to pause, 1/2/3 for speed, S to skip.",target:"battle",screen:"battle"},
+      {text:"Survivors carry over to the next round. Adapt your picks to counter the enemy. Win 3 rounds to take the match!",target:"result",screen:"result"},
     ];
     if(this.onboardStep>=steps.length){
       this.save.onboarded=true;
@@ -1196,10 +1196,12 @@ const G={
         "💡 Carries deal high damage but need protection.",
         "💡 Support units heal — they keep your army alive.",
         "💡 Counter units dive enemy backlines to disrupt carries.",
-        "💡 Reroll draft cards if you don't like the options.",
+        "💡 Reroll draft cards if you don't like the options (3 per match).",
         "💡 Win 3 rounds to take the match. Adapt between rounds!",
-        "💡 Fuse duplicate units to level them up.",
-        "💡 Upgrade units with coins to boost their stats.",
+        "💡 In the Deck screen: tap a slot, then tap a unit to fill it.",
+        "💡 Drag collection units onto loadout slots to swap them in.",
+        "💡 Fuse duplicate units to level them up (+10% HP/DMG per level).",
+        "💡 Upgrade units with coins to boost their stats permanently.",
         "💡 Check the Codex to learn about abilities and roles.",
         "💡 Win streaks give bonus coins — don't break the streak!",
         "💡 Spells can turn the tide — tap the spell bar to cast.",
@@ -1212,6 +1214,8 @@ const G={
         "💡 Executioner deals 3× damage to low-HP enemies.",
         "💡 Ramp units get stronger with each kill.",
         "💡 Chain lightning hits 3 enemies — great vs clusters.",
+        "💡 Survivors carry over between rounds — keep them alive!",
+        "💡 The Forge lets you create custom units with AI. Try it!",
       ];
       const dayIdx=new Date().getDate();
       tipEl.innerHTML=tips[dayIdx%tips.length];
