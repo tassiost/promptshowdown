@@ -16,17 +16,19 @@ performance work. Covers the full development workflow.
 ## Quick Start
 
 ```bash
-# Start local server (port 8765 for tests, port 8000 for Play.command)
-python3 -m http.server 8765
+# Dev server with HMR (port 5173)
+npm run dev
+
+# Or build + serve the single-file output (port 8765 for tests)
+npm run build
+cd dist && python3 -m http.server 8765
 # Open http://localhost:8765/index.html in Chrome/Edge
 ```
 
-Or double-click `Play.command` to start server + open browser.
-
 ## Before Making Changes
 
-1. **Read AGENTS.md** — it has the 10 critical invariants you must not break.
-2. **Check `docs/FILE_MAP.md`** for where things live in `index.html` (~13K lines, single file).
+1. **Read AGENTS.md** — it has the 17 critical invariants you must not break.
+2. **Check `docs/FILE_MAP.md`** for where things live in the `src/` modules.
 3. **Search for existing patterns** — mimic neighboring code style.
 4. **Invoke knowledge skills** for the subsystem you're working on:
    - `/battle-rules` — battle logic, abilities, spells, targeting, movement
@@ -36,26 +38,29 @@ Or double-click `Play.command` to start server + open browser.
 ## Verification (before considering a task complete)
 
 ```bash
-# 1. Kill any existing server
+# 1. Build the project
+npm run build
+
+# 2. Kill any existing server
 lsof -ti:8765 | xargs kill -9 2>/dev/null; sleep 1
 
-# 2. Start fresh server
-python3 -m http.server 8765 &>/dev/null & sleep 2
+# 3. Start fresh server
+cd dist && python3 -m http.server 8765 &>/dev/null & sleep 2
 
-# 3. Run E2E tests (184 tests, ~60s)
+# 4. Run E2E tests (216 tests, ~60s)
 python3 e2e_test.py
 
-# 4. Clean up
+# 5. Clean up
 lsof -ti:8765 | xargs kill -9 2>/dev/null
 ```
 
 If you changed performance-critical code (render, update, act, separate):
 ```bash
-# Run perf profiler (5 scenarios, ~60s)
+# Run perf profiler (6 scenarios, ~60s)
 python3 perf.py
 ```
 
-All 184 E2E tests must pass. 50v50 must hit 60 FPS with 0 slow frames.
+All 216 E2E tests must pass. 50v50 must hit 60 FPS with 0 slow frames.
 
 ## Commit Style
 
@@ -74,17 +79,28 @@ Common areas: `PERF-R12`, `BUG-HUNT`, `forge`, `battle`, `p2p`, `save`, `render`
 ## Project Structure
 
 ```
-index.html              — entire game (HTML + CSS + JS, ~13K lines)
+src/                    — source modules (concatenated via // INCLUDE: in main.js)
+  main.js               — entry point (INCLUDE directives inline all modules)
+  imports.js            — dynamic imports (web-llm, trystero, lz-string)
+  forge.js              — LLM forge, recipe assembler, unit() factory
+  generated_units.js    — LLM-forged units added to base roster
+  battle.js             — battle object, spells, combat, sim
+  rendering.js          — sprite rendering, procedural FX, audio
+  ui.js                 — UI screens, deck builder, forge UI, tooltips
+  game.js               — G object, init, PWA, event handlers
+  ...                   — (utils, save, network, match, quests, bot, etc.)
+index.html              — root HTML (Vite entry point)
+dist/index.html         — built single file (npm run build)
 vendor/                 — vendored ES modules (trystero, lz-string)
-e2e_test.py             — E2E test suite (184 tests, Playwright)
-perf.py                 — performance profiler (5 scenarios, Playwright)
-Play.command            — macOS double-click launcher
+vite.config.js          — Vite config with concat-modules plugin + singlefile
+e2e_test.py             — E2E test suite (216 tests, Playwright)
+perf.py                 — performance profiler (6 scenarios, Playwright)
 render.yaml             — Render.com deployment blueprint
-AGENTS.md               — critical invariants (read first, 68 lines)
-docs/FILE_MAP.md        — line-by-line map of index.html
+AGENTS.md               — critical invariants (read first)
+docs/FILE_MAP.md        — map of src/ modules and what lives where
 PERF-R12.md             — performance optimization details
 BUGS.md                 — bug hunt log
-archive/                — historical session logs (BUG-HUNT-R*, OVERNIGHT*, etc.)
+archive/                — historical session logs + removed features
 .devin/skills/          — AI workflow skills (this file + 5 others)
 ```
 
@@ -126,4 +142,4 @@ archive/                — historical session logs (BUG-HUNT-R*, OVERNIGHT*, et
 - **Never use chrome-devtools MCP** — all browser testing goes through Playwright MCP
 - **Never limit LLM usage** — inference is free (local WebLLM, no API costs)
 - **No new npm dependencies** — vendor anything needed in `vendor/`
-- **Keep it single-file** — all game code in `index.html`
+- **Keep it single-file output** — source in `src/`, builds to single `dist/index.html`
