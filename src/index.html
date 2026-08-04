@@ -26,8 +26,6 @@
 <div id="arenaBadge" style="margin:10px 0;font-size:.9rem;font-weight:600;text-align:center;"></div>
 <div id="streakBadge" style="display:none;margin:4px 0;font-size:.85rem;font-weight:700;text-align:center;color:#fb923c;"></div>
 <div id="dailyBadge" style="display:none;margin:4px 0;font-size:.8rem;font-weight:600;text-align:center;color:#fbbf24;"></div>
-<div id="tipOfDay" style="margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:.75rem;color:var(--muted);text-align:center;max-width:280px;"></div>
-<div id="unitSpotlight" style="display:none;margin:6px 0;padding:8px 12px;background:var(--card);border:1px solid var(--accent);border-radius:var(--radius-sm);font-size:.72rem;text-align:center;max-width:280px;"></div>
 <div style="display:flex;gap:4px;justify-content:center;margin:4px 0;">
 <button class="btn" onclick="G.setDifficulty('easy')" id="diffEasy" style="font-size:.7rem;padding:3px 10px;" aria-label="Set difficulty to easy">Easy</button>
 <button class="btn" onclick="G.setDifficulty('normal')" id="diffNormal" style="font-size:.7rem;padding:3px 10px;" aria-label="Set difficulty to normal">Normal</button>
@@ -43,7 +41,6 @@
 <button class="btn" onclick="G.stats()" aria-label="View your profile and stats">📊 STATS</button>
 <button class="btn" onclick="G.achievementsScreen()" aria-label="View achievements">🏆 ACHIEVEMENTS</button>
 <button class="btn" onclick="G.replaysScreen()" aria-label="View match history and replays">🎬 HISTORY</button>
-<button class="btn" onclick="G.tierList()" aria-label="View the tier list">📊 TIER LIST</button>
 <button class="btn" onclick="G.profile()" aria-label="View your profile">👤 PROFILE</button>
 <button class="btn" onclick="G.upgrade()" aria-label="Upgrade your units">⬆ UPGRADE</button>
 <button class="btn red" onclick="G.reset()" aria-label="Reset all progress">↺ RESET</button>
@@ -426,16 +423,6 @@
 <div class="screen" id="replays">
 <h2>🎬 Match History</h2>
 <div id="replayContent" style="max-width:360px;margin:0 auto;"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
-</div>
-
-<div class="screen" id="tierlist">
-<h2>📊 Unit Tier List</h2>
-<div style="display:flex;gap:4px;justify-content:center;margin:8px 0;flex-wrap:wrap;">
-<button class="btn primary" onclick="G.tierListTab('all')" id="tierTabAll" style="font-size:.75rem;padding:4px 10px;">All</button>
-<button class="btn" onclick="G.tierListTab('collection')" id="tierTabCollection" style="font-size:.75rem;padding:4px 10px;">Owned</button>
-</div>
-<div id="tierContent" style="max-width:380px;margin:0 auto;"></div>
 <button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 

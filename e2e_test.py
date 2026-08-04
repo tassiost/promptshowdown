@@ -61,7 +61,7 @@ def run():
         print("\n=== TEST 3: All Screens ===")
         page.evaluate("G.save.onboarded=true; G.menu();")
         page.wait_for_timeout(300)
-        screens=["menu","forge","deck","upgrade","settings","achievements","matchmaking","shop","codex","stats","profile","replays","tierlist","p2ptest"]
+        screens=["menu","forge","deck","upgrade","settings","achievements","matchmaking","shop","codex","stats","profile","replays","p2ptest"]
         for s in screens:
             page.evaluate(f"G.screen('{s}')")
             page.wait_for_timeout(200)
@@ -494,16 +494,6 @@ def run():
             content=page.evaluate("document.getElementById('codexContent')?.innerHTML?.length || 0")
             if content>0: ok(f"codex: {tab} ({content} chars)")
             else: fail(f"codex: {tab}","empty")
-
-        # Tierlist
-        page.evaluate("G.tierList()")
-        page.wait_for_timeout(300)
-        for tab in ["all","collection"]:
-            page.evaluate(f"G.tierListTab('{tab}')")
-            page.wait_for_timeout(200)
-            content=page.evaluate("document.getElementById('tierContent')?.innerHTML?.length || 0")
-            if content>0: ok(f"tierlist: {tab} ({content} chars)")
-            else: fail(f"tierlist: {tab}","empty")
 
         # Profile
         page.evaluate("G.profile()")
