@@ -24,10 +24,7 @@ function toast(msg){
 
 // Custom confirm modal — replaces native confirm() for consistent UX.
 function showConfirm(message,onYes,onNo){
-  const overlay=document.createElement("div");
-  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;";
-  const modal=document.createElement("div");
-  modal.style.cssText="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-width:300px;width:90%;text-align:center;";
+  const {overlay,modal}=showModal({maxW:"300px",modalExtra:"border-radius:var(--radius);text-align:center;"});
   modal.innerHTML=`<div style="margin-bottom:16px;font-size:.9rem;">${message}</div>`;
   const btns=document.createElement("div");
   btns.style.cssText="display:flex;gap:8px;justify-content:center;";
@@ -38,7 +35,7 @@ function showConfirm(message,onYes,onNo){
   no.className="btn";no.textContent="No";no.style.cssText="padding:8px 20px;";
   no.onclick=()=>{overlay.remove();if(onNo)onNo();};
   btns.appendChild(yes);btns.appendChild(no);
-  modal.appendChild(btns);overlay.appendChild(modal);document.body.appendChild(overlay);
+  modal.appendChild(btns);
 }
 
 // Phase 7: mobile detection + haptics + fullscreen.
