@@ -1201,6 +1201,41 @@ const G={
     if(aiStatus){
       aiStatus.innerText=llmReady?"AI: Ready":llmLoading?"AI: Loading...":"AI: "+(navigator.gpu?"Idle":"Unavailable (templates)");
     }
+    // Attach tooltips to menu buttons (hover on desktop, long-press on mobile).
+    this._attachMenuTooltips();
+  },
+  _attachMenuTooltips(){
+    if(this._menuTooltipsAttached)return;
+    this._menuTooltipsAttached=true;
+    const tips={
+      "G.startMatchmaking()":["FIGHT","Find a human opponent via P2P matchmaking. Draft 3 units per round, win 3 rounds to take the match."],
+      "G.quickMatch()":["QUICK MATCH","Skip the queue and play against a bot opponent immediately."],
+      "G.forge()":["FORGE","Create custom units or spells using AI. Describe what you want and the AI generates stats + sprite."],
+      "G.deck()":["DECK","Manage your 4-card loadout. Tap a slot, then tap a unit — or drag units onto slots."],
+      "G.shop()":["SHOP","Spend coins to buy new units. Reroll the shop for fresh offers."],
+      "G.codex()":["CODEX","Browse the encyclopedia of abilities, roles, spells, movement and targeting behaviors."],
+      "G.stats()":["STATS","View your match history, win rate, total kills, and career stats."],
+      "G.achievementsScreen()":["ACHIEVEMENTS","Track milestones and unlock achievements. Some grant bonus coins."],
+      "G.replaysScreen()":["HISTORY","Watch replays of past matches and review battle outcomes."],
+      "G.profile()":["PROFILE","View your player profile, rank, and collection summary."],
+      "G.upgrade()":["UPGRADE","Spend coins to permanently upgrade unit stats. Higher levels = +10% HP/DMG per level."],
+      "G.reset()":["RESET","Wipe all progress and start over. This cannot be undone."],
+      "G.showOnboarding()":["How to Play","Replay the 6-step interactive tutorial covering deck building, drafting, and battle."],
+      "G.showSettings()":["Settings","Adjust audio, graphics quality, accessibility, language, and analytics."],
+      "G.showQuests()":["Quests","Complete daily quests for coins. Login streaks give bonus rewards."],
+      "G.showLeaderboard()":["Ranked","View the global ranked leaderboard and your current standing."],
+      "G.p2pTest()":["P2P Test","Diagnose peer-to-peer connection issues. Useful for debugging multiplayer."],
+    };
+    const btns=document.querySelectorAll("#menu button[onclick]");
+    for(const btn of btns){
+      const onclick=btn.getAttribute("onclick")||"";
+      for(const [key,[title,desc]] of Object.entries(tips)){
+        if(onclick.includes(key)){
+          BtnTooltip.attach(btn,()=>BtnTooltip.html(title,desc));
+          break;
+        }
+      }
+    }
   },
   lobby(){this.screen("lobby");},
   // Phase 18: matchmaking flow — join a shared queue room, wait for opponent.
@@ -4924,6 +4959,59 @@ const CardTooltip={
     if(u.role)html+=`<div class="ttRole">Role: ${u.role}</div>`;
     html+=`<div class="ttRole">Rarity: ${u.rar} · Cost: ${u.cost}</div>`;
     return html;
+  }
+};
+
+// Button tooltip — lightweight hover/tap tooltip for menu buttons.
+const BtnTooltip={
+  _el:null,_timer:null,_currentBtn:null,
+  _el2(){if(!this._el)this._el=$("btnTooltip");return this._el;},
+  show(btn,html){
+    const el=this._el2();if(!el)return;
+    el.innerHTML=html;
+    el.style.display="block";
+    const rect=btn.getBoundingClientRect();
+    const tw=el.offsetWidth,th=el.offsetHeight;
+    let x=rect.left+rect.width/2-tw/2;
+    let y=rect.bottom+6;
+    x=Math.max(8,Math.min(innerWidth-tw-8,x));
+    if(y+th>innerHeight-8)y=rect.top-th-6;
+    el.style.left=x+"px";
+    el.style.top=y+"px";
+  },
+  hide(){
+    const el=this._el2();if(el)el.style.display="none";
+    this._currentBtn=null;
+    if(this._timer){clearTimeout(this._timer);this._timer=null;}
+  },
+  // Attach to a button. htmlFn(btn) returns tooltip HTML.
+  attach(btn,htmlFn){
+    btn.addEventListener("mouseenter",()=>{
+      if(this._currentBtn&&this._currentBtn!==btn)this.hide();
+      this._currentBtn=btn;
+      this._timer=setTimeout(()=>this.show(btn,htmlFn(btn)),400);
+    });
+    btn.addEventListener("mouseleave",()=>{this.hide();});
+    // Touch: long-press shows tooltip without triggering click.
+    btn.addEventListener("pointerdown",(e)=>{
+      if(e.pointerType!=="touch")return;
+      this._currentBtn=btn;
+      this._timer=setTimeout(()=>this.show(btn,htmlFn(btn)),500);
+    });
+    btn.addEventListener("pointermove",(e)=>{
+      if(e.pointerType!=="touch")return;
+      this.hide();
+    });
+    btn.addEventListener("pointerup",(e)=>{
+      if(e.pointerType!=="touch")return;
+      if(this._timer){clearTimeout(this._timer);this._timer=null;}
+      const el=this._el2();
+      if(el&&el.style.display==="block"){e.preventDefault();e.stopPropagation();}
+    });
+  },
+  // Helper to build tooltip HTML from title + description.
+  html(title,desc){
+    return `<div class="btTitle">${title}</div><div class="btDesc">${desc}</div>`;
   }
 };
 
