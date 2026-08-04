@@ -1,6 +1,6 @@
 # Architecture
 
-Prompt Showdown is a single-file auto-battler (`index.html`, ~9900 lines) with AI unit generation, P2P multiplayer, and progression. This document covers all major systems.
+Prompt Showdown is an auto-battler with AI unit generation, P2P multiplayer, and progression. Source is split into `src/` modules and bundled to a single `dist/index.html` via Vite. This document covers all major systems.
 
 ## Table of Contents
 
@@ -25,27 +25,23 @@ Prompt Showdown is a single-file auto-battler (`index.html`, ~9900 lines) with A
 ## File Structure
 
 ```
-index.html          ~9900 lines, single file
-├── CSS             lines 11-99    (CSS variables, components, screens, spell bar)
-├── HTML            lines 101-243  (10 screens + splash + error panel)
-└── JavaScript      lines 245-6900 (ES module, all game logic)
-    ├── Imports     lines 245-284  (web-llm, trystero, lz-string)
-    ├── Save        lines 285-410  (loadData, saveData, migration)
-    ├── Unit        lines 416-442  (unit() factory, cloneUnit)
-    ├── LLM Init    lines 443-559  (WebGPU detection, model load, cancel)
-    ├── LLM Gen     lines 560-698  (color maps, schema, validation rules, descriptions)
-    ├── Recipes     lines 699-905  (assembler, template fallback, P2P serialization)
-    ├── LLM Cache   lines 906-1233 (IndexedDB, field generation, unit generation)
-    ├── Networking  lines 1234-1433 (Trystero, message protocol, disconnect)
-    ├── Behaviour   lines 1434-1612 (targeting, movement, abilities, Match)
-    ├── Spells      lines 3790-4040 (Spell.fire, triggers, zones, targets, shapes, effects)
-    ├── Sprites     lines 1613-1770 (SpriteRenderer, joints, animations, patterns)
-    ├── Battle FX   lines 1774-1914 (particles, hit flashes, screen shake)
-    ├── Battle      lines 1915-5000 (simulation, rendering, spell bar, snapshots)
-    ├── Bot         lines 2464-2604 (bot opponent, sprite recipes)
-    ├── Game (G)    lines 2605-6900 (screens, progression, forge, deck)
-    └── Exports     lines 6800-6900 (window globals, PWA, event listeners)
+src/                source modules (concatenated via // INCLUDE: in main.js)
+├── main.js         entry point (INCLUDE directives inline all modules)
+├── imports.js      dynamic imports (web-llm, trystero, lz-string)
+├── forge.js        LLM forge, recipe assembler, unit() factory, cloneUnit
+├── generated_units.js  LLM-forged units added to base roster
+├── battle.js       battle object, spells, combat, sim
+├── rendering.js    sprite rendering, procedural FX, audio
+├── ui.js           UI screens, deck builder, forge UI, tooltips
+├── game.js         G object, init, PWA, event handlers
+├── ...             (utils, save, network, match, quests, bot, etc.)
+index.html          root HTML (Vite entry point)
+dist/index.html     built single file (npm run build)
 ```
+
+> **Note**: Line numbers below refer to the old monolithic `index.html` and are
+> approximate. Code is now split into `src/` modules — use grep to find exact
+> locations.
 
 ---
 
@@ -710,16 +706,16 @@ FX are derived from state changes, not events. This means:
 
 ### Arenas (lines 2610-2633)
 
-6 arenas with increasing difficulty:
+4 arenas with increasing difficulty:
 
-| Arena | Lives | Bot Pool |
+| Arena | Lives | Mechanic |
 |-------|-------|----------|
-| Training Yard | 3 | 6 starter units |
-| District Z | 3 | + Plague, Cultist |
-| Shadow Realm | 4 | + Berserker, Vamp |
-| Inferno | 4 | + Bomber, Shielder |
-| Crystal Citadel | 5 | + Healer, Tank |
-| The Void | 5 | All units |
+| Training Yard | 3 | none |
+| District Z | 3 | poison_aura |
+| Golden Goal | 3 | speed_boost |
+| Void Rift | 4 | damage_aura |
+
+After clearing all arenas, Endless Mode begins with scaling enemy stat bonuses.
 
 ---
 

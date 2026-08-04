@@ -35,7 +35,7 @@ Status legend: [FIXED] patched / [OPEN] not yet fixed / [WONTFIX] by design / [U
   - On desktop/iPad/Android: still uses native Fullscreen API (with `webkitRequestFullscreen`
     fallback).
   - Button icon changes between `⛶` and `⬜` to indicate state.
-  - Also fixed `#fsBtn` position to use `env(safe-area-inset-left/top)`.
+  - Also fixed `#fsBtn` position to use `env(safe-area-inset-right/top)` (top-right).
 
 ### 3. Forge crashes midway through on mobile
 - **Status:** [FIXED] (commit `503f8c6`)

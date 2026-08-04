@@ -4,16 +4,25 @@
 
 ### Prerequisites
 
-- Python 3 (for local HTTP server)
+- Node.js (for Vite dev server + build)
+- Python 3 (for serving the built version)
 - Chrome or Edge (for WebGPU / AI forge testing)
 - A modern browser for general testing
 
-### Start local server
-
-The game requires HTTP (not `file://`) for ES module imports, IndexedDB, and P2P:
+### Dev server (with HMR)
 
 ```bash
-python3 -m http.server 8765
+npm install
+npm run dev
+```
+
+Visit `http://localhost:5173`.
+
+### Built version (single file)
+
+```bash
+npm run build
+cd dist && python3 -m http.server 8765
 ```
 
 Visit `http://localhost:8765/index.html`.
@@ -38,9 +47,9 @@ indexedDB.deleteDatabase('promptshowdown_llm_cache_v8');
 
 ## Code Conventions
 
-### Single file
+### Source structure
 
-All game code lives in `index.html`. No build step, no bundler, no framework. Vanilla JS with ES modules.
+Game code is split into `src/` modules and concatenated via `// INCLUDE:` directives in `src/main.js`. Vite bundles everything into a single `dist/index.html`. Vanilla JS with ES modules, no framework.
 
 ### Code style
 
@@ -52,20 +61,21 @@ All game code lives in `index.html`. No build step, no bundler, no framework. Va
 
 ### CSS
 
-- Use CSS variables defined in `:root` (search for `:root` in index.html) — purple/gold Draft Showdown palette
+- All CSS lives in `src/style.css` — use CSS variables defined in `:root` (purple/gold palette)
 - Use existing component classes (`.btn`, `.card`, `.pill`, `.detail`, `.group`, `.spellBtn`)
 - Avoid inline styles unless one-off positioning
 - Prefer `var(--accent)` (purple) or `var(--gold)` over hardcoded colors
 
 ### Adding a new screen
 
-1. Add HTML in the screens section (search for `<div class="screen"` in index.html):
+1. Add HTML in the screens section (search for `<div class="screen"` in both `index.html` and `src/index.html`):
 ```html
 <div class="screen" id="myScreen">
 <h2>My Screen</h2>
 <div class="detail">Description</div>
 <!-- content -->
-<button class="btn" onclick="G.menu()">← Back</button>
+<!-- Note: no inline back button needed — the fixed #backBtn appears
+     automatically for any screen not in the noBack list in screen() -->
 </div>
 ```
 2. Add navigation method to `G`:
@@ -76,6 +86,7 @@ myScreen(){
 }
 ```
 3. Add a button in the menu or relevant screen to navigate to it.
+4. If the screen should NOT show the back button (e.g. fullscreen), add its id to the `noBack` array in `screen()`.
 
 ### Adding a new unit ability
 
@@ -128,16 +139,18 @@ Use the Playwright MCP server (never chrome-devtools — it is forbidden on this
 ### Smoke test checklist
 
 - [ ] Page loads without console errors
-- [ ] Menu renders with stats pills and buttons
+- [ ] Menu renders with stats pills and buttons (tooltips on hover/long-press)
+- [ ] Back button (top-left) + fullscreen (top-right) visible on non-menu screens
 - [ ] Forge screen loads (model downloads or template fallback works)
 - [ ] Forge generates a unit with sprite preview + ability descriptions
 - [ ] Draft screen shows 3 cards with rarity borders (spells may appear 30% chance)
+- [ ] Draft sprites match deck screen sprites (same recipe preserved)
 - [ ] Battle screen renders units on canvas
 - [ ] Spell bar shows below canvas if spells were drafted
 - [ ] Spell buttons cast on tap with cooldown overlay
 - [ ] Battle progresses when Tick/Auto is clicked
 - [ ] Result screen shows after battle ends
-- [ ] Deck screen shows loadout + collection
+- [ ] Deck screen: tap slot to select, tap unit to fill (or drag, or slot picker popup)
 - [ ] Upgrade screen shows unit list with costs
 
 ### P2P test checklist
@@ -189,4 +202,4 @@ If pre-commit hooks modify files and the commit fails, stage the modified files 
 - **Never use chrome-devtools MCP** — all browser testing goes through Playwright MCP
 - **Never limit LLM usage** — inference is free (local WebLLM, no API costs)
 - **No new npm dependencies** — vendor anything needed in `vendor/`
-- **Keep it single-file** — all game code in `index.html`
+- **Keep it single-file output** — source is in `src/` but builds to a single `dist/index.html`

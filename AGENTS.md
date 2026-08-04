@@ -7,7 +7,7 @@ AI auto-battler with P2P multiplayer. Source is split into `src/` modules, bundl
 - **Dev server**: `npm run dev` → `http://localhost:5173` (Vite HMR)
 - **Build**: `npm run build` → `dist/index.html` (single self-contained file)
 - **Play (built)**: `cd dist && python3 -m http.server 8765` → open in browser
-- **E2E tests**: `npm test` or `python3 e2e_test.py` (219 tests, ~60s)
+- **E2E tests**: `npm test` or `python3 e2e_test.py` (216 tests, ~60s)
 - **Performance**: `npm run perf` or `python3 perf.py` (6 scenarios, ~60s)
 - **Bug hunt**: Use the `/bughunt` skill (static analysis + E2E)
 
@@ -22,6 +22,8 @@ src/
   utils.js        — DMath, rand, fnv1aHash, toast, mobile, i18n, ads
   save.js         — Save load + migration
   forge.js        — LLM forge, recipe assembler, visual modifiers, spell forge
+  generated_units.js — LLM-forged units added to base roster
+  webllm-worker.js   — Web Worker for LLM inference (unused in built version)
   network.js      — P2P, heartbeat, signing, transmit, desync detection
   battle-helpers.js — Behaviour API, avoidance, targeting
   match.js        — Match object (lives, rounds, history)
@@ -29,10 +31,12 @@ src/
   battle.js       — Battle object, spells, combat, sim
   quests.js       — Daily quests, login streaks
   bot.js          — Bot opponent + strategy
-  ui.js           — Visual recipes, UI screens, forge UI
+  ui.js           — Visual recipes, UI screens, forge UI, deck builder, tooltips
   game.js         — G object, init, PWA, event handlers
 vendor/           — trystero (P2P), lz-string (compression)
 vite.config.js    — Vite config with concat-modules plugin + singlefile
+index.html        — Root HTML (Vite entry point, references src/main.js)
+archive/          — Removed features archived for reuse
 ```
 
 ## How the Build Works
@@ -113,8 +117,8 @@ independently from the same seed + armies, syncing only commands.
   targeting, avoidance, weapons, draft system
 - **`/system-rules`** — P2P sync, save/import, security, forge, init, PWA, audio, quests
 - **`/render-rules`** — Sprite rendering, canvas, performance optimization, hot paths
-- **`/test`** — Run E2E test suite (184 tests)
-- **`/perf`** — Run performance profiler (5 scenarios)
+- **`/test`** — Run E2E test suite (216 tests)
+- **`/perf`** — Run performance profiler (6 scenarios)
 - **`/bughunt`** — Static analysis + E2E bug hunt workflow
 
 ## Documentation
@@ -128,12 +132,13 @@ independently from the same seed + armies, syncing only commands.
 - **[BUGS.md](BUGS.md)** — Bug hunt log (213 bugs found and fixed)
 - **[reference/](reference/)** — Cloned reference projects (gitignored, local only)
   - **Machine-Guard-Corps/** — Sci-fi lane defense autobattler (vanilla JS, same constraints as us)
-- **[archive/](archive/)** — Historical session logs (BUG-HUNT-R*, OVERNIGHT*, PLAN-TIER*)
+- **[archive/](archive/)** — Historical session logs + removed features archive
+  - **removed-ui-features.md** — Tip of the Day, Unit Spotlight, Tier List (removed from menu)
 
 ## Code Style
 
-- Vanilla JS, no framework, no bundler, no build step
-- Single file (`index.html`) — HTML + CSS + JS inline
+- Vanilla JS, no framework — bundled to single file via Vite
+- Source split into `src/` modules, concatenated via `// INCLUDE:` directives
 - Compact code style — short variable names in hot paths (`u`, `c`, `dt`, `r`)
 - Comments use `//` prefix, marked with phase/bug IDs for traceability
 - Commit messages: `AREA: description` (e.g., `PERF-R12: Batch shadow paths`)
