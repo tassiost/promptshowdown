@@ -15,7 +15,7 @@ AI auto-battler with P2P multiplayer. Source is split into `src/` modules, bundl
 
 ```
 src/
-  index.html      — HTML template (body structure only)
+  index.html      — Root HTML (Vite entry point, all screen divs)
   style.css       — All CSS
   main.js         — Entry point (INCLUDE directives concat all modules)
   imports.js      — Dynamic imports (web-llm, trystero, lz-string)

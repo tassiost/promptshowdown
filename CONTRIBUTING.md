@@ -68,7 +68,7 @@ Game code is split into `src/` modules and concatenated via `// INCLUDE:` direct
 
 ### Adding a new screen
 
-1. Add HTML in the screens section (search for `<div class="screen"` in both `index.html` and `src/index.html`):
+1. Add HTML in the screens section (search for `<div class="screen"` in `index.html`):
 ```html
 <div class="screen" id="myScreen">
 <h2>My Screen</h2>

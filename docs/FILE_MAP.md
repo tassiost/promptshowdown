@@ -145,10 +145,6 @@ src/main.js              entry point — INCLUDE directives inline all modules
 - Contains all screen divs, error panel, toast, tooltips
 - `#fsBtn` (top-right), `#backBtn` (top-left, auto-shows on non-menu screens)
 
-### src/index.html
-- Source template (kept in sync with root index.html)
-- Used by dev server
-
 ## CSS
 
 ### src/style.css

@@ -1193,12 +1193,11 @@ const G={
         dailyEl.innerHTML="✅ Daily Challenge complete — come back tomorrow!";
       }
     }
-    // Phase 12: forge button. Normally gated behind Training Yard completion
-    // (arena >= 1 or 3+ wins), but shown from the start while testing the LLM.
+    // Phase 12: forge button — gated behind Training Yard completion
+    // (arena >= 1 or 3+ wins) so new players see core gameplay first.
     const forgeBtn=$("forgeMenuBtn");
     if(forgeBtn){
-      const TESTING_FORGE=true; // TODO: set false before ship — gate behind Training Yard.
-      const showForge=TESTING_FORGE||(this.save.arena||0)>=1||(this.save.matchWins||0)>=3;
+      const showForge=(this.save.arena||0)>=1||(this.save.matchWins||0)>=3;
       forgeBtn.style.display=showForge?"inline-block":"none";
     }
     // Phase 12: update AI status badge.

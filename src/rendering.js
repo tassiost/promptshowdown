@@ -83,8 +83,8 @@ function _renderSpriteToCache(u,state,frameIdx){
 
   // Sprite dimensions: scale factor is (z/10)*1.8, sprite is ~52px wide, ~65px tall at z=10.
   const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
-  const spriteW=Math.ceil(60*spriteScale)+SPRITE_CACHE_PAD*2;
-  const spriteH=Math.ceil(70*spriteScale)+SPRITE_CACHE_PAD*2;
+  const spriteW=Math.max(1,Math.ceil(60*spriteScale)+SPRITE_CACHE_PAD*2);
+  const spriteH=Math.max(1,Math.ceil(70*spriteScale)+SPRITE_CACHE_PAD*2);
 
   // Create offscreen canvas
   const oc=document.createElement("canvas");
@@ -607,7 +607,7 @@ const SpriteRenderer={
         c.globalAlpha=oldAlpha;
         // PERF-R12: avoid save/restore — just swap globalAlpha (cheaper than stack push/pop).
         c.globalAlpha=alpha;
-        c.drawImage(cached, dx, dy);
+        if(cached&&cached.width>0&&cached.height>0)c.drawImage(cached, dx, dy);
         c.globalAlpha=oldAlpha;
         // Draw face on top (dynamic — tracks target).
         // PERF-R12: skip face when >30 units (tiny visual detail, expensive transform).
@@ -880,6 +880,7 @@ const SpriteRenderer={
     const c=canvas.getContext("2d");
     if(!c)return;
     const w=canvas.width,h=canvas.height;
+    if(w<1||h<1)return;
     c.clearRect(0,0,w,h);
     // D5: sprite is scaled by z/10*1.8 in draw(). Cap z so the sprite fits:
     // sprite height ~36px at scale 1, so z/10*1.8*36 <= h*0.85 → z <= h*0.85/(36*0.18).

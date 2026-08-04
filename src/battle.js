@@ -2027,7 +2027,8 @@ const Battle={
       this._bgStaticCanvas=oc;
     }
     // Draw cached static background.
-    c.drawImage(this._bgStaticCanvas,0,0);
+    if(this._bgStaticCanvas&&this._bgStaticCanvas.width>0&&this._bgStaticCanvas.height>0)
+      c.drawImage(this._bgStaticCanvas,0,0);
     // Dynamic parts: parallax midground + ambient particles.
     const grads=this._bgGradCache;
     // Parallax midground — silhouette ridge that drifts with screen shake.
@@ -2758,7 +2759,7 @@ const Battle={
     bctx.globalCompositeOperation="source-over";
     bctx.globalAlpha=1;
     bctx.clearRect(0,0,bw,bh);
-    bctx.drawImage(cv,0,0,bw,bh);
+    if(cv.width>0&&cv.height>0)bctx.drawImage(cv,0,0,bw,bh);
     // Composite back at full size with additive blend (bright areas glow, dark areas unaffected).
     c.save();
     c.setTransform(1,0,0,1,0,0);
@@ -2766,7 +2767,7 @@ const Battle={
     c.globalAlpha=0.14;
     c.imageSmoothingEnabled=true;
     c.imageSmoothingQuality="high";
-    c.drawImage(bc,0,0,cv.width,cv.height);
+    if(bc.width>0&&bc.height>0&&cv.width>0&&cv.height>0)c.drawImage(bc,0,0,cv.width,cv.height);
     c.globalAlpha=1;
     c.globalCompositeOperation="source-over";
     c.restore();
