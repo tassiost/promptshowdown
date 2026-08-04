@@ -808,11 +808,8 @@ const G={
     const r=this.save.ranked;
     if(!r){toast("Ranked data not available");return;}
     const tier=this.rankedTier(r.rating);
-    const overlay=document.createElement("div");
+    const {overlay,modal}=showModal({bg:0.8});
     overlay.id="leaderboardModal";
-    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;";
-    const modal=document.createElement("div");
-    modal.style.cssText="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:320px;width:90%;";
     modal.innerHTML=
       `<h3 style="margin:0 0 12px;">🏆 Ranked Play</h3>`+
       `<div style="text-align:center;margin-bottom:16px;">`+
@@ -981,11 +978,8 @@ const G={
   showQuests(){
     const q=this.save.quests;
     if(!q||!q.list)return;
-    const overlay=document.createElement("div");
+    const {overlay,modal}=showModal({bg:0.8,modalExtra:"max-height:80vh;overflow-y:auto;"});
     overlay.id="questsModal";
-    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9999;display:flex;align-items:center;justify-content:center;";
-    const modal=document.createElement("div");
-    modal.style.cssText="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:320px;width:90%;max-height:80vh;overflow-y:auto;";
     let html=`<h3 style="margin:0 0 8px;">📋 Daily Quests</h3>`;
     html+=`<div style="font-size:.8rem;color:var(--muted);margin-bottom:12px;">🔥 ${q.streak.count}-day streak</div>`;
     for(const quest of q.list){
@@ -1026,12 +1020,8 @@ const G={
     // Remove existing overlay.
     const existing=document.getElementById("kbHelpOverlay");
     if(existing){existing.remove();return;}
-    const overlay=document.createElement("div");
+    const {overlay,modal}=showModal({border:"var(--accent)",modalExtra:"border-radius:var(--radius);box-shadow:var(--shadow-lg);",clickOutside:true});
     overlay.id="kbHelpOverlay";
-    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
-    overlay.onclick=()=>overlay.remove();
-    const modal=document.createElement("div");
-    modal.style.cssText="background:var(--card);border:1px solid var(--accent);border-radius:var(--radius);padding:20px;max-width:320px;width:90%;box-shadow:var(--shadow-lg);";
     modal.onclick=e=>e.stopPropagation();
     const shortcuts=[
       {key:"1 / 2 / 3",desc:"Pick draft card 1, 2, or 3"},
@@ -3651,11 +3641,8 @@ const G={
 
   // F2: Unit detail view — modal with full stats + animated preview.
   showUnitDetail(u){
-    const overlay=document.createElement("div");
-    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
-    const modal=document.createElement("div");
+    const {overlay,modal}=showModal({maxW:"300px",modalExtra:"background:linear-gradient(180deg,var(--card2),var(--card));border-radius:var(--radius);text-align:center;box-shadow:var(--shadow-lg),var(--glow-accent);"});
     modal.className="card";
-    modal.style.cssText="background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--border);border-radius:var(--radius);padding:20px;max-width:300px;width:90%;text-align:center;box-shadow:var(--shadow-lg),var(--glow-accent);";
     const abDesc=ABILITY_DESCRIPTIONS[u.ability]||"";
     const abType=PASSIVE_ABILITIES.has(u.ability)?"Passive":TRIGGERED_ABILITIES.has(u.ability)?"Triggered":"";
     const lvl=this.unitLevel(u.n);
@@ -4171,12 +4158,8 @@ const G={
     const curD=Math.round(a.d*(1+curBonus));
     const newH=Math.round(mergedH*(1+newBonus));
     const newD=Math.round(mergedD*(1+newBonus));
-    const overlay=document.createElement("div");
+    const {overlay,modal}=showModal({border:"var(--legendary)",maxW:"300px",modalExtra:"border-radius:var(--radius);text-align:center;box-shadow:0 0 20px rgba(251,191,36,.2);",clickOutside:true});
     overlay.id="fusePreviewModal";
-    overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;align-items:center;justify-content:center;";
-    overlay.onclick=()=>overlay.remove();
-    const modal=document.createElement("div");
-    modal.style.cssText="background:var(--card);border:1px solid var(--legendary);border-radius:var(--radius);padding:20px;max-width:300px;width:90%;text-align:center;box-shadow:0 0 20px rgba(251,191,36,.2);";
     modal.onclick=e=>e.stopPropagation();
     modal.innerHTML=
       `<div style="font-weight:700;font-size:1rem;margin-bottom:12px;color:var(--legendary);">🔮 Fusion Preview</div>`+
@@ -4883,6 +4866,21 @@ const G={
     }catch(e){toast("Import failed: "+(e.message||e));}
   }
 };
+
+// R17: shared modal/overlay helper — eliminates 8× duplicated overlay creation.
+// Returns {overlay,modal} — caller sets modal.innerHTML and appends buttons.
+// overlay click-to-close is opt-in (clickOutside=true).
+function showModal(opts){
+  opts=opts||{};
+  const overlay=document.createElement("div");
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,"+(opts.bg||0.85)+");z-index:9999;display:flex;align-items:center;justify-content:center;"+(opts.extra||"");
+  const modal=document.createElement("div");
+  modal.style.cssText="background:var(--card);border:1px solid "+(opts.border||"var(--border)")+";border-radius:12px;padding:20px;max-width:"+(opts.maxW||"320px")+";width:90%;"+(opts.modalExtra||"");
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  if(opts.clickOutside)overlay.onclick=e=>{if(e.target===overlay)overlay.remove();};
+  return {overlay,modal};
+}
 
 // Custom tooltip — works on hover (desktop) + tap (mobile).
 // Replaces native title attribute which doesn't show on touch devices.

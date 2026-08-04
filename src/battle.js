@@ -427,6 +427,10 @@ const Spell={
   },
 };
 
+// R17: hoisted spell bar constants (were allocated every 0.5s in _renderSpellBar).
+const SPELL_FX_ICONS={explosion:"💥",frost:"❄️",lightning:"⚡",poison_cloud:"☠️",heal_glow:"💚",shockwave:"🌊",fire_wall:"🔥"};
+const SPELL_EFFECT_LABELS={damage:"Damage",damage_over_time:"DoT",slow:"Slow",stun:"Stun",heal_allies:"Heal",heal_over_time:"HoT",shield_allies:"Shield",summon:"Summon",knockback:"Knockback",buff_dmg:"Buff DMG",buff_speed:"Buff Speed"};
+
 const Battle={
   units:[],          // Phase 10: single array (was units + enemies)
   projectiles:[],
@@ -466,9 +470,9 @@ const Battle={
     const scale=baseScale*this._zoom;
     const baseOffsetX=(vw-this.GAME_W*baseScale)/2;
     const baseOffsetY=(vh-this.GAME_H*baseScale)/2;
-    // Pan offsets are in game-space, convert to screen-space.
-    const offsetX=baseOffsetX+this._panX*baseScale;
-    const offsetY=baseOffsetY+this._panY*baseScale;
+    // Pan offsets are in game-space, convert to screen-space (use full scale with zoom).
+    const offsetX=baseOffsetX+this._panX*scale;
+    const offsetY=baseOffsetY+this._panY*scale;
     this._gtCache={scale,offsetX,offsetY};
     this._gtCacheVW=vw;this._gtCacheVH=vh;
     this._gtCacheZ=this._zoom;this._gtCachePX=this._panX;this._gtCachePY=this._panY;
@@ -1046,7 +1050,7 @@ const Battle={
         this._renderKillFeed();
       }
       // Guest doesn't call checkEnd — host sends round_result/match_end messages.
-      this.frame=requestAnimationFrame(this._loopBound);
+      // rAF already scheduled at top of loop() — don't schedule again (double rAF bug).
       return;
     }
     // DET: lockstep pacing — don't simulate too far ahead of the confirmed peer.
@@ -1169,12 +1173,12 @@ const Battle={
         u.regenTick-=dt;
         if(u.regenTick<=0&&u.h>0&&u.h<u.mh){const amt=Math.min(u.regenAmt||10,u.mh-u.h);u.h+=amt;u.regenTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,"+"+Math.round(amt),u.team,false);}
       }
-      if(u.slow>0)u.slow-=dt;
-      if(u.stun>0)u.stun-=dt;
-      if(u.cool>0)u.cool-=dt;
+      if(u.slow>0)u.slow=Math.max(0,u.slow-dt);
+      if(u.stun>0)u.stun=Math.max(0,u.stun-dt);
+      if(u.cool>0)u.cool=Math.max(0,u.cool-dt);
       if(u.abCool>0)u.abCool=Math.max(0,u.abCool-dt);
-      if(u.shieldActive>0)u.shieldActive-=dt;
-      if(u.frenzyT>0)u.frenzyT-=dt;
+      if(u.shieldActive>0)u.shieldActive=Math.max(0,u.shieldActive-dt);
+      if(u.frenzyT>0)u.frenzyT=Math.max(0,u.frenzyT-dt);
       if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0){u.h=0;u.lastAttacker=null;}} // minion expires (no kill attribution)
       // regen: heal 2% of max HP per second
       if(u.ability==="regen"&&u.h>0&&u.h<u.mh)u.h=Math.min(u.mh,u.h+u.mh*0.02*dt);
@@ -1683,6 +1687,8 @@ const Battle={
 
   // Phase 10: death hook — fires on_death abilities before removal.
   onUnitDeath(u){
+    // Guard: prevent double-processing (arena mechanics + sim can both call this).
+    if(u.deathT!==undefined)return;
     if(u.abilityTrigger==="on_death"){
       // PERF: reuse pooled arrays instead of filter() allocation (2 arrays per death).
       if(!this._deathAllies)this._deathAllies=[];
@@ -3209,13 +3215,11 @@ const Battle={
     if(!this.playerSpells||!this.playerSpells.length){bar.style.display="none";return;}
     bar.style.display="flex";
     bar.innerHTML="";
-    const icons={explosion:"💥",frost:"❄️",lightning:"⚡",poison_cloud:"☠️",heal_glow:"💚",shockwave:"🌊",fire_wall:"🔥"};
-    const effectLabels={damage:"Damage",damage_over_time:"DoT",slow:"Slow",stun:"Stun",heal_allies:"Heal",heal_over_time:"HoT",shield_allies:"Shield",summon:"Summon",knockback:"Knockback",buff_dmg:"Buff DMG",buff_speed:"Buff Speed"};
     for(let i=0;i<this.playerSpells.length;i++){
       const ps=this.playerSpells[i];
       const s=ps.spec;
-      const icon=icons[s.fxType]||"✨";
-      const effectLabel=effectLabels[s.effect]||s.effect||"";
+      const icon=SPELL_FX_ICONS[s.fxType]||"✨";
+      const effectLabel=SPELL_EFFECT_LABELS[s.effect]||s.effect||"";
       const maxCD=ps.maxCD||this._spellCooldown(s);
       const cdPct=ps.cooldown>0?Math.min(100,ps.cooldown/maxCD*100):0;
       const btn=document.createElement("button");
