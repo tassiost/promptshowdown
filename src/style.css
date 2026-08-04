@@ -100,7 +100,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px soli
 .result-fade-in{animation:fadeIn .6s ease-out;}
 #fsBtn{position:fixed;right:calc(8px + env(safe-area-inset-right,0px));top:calc(8px + env(safe-area-inset-top,0px));background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:.72rem;z-index:9000;transition:all .15s ease;}
 #fsBtn:hover{color:var(--text);border-color:var(--accent);}
-#backBtn{position:fixed;left:calc(8px + env(safe-area-inset-left,0px));top:calc(8px + env(safe-area-inset-top,0px));background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;font-size:.72rem;z-index:9000;transition:all .15s ease;display:none;}
+#backBtn{position:fixed;left:calc(8px + env(safe-area-inset-left,0px));top:calc(8px + env(safe-area-inset-top,0px));background:var(--card);border:1px solid var(--border);color:var(--muted);padding:6px 10px;border-radius:var(--radius-sm);cursor:pointer;font-size:.72rem;z-index:9000;transition:all .15s ease;display:none;}
 #backBtn:hover{color:var(--text);border-color:var(--accent);}
 .input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:10px 12px;width:200px;margin:6px;border-radius:var(--radius-sm);font-size:.85rem;outline:none;transition:border-color .15s;}
 .input:focus{border-color:var(--accent);}

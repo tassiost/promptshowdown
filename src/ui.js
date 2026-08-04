@@ -670,12 +670,10 @@ const G={
       if(d.id==="errorPanel")return; // keep error panel
       if(d.style.position==="fixed"&&d.style.zIndex==="9999")d.remove();
     });
-    // Show/hide the fixed back button (top-left). Hidden on menu, draft, battle,
-    // and result screens (those have their own navigation or are fullscreen).
+    // Show/hide the fixed back button (top-left). Shown on all screens except menu.
     const backBtn=$("backBtn");
     if(backBtn){
-      const noBack=["menu","draft","battle","result","matchmaking"];
-      backBtn.style.display=noBack.includes(id)?"none":"block";
+      backBtn.style.display=(id==="menu")?"none":"block";
     }
   },
   wins(){
@@ -690,7 +688,7 @@ const G={
   // Phase 13: deckUnits returns the loadout (4 cards) resolved to unit objects.
   // This is the draft pool per match.
   loadoutUnits(){
-    const loadout=this.save.loadout||["Knight","Frost Archer","Slash","Wizard","Samurai","Phoenix"];
+    const loadout=this.save.loadout||["Knight","Frost Archer","Samurai","Void Mage"];
     const coll=this.save.collection||[];
     return loadout.map(name=>{
       // Find in collection first, then base roster.

@@ -70,7 +70,7 @@ function migrateSave(s){
     }else if(s.deck&&s.deck.length>0){
       s.loadout=s.deck.slice(0,4).map(u=>u.n||u);
     }else{
-      s.loadout=["Knight","Archer","Slash","Wizard"];
+      s.loadout=["Knight","Frost Archer","Samurai","Void Mage"];
     }
     // Drop old forge5 achievement (replaced by new forge achievements in Phase 19).
     if(s.achievements)delete s.achievements.forge5;
@@ -118,6 +118,16 @@ function migrateSave(s){
     // v11 -> v12 (Phase 37): replays.
     s.replays=s.replays||[];
     s.version=12;
+  }
+  if(ver<13){
+    // v12 -> v13: update default loadout to include generated units.
+    // Only update if the player has the old default loadout (don't override custom loadouts).
+    const oldDefault=["Knight","Archer","Slash","Wizard"];
+    if(Array.isArray(s.loadout)&&s.loadout.length===4&&
+       s.loadout.every((n,i)=>n===oldDefault[i])){
+      s.loadout=["Knight","Frost Archer","Samurai","Void Mage"];
+    }
+    s.version=13;
   }
   return s;
   }catch(e){

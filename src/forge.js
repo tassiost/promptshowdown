@@ -46,7 +46,10 @@ function unit(x={}){
     s:clamp(Number(x.s)||60,10,300),
     a:clamp(Number(x.a)||1,0.1,10),
     c:sanitizeHex(x.c||"#0ff"),
-    z:10, // All units same visual scale — size variety is in the sprite recipe, not z.
+    // Normalize visual size: compensate for recipe's internal scale (sizeMod * bodyPlan)
+    // so all units appear the same height on screen. z=10 is the baseline; bigger recipes
+    // get smaller z, smaller recipes get bigger z. Final visual size = z * recipeScale ≈ 10.
+    z:10/((SIZE_SCALE[x.sizeMod||"medium"]||1)*(BODY_SIZE[bodyPlan]||1)),
     crit:clamp(Number(x.crit)||0.1,0,1),
     ability:ABILITY_OPTS.includes(x.ability||x.ab)?(x.ability||x.ab):"none",
     rar:["common","rare","legendary"].includes(x.rar)?x.rar:"common",

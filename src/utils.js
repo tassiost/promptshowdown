@@ -174,7 +174,7 @@ const Q=(a,b)=>a+R()*(b-a);
 const SAVE_KEY="promptShowdownV4";
 
 const SAVE_BACKUP_KEY="promptShowdownV4_backup";
-const CURRENT_VERSION=12; // Phase 37: bumped for replays.
+const CURRENT_VERSION=13; // v13: default loadout includes generated units.
 // Phase 7: backup-before-overwrite so a bad write can't wipe progress.
 // E1: Debounced saveData — batches writes within 500ms.
 let _saveTimer=null;
