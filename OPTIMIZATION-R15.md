@@ -63,10 +63,48 @@ optimizations, and code streamlining (deduplication).
 
 ## Phase 3: E2E Tests
 
-5 consecutive runs: 216, 216, 216, 212+2WARN, 216. 0 real bugs.
-Flaky failures are headless Chromium timing issues (requestAnimationFrame
+Multiple consecutive runs: 216, 215+1WARN, 216, 215+1WARN. 0 real bugs.
+Flaky WARNs are headless Chromium timing issues (requestAnimationFrame
 not firing consistently in headless mode) — not code bugs.
 
 Also fixed flaky arena speed_boost test: battle can end before 3s with +20%
 speed, so test now accepts "ended" for speed_boost arena (same as
 poison_aura/damage_aura).
+
+## Phase 4: Additional Bug Found (BUG-R15)
+
+### Poison Kill Attribution Bug
+**Location**: `src/battle.js` — poison tick damage in `update()` + poison application
+in `takeDamage()` and spell effects.
+
+**Problem**: When a unit dies from poison DoT, the kill was attributed to
+`u.lastAttacker` — but `lastAttacker` is overwritten on EVERY melee/projectile hit
+(line 1545: `target.lastAttacker=attacker`). So if unit A poisons target T, then
+unit B hits T, then T dies from poison — the kill is attributed to B, not A.
+
+This violates AGENTS.md rule 5: "All HP reductions must set `u.lastAttacker`".
+
+**Fix**: Track `u.poisonAttacker` separately when poison is applied. When poison
+tick damage kills a unit, set `u.lastAttacker=u.poisonAttacker` before death
+detection. This ensures poison kills are attributed to the poisoner for:
+- Ramp bonus (ramp unit gains +15% dmg on kill)
+- on_kill trigger (killer's ability fires)
+- MVP tracking (killer.kills++)
+- Kill feed (shows correct killer name)
+
+Applied to all 3 poison sources:
+1. Unit ability poison (`takeDamage` line 1545)
+2. Spell damage_over_time zone effect (line 364)
+3. Spell.damage_over_time helper (line 206)
+
+Also clears `poisonAttacker` in cleanse ability.
+
+### resizeCanvas 0-size guard
+**Location**: `src/game.js` — `resizeCanvas()` function.
+
+**Problem**: During screen transitions, `.screen.active` can have `clientWidth=0`
+or `clientHeight=0`, causing `cv.width=0` and `cv.height=0`. This is the root
+cause of intermittent `drawImage` errors in E2E tests (BUG-R14-2 was a partial
+fix that guarded drawImage calls, but this prevents the 0-size canvas at source).
+
+**Fix**: Early return if `dispW<1||dispH<1`.

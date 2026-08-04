@@ -203,7 +203,7 @@ const SPELL_SHAPE={
 const _spellSynth={team:"",n:"Spell",id:"",h:1,mh:1,d:0,baseD:0,r:0,x:0,y:0,role:"",crit:0,ability:"none",dmgDealt:0};
 const SPELL_EFFECT={
   damage(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;u.lastAttacker=_spellSynth;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
-  damage_over_time(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;u.lastAttacker=_spellSynth;});},
+  damage_over_time(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;u.lastAttacker=_spellSynth;u.poisonAttacker=_spellSynth;});},
   slow(units,spec){units.forEach(u=>{u.slow=Math.max(u.slow,spec.duration||2);});},
   stun(units,spec){units.forEach(u=>{u.stun=Math.max(u.stun,spec.duration||1);});},
   heal_allies(units,spec){units.forEach(u=>{const heal=spec.magnitude||30;u.h=Math.min(u.mh,u.h+heal);if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,"+"+Math.round(heal),u.team,false);});},
@@ -363,7 +363,8 @@ const Spell={
           for(let ai=0;ai<aff.length;ai++){const u=aff[ai];const dmg=z.spec.magnitude||10;u.h-=dmg;u.lastAttacker=synth;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");}
         }else if(z.spec.effect==="damage_over_time"){
           // Apply poison status (DoT) — uses Math.max to avoid overwriting higher poison.
-          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.poison=Math.max(u.poison||0,z.spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;u.lastAttacker=synth;}
+          // BUG-R15: set poisonAttacker so poison kills attribute to the spell, not last melee hitter.
+          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.poison=Math.max(u.poison||0,z.spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,z.spec.magnitude||10);u.poisonTick=0;u.lastAttacker=synth;u.poisonAttacker=synth;}
         }else if(z.spec.effect==="slow"){
           for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.slow=Math.max(u.slow,z.spec.duration||2);}
         }else if(z.spec.effect==="heal_allies"){
@@ -1155,7 +1156,12 @@ const Battle={
       if(u.poison>0){
         u.poison-=dt;
         u.poisonTick-=dt;
-        if(u.poisonTick<=0&&u.h>0){u.h-=u.poisonDmg||3;if(u.h<0)u.h=0;u.poisonTick=0.5;if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");}
+        if(u.poisonTick<=0&&u.h>0){
+          u.h-=u.poisonDmg||3;if(u.h<0)u.h=0;u.poisonTick=0.5;
+          // BUG-R15: attribute poison kill to the poisoner, not the last melee hitter.
+          if(u.h<=0&&u.poisonAttacker)u.lastAttacker=u.poisonAttacker;
+          if(this.running)this.spawnDmgNum(u.x,u.y-u.z-8,Math.round(u.poisonDmg||3),u.team,false,"poison");
+        }
         if(u.h<=0){u.poison=0;}
       }
       if(u.regen>0){
@@ -1538,7 +1544,9 @@ const Battle={
       }
     }
     // poison: apply DoT (refreshes duration, doesn't stack damage)
-    if(attacker.ability==="poison"){target.poison=Math.max(target.poison,3.0);target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;}
+    // BUG-R15: track poisonAttacker separately — lastAttacker gets overwritten by
+    // subsequent melee hits, so poison kills would be attributed to the wrong unit.
+    if(attacker.ability==="poison"){target.poison=Math.max(target.poison,3.0);target.poisonDmg=Math.max(target.poisonDmg||3,attacker.d*0.3);target.poisonTick=0;target.poisonAttacker=attacker;}
     // thorns: reflect 30% of damage back to attacker
     if(target.ability==="thorns"&&attacker.h>0){const reflectDmg=dmg*0.3;attacker.h-=reflectDmg;if(attacker.h<0)attacker.h=0;attacker.lastAttacker=target;if(target.dmgDealt!==undefined)target.dmgDealt+=reflectDmg;this.log(target.n+" thorns "+attacker.n);}
     // Phase 20: track last attacker for ramp-on-kill and kill feed.
@@ -1639,7 +1647,7 @@ const Battle={
         const cleanseR2=80*80;
         for(let ai=0;ai<allies.length;ai++){
           const a=allies[ai];
-          if(a.h>0){const dx=u.x-a.x,dy=u.y-a.y;if(dx*dx+dy*dy<cleanseR2){a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;}}
+          if(a.h>0){const dx=u.x-a.x,dy=u.y-a.y;if(dx*dx+dy*dy<cleanseR2){a.slow=0;a.stun=0;a.poison=0;a.poisonDmg=0;a.poisonAttacker=null;}}
         }
         u.abCool=5.0;
         this.log(u.n+" cleanses allies!");

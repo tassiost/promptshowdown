@@ -908,11 +908,11 @@ const G={
       const sanitizedName=String(u._isSpell?u.name:u.n||"Unit").replace(/</g,"").replace(/>/g,"").replace(/"/g,"'");
       if(u._isSpell)u.name=sanitizedName;else u.n=sanitizedName;
       // Security: sanitize effect/trigger for HTML display, and primaryColor.
-      const safeEffect=escapeHtml((u.effect||"").replace(/_/g," "));
-      const safeTrigger=escapeHtml((u.trigger||"").replace(/_/g," "));
+      const safeEffect=esc((u.effect||"").replace(/_/g," "));
+      const safeTrigger=esc((u.trigger||"").replace(/_/g," "));
       const safeColor=sanitizeHex(u.primaryColor||"#4a7");
-      const safeRole=escapeHtml(u.role||"");
-      const safeAbility=escapeHtml(u.ability||"none");
+      const safeRole=esc(u.role||"");
+      const safeAbility=esc(u.ability||"none");
       // Show preview.
       this.screen("forge");
       const preview=$("forgePreview");

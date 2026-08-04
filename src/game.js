@@ -412,6 +412,9 @@ function resizeCanvas(){
   const screen=document.querySelector(".screen.active");
   const dispW=screen?screen.clientWidth:Math.min(420,innerWidth);
   const dispH=screen?screen.clientHeight:innerHeight;
+  // Guard against 0-size canvas (during screen transitions or hidden screens).
+  // A 0-size canvas causes drawImage errors and sprite cache corruption.
+  if(dispW<1||dispH<1)return;
   cv.style.width=dispW+"px";
   cv.style.height=dispH+"px";
   cv.width=dispW*dpr;

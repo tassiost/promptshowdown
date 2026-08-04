@@ -378,7 +378,7 @@ function sanitizeHex(hex){
 const _lightenCache={};
 const _darkenCache={};
 // Security: escape HTML entities in user-generated strings for safe innerHTML embedding.
-function escapeHtml(s){return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+// escapeHtml is defined in utils.js as esc() — use that instead.
 // Security: sanitize a spell spec from untrusted source (P2P, URL import, save import).
 function sanitizeSpell(d){
   if(!d||typeof d!=="object")return null;
