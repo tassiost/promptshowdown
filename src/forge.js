@@ -43,7 +43,7 @@ function unit(x={}){
     s:clamp(Number(x.s)||60,10,300),
     a:clamp(Number(x.a)||1,0.1,10),
     c:sanitizeHex(x.c||"#0ff"),
-    z:clamp(Number(x.z)||10,4,40),
+    z:10, // All units same visual scale — size variety is in the sprite recipe, not z.
     crit:clamp(Number(x.crit)||0.1,0,1),
     ability:ABILITY_OPTS.includes(x.ability||x.ab)?(x.ability||x.ab):"none",
     rar:["common","rare","legendary"].includes(x.rar)?x.rar:"common",

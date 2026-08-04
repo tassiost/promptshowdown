@@ -3832,34 +3832,90 @@ const G={
   },
 
   // Phase 13/16: deck screen = 4 loadout slots + synergy meter + collection.
+  // UX: three ways to swap units:
+  //  1. Tap a loadout slot to select it (highlights), then tap a collection unit
+  //  2. Tap a collection unit (no slot selected) → popup to pick which slot
+  //  3. Drag a collection unit onto a loadout slot
+  _selectedSlot:null, // index of currently selected loadout slot (0-3 or null)
   deck(){
     this.screen("deck");
+    this._selectedSlot=null; // reset selection on entry
     this._renderPresetList();
-    // Render loadout slots (4 cards).
-    const la=$("loadoutArea");
-    if(la){
-      la.innerHTML="";
-      this.save.loadout.forEach((name,i)=>{
-        const u=this.collectionUnits().find(x=>x.n===name)||this.base[0];
-        const lvl=this.unitLevel(u.n);
-        const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
-        // Show upgraded stats (apply upgrade bonuses for display).
-        const disp=lvl>0?this.applyUpgrades(cloneUnit(u)):u;
-        const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
-        const abIcon=u.ability&&u.ability!=="none"?abIcons[u.ability]||"":"";
-        const card=document.createElement("div");
-        card.className="card";
-        card.style.borderColor="var(--accent)";
-        card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${disp.h} HP · ${disp.d} DMG${abIcon?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"<br><span style=\"color:var(--muted)\">no ability</span>"}<br><span style="color:var(--accent2)">SLOT ${i+1}</span></div>`;
-        SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
-        card.onclick=()=>this.swapLoadoutSlot(i);
-        la.appendChild(card);
-      });
-    }
-    // Phase 16: synergy meter — role balance analysis.
+    this._renderLoadout();
     this.renderSynergyMeter();
-    // Render collection (all owned units, with fusion for duplicates).
     this._renderCollection();
+  },
+  _renderLoadout(){
+    const la=$("loadoutArea");
+    if(!la)return;
+    la.innerHTML="";
+    this.save.loadout.forEach((name,i)=>{
+      const u=this.collectionUnits().find(x=>x.n===name)||this.base[0];
+      const lvl=this.unitLevel(u.n);
+      const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
+      const disp=lvl>0?this.applyUpgrades(cloneUnit(u)):u;
+      const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+      const abIcon=u.ability&&u.ability!=="none"?abIcons[u.ability]||"":"";
+      const sel=this._selectedSlot===i;
+      const card=document.createElement("div");
+      card.className="card";
+      card.style.borderColor=sel?"var(--accent2)":"var(--accent)";
+      card.style.boxShadow=sel?"0 0 8px var(--accent2)":"none";
+      card.style.cursor="pointer";
+      card.draggable=true;
+      card.dataset.slot=i;
+      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${disp.h} HP · ${disp.d} DMG${abIcon?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"<br><span style=\"color:var(--muted)\">no ability</span>"}<br><span style="color:${sel?"var(--accent2)":"var(--muted)"};font-weight:${sel?"bold":"normal"}">${sel?"★ SELECTED — tap a unit":"SLOT "+(i+1)+" — tap to select"}</span></div>`;
+      SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
+      // Tap slot to select/deselect
+      card.onclick=(e)=>{
+        if(e.target.tagName==="BUTTON")return;
+        this._selectedSlot=(this._selectedSlot===i)?null:i;
+        this._renderLoadout();
+      };
+      // Drag: allow swapping loadout slots by dragging one onto another
+      card.ondragstart=(e)=>{
+        e.dataTransfer.setData("text/plain",JSON.stringify({type:"slot",from:i}));
+        card.style.opacity="0.5";
+      };
+      card.ondragend=()=>{card.style.opacity="1";};
+      card.ondragover=(e)=>{e.preventDefault();card.style.borderColor="var(--accent2)";};
+      card.ondragleave=()=>{card.style.borderColor=sel?"var(--accent2)":"var(--accent)";};
+      card.ondrop=(e)=>{
+        e.preventDefault();
+        card.style.borderColor=sel?"var(--accent2)":"var(--accent)";
+        try{
+          const data=JSON.parse(e.dataTransfer.getData("text/plain"));
+          if(data.type==="slot"&&data.from!==i){
+            // Swap two loadout slots
+            const tmp=this.save.loadout[i];
+            this.save.loadout[i]=this.save.loadout[data.from];
+            this.save.loadout[data.from]=tmp;
+            saveData(this.save);
+            this._selectedSlot=null;
+            this._renderLoadout();
+          }else if(data.type==="unit"){
+            this._placeUnitInSlot(data.name,i);
+          }
+        }catch(err){}
+      };
+      la.appendChild(card);
+    });
+  },
+  // Place a unit into a specific loadout slot, handling duplicates.
+  _placeUnitInSlot(name,slot){
+    // If unit is already in another slot, swap them
+    const existing=this.save.loadout.indexOf(name);
+    if(existing>=0&&existing!==slot){
+      const tmp=this.save.loadout[slot];
+      this.save.loadout[slot]=name;
+      this.save.loadout[existing]=tmp;
+    }else{
+      this.save.loadout[slot]=name;
+    }
+    saveData(this.save);
+    this._selectedSlot=null;
+    this._renderLoadout();
+    this.renderSynergyMeter();
   },
   // Filter and render the collection based on search/role filter.
   filterDeck(){
@@ -3931,9 +3987,20 @@ const G={
       const lvl=this.unitLevel(u.n);
       const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
       const canFuse=counts[u.n]>=2;
-      const fuseHint=canFuse?`<br><span style="color:var(--legendary)">tap to fuse</span>`:"";
       const inLoadout=this.save.loadout.includes(u.n);
-      const slotTag=inLoadout?`<br><span style="color:var(--accent2)">in loadout</span>`:"<br><span style=\"color:var(--muted)\">tap to slot</span>";
+      // Context-aware hint based on selection state
+      let slotTag;
+      if(canFuse){
+        slotTag=`<br><span style="color:var(--legendary)">tap to fuse</span>`;
+      }else if(this._selectedSlot!==null){
+        slotTag=inLoadout
+          ?`<br><span style="color:var(--accent2)">★ tap to swap into slot ${this._selectedSlot+1}</span>`
+          :`<br><span style="color:var(--accent2)">★ tap to fill slot ${this._selectedSlot+1}</span>`;
+      }else{
+        slotTag=inLoadout
+          ?`<br><span style="color:var(--accent2)">in loadout · tap to re-slot</span>`
+          :`<br><span style="color:var(--muted)">tap to slot · drag to loadout</span>`;
+      }
       const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
       const abIcon=abIcons[u.ability]||"";
       const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"";
@@ -3951,7 +4018,9 @@ const G={
       }
       const card=document.createElement("div");
       card.className="card";
-      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${masteryBadge}${slotTag}${fuseHint}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
+      card.draggable=true;
+      card.dataset.unitName=u.n;
+      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${masteryBadge}${slotTag}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       // F2: info button opens unit detail view.
       const infoBtn=card.querySelector("button");
@@ -3962,10 +4031,46 @@ const G={
         card.style.borderColor="var(--legendary)";
         card.onclick=()=>this.fuseUnit(u.n);
       }else{
-        card.onclick=()=>this.addToLoadout(u.n);
+        card.onclick=()=>{
+          if(this._selectedSlot!==null){
+            // Slot selected → fill it directly
+            this._placeUnitInSlot(u.n,this._selectedSlot);
+          }else{
+            // No slot selected → show slot picker popup
+            this._showSlotPicker(u.n);
+          }
+        };
       }
+      // Drag support: drag collection unit onto a loadout slot
+      card.ondragstart=(e)=>{
+        e.dataTransfer.setData("text/plain",JSON.stringify({type:"unit",name:u.n}));
+        card.style.opacity="0.5";
+      };
+      card.ondragend=()=>{card.style.opacity="1";};
       area.appendChild(card);
     }
+  },
+  // Show a popup with 4 slot buttons to pick which loadout slot to replace.
+  _showSlotPicker(name){
+    // Remove any existing picker
+    const existing=$("slotPicker");
+    if(existing)existing.remove();
+    const picker=document.createElement("div");
+    picker.id="slotPicker";
+    picker.style.cssText="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--bg);border:2px solid var(--accent);border-radius:var(--radius);padding:16px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,0.5);";
+    picker.innerHTML=`<div style="text-align:center;margin-bottom:12px;font-size:.85rem;color:var(--text);">Place <b style="color:var(--accent2)">${esc(name)}</b> into:</div><div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;"></div><button class="btn" style="margin-top:12px;width:100%;font-size:.72rem;">Cancel</button>`;
+    const slots=picker.querySelector("div:nth-child(2)");
+    this.save.loadout.forEach((curName,i)=>{
+      const curU=this.collectionUnits().find(x=>x.n===curName)||this.base[0];
+      const btn=document.createElement("button");
+      btn.className="btn";
+      btn.style.cssText="font-size:.72rem;padding:6px 10px;min-width:70px;";
+      btn.innerHTML=`Slot ${i+1}<br><span style="color:${curU.c};font-size:.65rem;">${esc(curName)}</span>`;
+      btn.onclick=()=>{this._placeUnitInSlot(name,i);picker.remove();};
+      slots.appendChild(btn);
+    });
+    picker.querySelector("button:last-child").onclick=()=>picker.remove();
+    document.body.appendChild(picker);
   },
 
   // Phase 16: synergy meter — analyzes role balance in the loadout.
@@ -4021,44 +4126,31 @@ const G={
       `${warnText}${bonusText}`;
   },
 
-  // Phase 13: swap a loadout slot — cycle to next collection unit.
+  // Phase 13: swap a loadout slot — now selects the slot for picking.
   swapLoadoutSlot(i){
-    const coll=this.collectionUnits();
-    const current=this.save.loadout[i];
-    const idx=coll.findIndex(u=>u.n===current);
-    // Find next unit not already in another loadout slot.
-    for(let j=1;j<=coll.length;j++){
-      const next=coll[(idx+j)%coll.length];
-      if(!this.save.loadout.includes(next.n)){
-        this.save.loadout[i]=next.n;
-        saveData(this.save);
-        this.deck();
-        return;
-      }
-    }
-    // All units are in loadout — just cycle (edge case with tiny collection).
-    this.save.loadout[i]=coll[(idx+1)%coll.length].n;
-    saveData(this.save);
-    this.deck();
+    this._selectedSlot=(this._selectedSlot===i)?null:i;
+    this._renderLoadout();
+    this._renderCollection();
   },
 
-  // Phase 13: add a collection unit to the first available loadout slot.
+  // Phase 13: add a collection unit — uses slot picker or selected slot.
+  // When called programmatically (no UI context), replaces first available slot.
   addToLoadout(name){
-    // If already in loadout, find it and cycle to next slot.
-    const existingSlot=this.save.loadout.indexOf(name);
-    if(existingSlot>=0){
-      this.swapLoadoutSlot(existingSlot);
-      return;
-    }
-    // Find first empty/duplicate slot, else replace slot 0.
-    const dupSlot=this.save.loadout.findIndex(n=>this.save.loadout.filter(x=>x===n).length>1);
-    if(dupSlot>=0){
-      this.save.loadout[dupSlot]=name;
+    if(this._selectedSlot!==null){
+      this._placeUnitInSlot(name,this._selectedSlot);
     }else{
-      this.save.loadout[0]=name;
+      // Programmatic fallback: find first empty/dup slot, else slot 0.
+      const existingSlot=this.save.loadout.indexOf(name);
+      if(existingSlot>=0){
+        // Already in loadout — no-op for programmatic call
+        return;
+      }
+      const dupSlot=this.save.loadout.findIndex(n=>this.save.loadout.filter(x=>x===n).length>1);
+      this.save.loadout[dupSlot>=0?dupSlot:0]=name;
+      saveData(this.save);
+      this._renderLoadout();
+      this.renderSynergyMeter();
     }
-    saveData(this.save);
-    this.deck();
   },
 
   // Phase 6/13: fuse two same-name units into one with +1 level.
