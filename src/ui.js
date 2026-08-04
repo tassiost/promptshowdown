@@ -421,6 +421,8 @@ const SPRITE_RECIPES={
 
 // Shared ability icon map (used by deck, draft, codex, shop, detail screens).
 const ABILITY_ICONS={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+const _FORMATION_PLAYER={frontline:[350,420],counter:[400,470],utility:[440,500],carry:[470,530],support:[490,540]};
+const _FORMATION_ENEMY={frontline:[130,200],counter:[90,160],utility:[60,120],carry:[40,100],support:[30,80]};
 // Shared ability label builder (color + icon + name).
 function abLabel(u,color){color=color||"var(--accent2)";return u.ability&&u.ability!=="none"?`<br><span style="color:${color}">${ABILITY_ICONS[u.ability]||""} ${u.ability}</span>`:"";}
 
@@ -2034,13 +2036,7 @@ const G={
   // Player: frontline at low y (front=toward enemy at top), carry at high y (back).
   // Enemy: frontline at high y (front=toward player at bottom), carry at low y (back).
   _formationY(role,isPlayer){
-    const FORMATION_PLAYER={
-      frontline:[350,420], counter:[400,470], utility:[440,500], carry:[470,530], support:[490,540]
-    };
-    const FORMATION_ENEMY={
-      frontline:[130,200], counter:[90,160], utility:[60,120], carry:[40,100], support:[30,80]
-    };
-    const bands=isPlayer?FORMATION_PLAYER:FORMATION_ENEMY;
+    const bands=isPlayer?_FORMATION_PLAYER:_FORMATION_ENEMY;
     return bands[role]||bands.frontline;
   },
 

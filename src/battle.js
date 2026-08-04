@@ -880,7 +880,7 @@ const Battle={
         const u=this.units[ui];
         if(u.h>0){
           u.h-=2;
-          if(u.h<=0){u.h=0;u.lastAttacker=envSynth;this.onUnitDeath(u,envSynth);}
+          if(u.h<=0){u.h=0;u.lastAttacker=envSynth;this.onUnitDeath(u);}
         }
       }
     }else if(arena.mechanic==="speed_boost"){
@@ -900,7 +900,7 @@ const Battle={
         const u=this.units[ui];
         if(u.h>0){
           u.h-=3;
-          if(u.h<=0){u.h=0;u.lastAttacker=envSynth;this.onUnitDeath(u,envSynth);}
+          if(u.h<=0){u.h=0;u.lastAttacker=envSynth;this.onUnitDeath(u);}
         }
       }
     }
