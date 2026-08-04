@@ -37,6 +37,10 @@ function unit(x={}){
       });
     }catch(e){recipe=x.recipe||null;}
   }
+  // Normalize recipe shapes to standard height so all units are the same visual size.
+  if(recipe&&recipe.shapes&&recipe.shapes.length&&!recipe._normalized){
+    recipe=_normalizeRecipeHeight(recipe);
+  }
   return {
     id:x.id||Date.now()+F(R()*99999),
     n:String(x.n||"Unit").slice(0,20).replace(/</g,"").replace(/>/g,"").replace(/"/g,"'"),
@@ -46,10 +50,7 @@ function unit(x={}){
     s:clamp(Number(x.s)||60,10,300),
     a:clamp(Number(x.a)||1,0.1,10),
     c:sanitizeHex(x.c||"#0ff"),
-    // Normalize visual size: compensate for recipe's internal scale (sizeMod * bodyPlan)
-    // so all units appear the same height on screen. z=10 is the baseline; bigger recipes
-    // get smaller z, smaller recipes get bigger z. Final visual size = z * recipeScale ≈ 10.
-    z:10/((SIZE_SCALE[x.sizeMod||"medium"]||1)*(BODY_SIZE[bodyPlan]||1)),
+    z:10, // All units same render scale. Recipe shapes are normalized to standard height.
     crit:clamp(Number(x.crit)||0.1,0,1),
     ability:ABILITY_OPTS.includes(x.ability||x.ab)?(x.ability||x.ab):"none",
     rar:["common","rare","legendary"].includes(x.rar)?x.rar:"common",
@@ -1084,6 +1085,33 @@ const WEAPONS={
     attack:[{t:0,arm_raise:0},{t:0.2,arm_raise:1},{t:0.5,arm_raise:0.3},{t:0.8,arm_raise:1},{t:1,arm_raise:0}]},
   none:{shape:null,attack:[{t:0,arm_raise:0},{t:0.3,arm_raise:1},{t:1,arm_raise:0}]}
 };
+
+// Normalize recipe shapes so all units have the same visual height on screen.
+// Standard height = 36px (matches base starter units like Knight/Archer).
+// Computes the bounding box of all shapes, then scales them to fit the standard.
+// This handles ALL units: base starters, generated units, and future custom units.
+const RECIPE_STD_HEIGHT=36;
+function _normalizeRecipeHeight(recipe){
+  if(!recipe||!recipe.shapes||!recipe.shapes.length)return recipe;
+  let minY=Infinity,maxY=-Infinity;
+  for(const s of recipe.shapes){
+    if(s.cy!==undefined){minY=Math.min(minY,s.cy-(s.r||0));maxY=Math.max(maxY,s.cy+(s.r||0));}
+    if(s.y!==undefined){minY=Math.min(minY,s.y);maxY=Math.max(maxY,s.y+(s.h||0));}
+    if(s.y1!==undefined)minY=Math.min(minY,s.y1);
+    if(s.y2!==undefined)maxY=Math.max(maxY,s.y2);
+    if(s.pts)for(const p of s.pts){minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);}
+  }
+  const h=maxY-minY;
+  if(h<=0||Math.abs(h-RECIPE_STD_HEIGHT)<1)return recipe; // already close enough
+  const norm=RECIPE_STD_HEIGHT/h;
+  // Don't upscale tiny sprites more than 3x (looks pixelated), don't downscale more than 0.5x
+  const scale=Math.max(0.5,Math.min(3,norm));
+  return {
+    ...recipe,
+    shapes:recipe.shapes.map(s=>scaleShape(s,scale)),
+    _normalized:1
+  };
+}
 
 function scaleShape(s,scale){
   if(!scale||scale===1)return s;
