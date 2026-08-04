@@ -680,16 +680,8 @@ const SpriteRenderer={
       c.fill();
       c.restore();
     }
-    // Team-colored outline glow — subtle aura behind the unit for team ID.
-    if(state!=="death"){
-      c.save();
-      c.globalAlpha=0.12*alpha;
-      c.fillStyle=TEAM_COLORS[u.team]||"#888";
-      c.beginPath();
-      c.ellipse(drawX,saveY-(u.z||10)*0.3,(u.z||10)*1.4,(u.z||10)*1.6,0,0,Math.PI*2);
-      c.fill();
-      c.restore();
-    }
+    // PERF-R15: team glow is now batched in Battle.render() Pass 0 (before shadows).
+    // Removed from fallback path to avoid double-drawing.
     for(const shape of(recipe.shapes||[])){
       this.drawShape(c,shape,rm?{}:channels,u);
     }

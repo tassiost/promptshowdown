@@ -548,7 +548,8 @@ const TARGETING={
     let count=0;
     for(let i=0;i<allies.length;i++){const a=allies[i];if(a!==u&&a.h>0)count++;}
     if(!count)return null;
-    let pick=F(R()*count);
+    // DET: use rand() (seeded PRNG) not R() (Math.random) for P2P lockstep determinism.
+    let pick=randInt(0,count);
     for(let i=0;i<allies.length;i++){const a=allies[i];if(a!==u&&a.h>0){if(pick===0)return a;pick--;}}
     return null;
   },
@@ -556,7 +557,8 @@ const TARGETING={
     let count=0;
     for(let i=0;i<enemies.length;i++){if(enemies[i].h>0)count++;}
     if(!count)return null;
-    let pick=F(R()*count);
+    // DET: use rand() (seeded PRNG) not R() (Math.random) for P2P lockstep determinism.
+    let pick=randInt(0,count);
     for(let i=0;i<enemies.length;i++){if(enemies[i].h>0){if(pick===0)return enemies[i];pick--;}}
     return null;
   },
