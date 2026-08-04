@@ -670,6 +670,13 @@ const G={
       if(d.id==="errorPanel")return; // keep error panel
       if(d.style.position==="fixed"&&d.style.zIndex==="9999")d.remove();
     });
+    // Show/hide the fixed back button (top-left). Hidden on menu, draft, battle,
+    // and result screens (those have their own navigation or are fullscreen).
+    const backBtn=$("backBtn");
+    if(backBtn){
+      const noBack=["menu","draft","battle","result","matchmaking"];
+      backBtn.style.display=noBack.includes(id)?"none":"block";
+    }
   },
   wins(){
     setText("wins",this.save.matchWins||0);

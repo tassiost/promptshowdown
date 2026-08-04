@@ -14,6 +14,7 @@
 <!-- Phase 7: loading splash (removed once init completes) -->
 <div id="splash"><div class="spin"></div><div style="font-weight:700;">Loading Prompt Showdown…</div></div>
 <button id="fsBtn" onclick="toggleFullscreen()">⛶</button>
+<button id="backBtn" onclick="G.menu()">← Back</button>
 <div class="screen active" id="menu">
 <h1>PROMPT SHOWDOWN</h1>
 <div class="group">
@@ -105,7 +106,6 @@
 <div style="font-size:.72rem;color:var(--muted);margin:4px 0;">Export your save as a text code. Import to restore on another device.</div>
 <textarea id="saveExportArea" style="display:none;width:100%;height:80px;font-size:.6rem;margin:8px 0;" readonly></textarea>
 </div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="matchmaking">
@@ -129,7 +129,6 @@
 <button class="btn" onclick="G.join()">Join</button>
 </div>
 <div class="pill" id="connection" style="margin-top:10px;">Status: idle</div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="p2ptest">
@@ -173,7 +172,6 @@
 <div id="p2pTestLog" style="font-size:.65rem;line-height:1.6;max-height:200px;overflow-y:auto;color:var(--muted);font-family:monospace;background:var(--bg);border-radius:6px;padding:8px;border:1px solid var(--border);"></div>
 </div>
 
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back to Menu</button>
 </div>
 
 <div class="screen fullscreen" id="draft">
@@ -326,7 +324,6 @@
 <button class="btn" onclick="G.forgeWithAd()" aria-label="Reroll and watch ad for a new unit">🎲 REROLL (Watch Ad)</button>
 <button class="btn" id="shareUnitBtn" onclick="G.shareForgeUnit()" style="display:none;" aria-label="Share this unit">📤 Share Unit</button>
 </div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;" aria-label="Back to menu">← BACK</button>
 </div>
 
 <div class="screen" id="deck">
@@ -365,7 +362,6 @@
 </select>
 </div>
 <div id="deckArea"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="upgrade">
@@ -373,7 +369,6 @@
 <div class="pill" style="margin:8px;">💰 <span id="upgradeCoins">0</span> coins</div>
 <div class="detail" style="margin-bottom:10px;">Spend coins to level up units (+10% HP/DMG per level)</div>
 <div id="upgradeArea"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="shop">
@@ -385,7 +380,6 @@
 <button class="btn primary" onclick="G.buyShopUnit()" id="buyBtn">🎲 Buy Random Unit (<span id="shopCost">50</span> coins)</button>
 <button class="btn" onclick="G.rerollShop()" id="rerollShopBtn">🔄 New Offer (10 coins)</button>
 </div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="codex">
@@ -398,32 +392,27 @@
 <button class="btn" onclick="G.codexTab('targeting')" id="codexTabTargeting" style="font-size:.75rem;padding:4px 10px;">Targeting</button>
 </div>
 <div id="codexContent" style="max-width:400px;margin:0 auto;"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="stats">
 <h2>📊 Stats</h2>
 <div id="statsContent" style="max-width:320px;margin:0 auto;"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="profile">
 <h2>👤 Profile</h2>
 <div id="profileContent" style="max-width:320px;margin:0 auto;"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="achievements">
 <h2>🏆 Achievements</h2>
 <div id="achProgress" style="text-align:center;font-size:.8rem;color:var(--muted);margin-bottom:10px;"></div>
 <div id="achContent" style="max-width:360px;margin:0 auto;"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <div class="screen" id="replays">
 <h2>🎬 Match History</h2>
 <div id="replayContent" style="max-width:360px;margin:0 auto;"></div>
-<button class="btn" onclick="G.menu()" style="margin-top:12px;">← Back</button>
 </div>
 
 <!-- Phase 1: visible error panel -->
