@@ -25,6 +25,8 @@ const ANIM_DURATIONS={idle:2.0,move:0.6,attack:0.4,death:0.5};
 // Face/eyes are drawn dynamically on top (they track targets).
 const SPRITE_CACHE_FRAMES=8; // frames per animation cycle
 const SPRITE_CACHE_PAD=4;     // padding around sprite bounds
+// Sprite scale factor: (z/10)*1.8, clamped to 0.1 minimum.
+function _spriteScale(u){return Math.max(0.1,(u.z||10)/10*1.8);}
 // Origin position within cache canvas: 70% from top leaves 30% below for legs/feet.
 // Sprite shapes extend from y≈-30 (head) to y≈+15 (legs) unscaled; the origin
 // (unit feet) must be high enough to fit the lower extent without clipping.
@@ -82,7 +84,7 @@ function _renderSpriteToCache(u,state,frameIdx){
   const rot=rm?0:(channels.rot||0);
 
   // Sprite dimensions: scale factor is (z/10)*1.8, sprite is ~52px wide, ~65px tall at z=10.
-  const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
+  const spriteScale=_spriteScale(u);
   const spriteW=Math.max(1,Math.ceil(60*spriteScale)+SPRITE_CACHE_PAD*2);
   const spriteH=Math.max(1,Math.ceil(70*spriteScale)+SPRITE_CACHE_PAD*2);
 
@@ -589,7 +591,7 @@ const SpriteRenderer={
         // PERF-R12: decrement hitReact only on cache hit (avoids double-decrement on miss).
         if(u.hitReact>0)u.hitReact-=0.015;
         // Draw the cached sprite image. Enemy flip + scale are baked into cache.
-        const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
+        const spriteScale=_spriteScale(u);
         const sw=cached.width, sh=cached.height;
         // Cached sprite's origin (unit feet) is at (sw/2, sh-PAD).
         // PERF-R12: round to integer pixels (avoids sub-pixel anti-aliasing overhead).
@@ -629,7 +631,7 @@ const SpriteRenderer={
     c.save();
     c.globalAlpha=alpha;
     // D5: scale sprite by z so limbs are visible (shapes are designed for z=10).
-    const spriteScale=Math.max(0.1,(u.z||10)/10*1.8);
+    const spriteScale=_spriteScale(u);
     c.translate(u.x,u.y);
     c.scale(spriteScale,spriteScale);
     c.translate(-u.x,-u.y);
@@ -1268,7 +1270,8 @@ const BattleFX={
       const dx=target.x-u.x,dy=target.y-u.y;
       // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
       const d=Math.sqrt(dx*dx+dy*dy)||1;
-      const steps=Math.min(5,Math.floor(d/20));
+      const budget=MAX_PARTICLES-(Battle.particles?.length||0);
+      const steps=Math.min(5,Math.floor(d/20),budget);
       for(let i=0;i<steps;i++){
         const t=i/steps;
         _spawnParticle(u.x+dx*t,u.y+dy*t,0,0,0.15+t*0.05,0.2,u.c,2);

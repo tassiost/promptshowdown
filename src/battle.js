@@ -201,6 +201,20 @@ const SPELL_SHAPE={
 // Phase 23: spell effect — applies the effect to affected units.
 // PERF-R13: pooled synth for lastAttacker (avoid per-hit object allocation).
 const _spellSynth={team:"",n:"Spell",id:"",h:1,mh:1,d:0,baseD:0,r:0,x:0,y:0,role:"",crit:0,ability:"none",dmgDealt:0};
+// UNIFY: shared spell minion spawn (used by SPELL_EFFECT.summon and tickZones).
+function _spawnSpellMinion(battle,team,x,y,attackerRef){
+  if(battle.units.length>=100)return; // Cap total units to prevent memory issues
+  const minion=unit({n:"Spell Minion",h:30,d:8,r:25,s:60,a:1,c:"#fa4",
+    targeting:"closest",movement:"chase",attackCondition:"always",
+    abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
+  minion.team=team;
+  minion.x=x+randRange(-20,20);
+  minion.y=y+randRange(-20,20);
+  minion.ttl=8;
+  minion.lastAttacker=attackerRef;
+  battle.units.push(battle.initRuntime(minion));
+  BattleFX.onSpawn(minion);
+}
 const SPELL_EFFECT={
   damage(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{const dmg=spec.magnitude||30;u.h-=dmg;u.lastAttacker=_spellSynth;if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,Math.round(dmg),u.team,false,"spell");});},
   damage_over_time(units,spec,team){_spellSynth.team=team;_spellSynth.id=team+"_spell";units.forEach(u=>{u.poison=Math.max(u.poison,spec.duration||3);u.poisonDmg=Math.max(u.poisonDmg||0,spec.magnitude||10);u.poisonTick=0;u.lastAttacker=_spellSynth;u.poisonAttacker=_spellSynth;});},
@@ -213,19 +227,7 @@ const SPELL_EFFECT={
     _spellSynth.team=team;_spellSynth.id=team+"_spell";
     const count=Math.min(spec.magnitude>40?3:spec.magnitude>20?2:1,3);
     const anchor=units[0]||{x:team==="player"?100:300,y:300};
-    for(let i=0;i<count;i++){
-      if(b.units.length>=100)break; // Cap total units to prevent memory issues
-      const minion=unit({n:"Spell Minion",h:30,d:8,r:25,s:60,a:1,c:"#fa4",
-        targeting:"closest",movement:"chase",attackCondition:"always",
-        abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
-      minion.team=team;
-      minion.x=anchor.x+randRange(-20,20);
-      minion.y=anchor.y+randRange(-20,20);
-      minion.ttl=8;
-      minion.lastAttacker=_spellSynth;
-      b.units.push(b.initRuntime(minion));
-      BattleFX.onSpawn(minion);
-    }
+    for(let i=0;i<count;i++)_spawnSpellMinion(b,team,anchor.x,anchor.y,_spellSynth);
   },
   knockback(units,spec,team,b){
     const anchor=units[0];
@@ -384,19 +386,7 @@ const Spell={
         }else if(z.spec.effect==="summon"){
           // Summon minions in the zone (once per tick, capped at 3 per tick).
           const count=Math.min(z.spec.magnitude>40?3:z.spec.magnitude>20?2:1,3);
-          for(let i=0;i<count;i++){
-            if(battle.units.length>=100)break; // Cap total units to prevent memory issues
-            const minion=unit({n:"Spell Minion",h:30,d:8,r:25,s:60,a:1,c:"#fa4",
-              targeting:"closest",movement:"chase",attackCondition:"always",
-              abilityTrigger:"never",moveSpeedMod:100,ability:"none",role:"frontline"});
-            minion.team=z.team;
-            minion.x=z.x+randRange(-20,20);
-            minion.y=z.y+randRange(-20,20);
-            minion.ttl=8;
-            minion.lastAttacker=synth;
-            battle.units.push(battle.initRuntime(minion));
-            BattleFX.onSpawn(minion);
-          }
+          for(let i=0;i<count;i++)_spawnSpellMinion(battle,z.team,z.x,z.y,synth);
         }else if(z.spec.effect==="knockback"){
           // Push units away from zone center.
           for(let ai=0;ai<aff.length;ai++){
