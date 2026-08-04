@@ -11,8 +11,11 @@ function unit(x={}){
   const weaponType=["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"].includes(x.weaponType)?x.weaponType:"none";
   // D5: rebuild stale/missing recipes so visual changes (weapon attachment, facing)
   // apply to saved/base units too. New recipes carry recipeVersion:1.
+  // BUT: if the unit already has a recipe with shapes, keep it — rebuilding with
+  // default params (missing bodyPlan/sizeMod on base units) produces a different
+  // sprite than what the deck screen shows, causing visual mismatch in draft/battle.
   let recipe=x.recipe;
-  if((!recipe||recipe.recipeVersion!==1)&&typeof RecipeAssembler!=="undefined"){
+  if((!recipe||!recipe.shapes||recipe.shapes.length===0)&&typeof RecipeAssembler!=="undefined"){
     try{
       recipe=RecipeAssembler.build({
         primaryColor:x.primaryColor||"gray",
