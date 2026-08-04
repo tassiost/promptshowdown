@@ -2309,6 +2309,36 @@ const Battle={
     // PERF-R12: merged shadow + sprite pass (avoid calling getLungeOffset/getSpawnScale twice per unit).
     // Shadows are drawn first with fillStyle="#000", then sprites on top.
     // PERF-R12: index loop (avoid for...of iterator allocation).
+    // Pass 0: team-colored glow auras (batched by team — 2 fillStyle changes instead of 100).
+    // Drawn before shadows so it appears behind everything.
+    c.globalAlpha=0.12;
+    c.fillStyle=TEAM_COLORS.player;
+    c.beginPath();
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
+      if(!u||u.x===undefined)continue;
+      if(u.h<=0&&u.deathT===undefined)continue;
+      if(u.team!=="player")continue;
+      const lunge=BattleFX.getLungeOffset(u);
+      const sx=u.x+lunge.x, sy=u.y+lunge.y;
+      c.moveTo(sx+(u.z||10)*1.4,sy);
+      c.ellipse(sx,sy,(u.z||10)*1.4,(u.z||10)*1.6,0,0,Math.PI*2);
+    }
+    c.fill();
+    c.fillStyle=TEAM_COLORS.enemy;
+    c.beginPath();
+    for(let ui=0;ui<this.units.length;ui++){
+      const u=this.units[ui];
+      if(!u||u.x===undefined)continue;
+      if(u.h<=0&&u.deathT===undefined)continue;
+      if(u.team!=="enemy")continue;
+      const lunge=BattleFX.getLungeOffset(u);
+      const sx=u.x+lunge.x, sy=u.y+lunge.y;
+      c.moveTo(sx+(u.z||10)*1.4,sy);
+      c.ellipse(sx,sy,(u.z||10)*1.4,(u.z||10)*1.6,0,0,Math.PI*2);
+    }
+    c.fill();
+    c.globalAlpha=1;
     // Pass 1a: shadows (batched fillStyle="#000").
     // PERF-R12: batch alive-unit shadows into single path (constant alpha=0.35).
     // Dying units have per-unit alpha → drawn separately after.
@@ -2501,16 +2531,17 @@ const Battle={
         }
       }
     }
-    // HP bars — batched by color (groups: bg, player border, enemy border, ghost, green, yellow, red, highlight).
-    // Group 1: All backgrounds (#1a1a2e).
+    // HP bars — batched by color (groups: bg, tint, border, ghost, green, yellow, red, highlight).
+    // Group 1: All backgrounds (#1a1a2e) — 1 fillStyle, 1 pass.
     c.fillStyle="#1a1a2e";
     for(let i=0;i<pass2Len;i++){
       const e=pass2[i];
       c.fillRect(e.x-18,e.spriteTop+8,36,5);
     }
     // Group 1b: Team-colored background tint (subtle — helps identify team at a glance).
-    c.fillStyle=TEAM_COLORS.player;
+    // 2 fillStyle changes total (player, enemy), 2 passes.
     c.globalAlpha=0.15;
+    c.fillStyle=TEAM_COLORS.player;
     for(let i=0;i<pass2Len;i++){
       const e=pass2[i];
       if(e.u.team==="player")c.fillRect(e.x-18,e.spriteTop+8,36,5);
@@ -2839,7 +2870,7 @@ const Battle={
     if(!this._syncMap)this._syncMap=new Map();
     const m=this._syncMap;
     m.clear();
-    for(const u of this.units)m.set(u.id,u);
+    for(let si=0;si<this.units.length;si++)m.set(this.units[si].id,this.units[si]);
     for(let i=0;i<this._allUnits.length;i++){
       const synced=m.get(this._allUnits[i].id);
       if(synced){

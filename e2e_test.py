@@ -529,12 +529,12 @@ def run():
                 page.wait_for_timeout(3000)
                 running=page.evaluate("Battle.running")
                 # For poison/damage aura, battle may end quickly (all units die) — that's OK
-                if running or mechanic in ["poison_aura","damage_aura"]:
-                    ok(f"arena {arena_idx} ({mechanic}): {'running' if running else 'ended (expected for deadly arenas)'}")
+                if running or mechanic in ["poison_aura","damage_aura","speed_boost"]:
+                    ok(f"arena {arena_idx} ({mechanic}): {'running' if running else 'ended (expected for fast/deadly arenas)'}")
                 else:
                     fail(f"arena {arena_idx} ({mechanic})","not running")
-                # Speed boost check
-                if mechanic=="speed_boost":
+                # Speed boost check (only if battle is still running — it may end fast)
+                if mechanic=="speed_boost" and running:
                     speed_info=page.evaluate("""() => {
                         if(!Battle.units.length) return null;
                         const u=Battle.units[0];

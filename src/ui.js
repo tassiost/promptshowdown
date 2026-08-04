@@ -419,6 +419,11 @@ const SPRITE_RECIPES={
   },
 };
 
+// Shared ability icon map (used by deck, draft, codex, shop, detail screens).
+const ABILITY_ICONS={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
+// Shared ability label builder (color + icon + name).
+function abLabel(u,color){color=color||"var(--accent2)";return u.ability&&u.ability!=="none"?`<br><span style="color:${color}">${ABILITY_ICONS[u.ability]||""} ${u.ability}</span>`:"";}
+
 const G={
   save:loadData(),
   // Phase 15: arena ladder. Each arena: name, color, lives, unlock threshold.
@@ -666,7 +671,7 @@ const G={
       if(bar)bar.style.display="none";
     }
     // Clean up any leftover fixed overlays (forge confirm, disconnect prompt).
-    [...document.querySelectorAll("div")].forEach(d=>{
+    document.querySelectorAll("div").forEach(d=>{
       if(d.id==="errorPanel")return; // keep error panel
       if(d.style.position==="fixed"&&d.style.zIndex==="9999")d.remove();
     });
@@ -2150,9 +2155,7 @@ const G={
       if(!u)return;
       const card=area.children[i];
       if(!card)return;
-      const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
-      const abIcon=abIcons[u.ability]||"";
-      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:#0ff">${abIcon} ${u.ability}</span>`:"";
+      const abIcon=ABILITY_ICONS[u.ability]||"";
       const abDesc=u.ability&&u.ability!=="none"&&ABILITY_DESCRIPTIONS?.[u.ability]?`<br><span style="color:#888;font-size:.6rem">${ABILITY_DESCRIPTIONS[u.ability]}</span>`:"";
       const roleLabel=u.role?`<br><span style="color:#888">${u.role}</span>`:"";
       card.innerHTML=
@@ -3845,8 +3848,7 @@ const G={
       const lvl=this.unitLevel(u.n);
       const lvlBadge=lvl>0?`<span class="lvlBadge">Lv${lvl}</span>`:"";
       const disp=lvl>0?this.applyUpgrades(cloneUnit(u)):u;
-      const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
-      const abIcon=u.ability&&u.ability!=="none"?abIcons[u.ability]||"":"";
+      const abIcon=u.ability&&u.ability!=="none"?ABILITY_ICONS[u.ability]||"":"";
       const sel=this._selectedSlot===i;
       const card=document.createElement("div");
       card.className="card";
@@ -3992,9 +3994,7 @@ const G={
           ?`<br><span style="color:var(--accent2)">in loadout · tap to re-slot</span>`
           :`<br><span style="color:var(--muted)">tap to slot · drag to loadout</span>`;
       }
-      const abIcons={none:"",splash:"💥",heal:"💚",dodge:"💨",poison:"☠️",spawn:"✨",lifesteal:"🩸",explode:"💣",heal_burst:"💖",shield:"🛡️",rage:"😤",slow:"🐌",ramp:"📈",thorns:"🌵",blink_strike:"⚡",frenzy:"🔥",regen:"🌿",cleanse:"🧹",taunt:"📣",executioner:"🗡️",chain_lightning:"🌩️"};
-      const abIcon=abIcons[u.ability]||"";
-      const abLabel=u.ability&&u.ability!=="none"?`<br><span style="color:var(--accent2)">${abIcon} ${u.ability}</span>`:"";
+      const abLbl=abLabel(u);
       // Mastery badge: based on total kills across all matches.
       const mastery=this.save.unitMastery?.[u.n];
       let masteryBadge="";
@@ -4011,7 +4011,7 @@ const G={
       card.className="card";
       card.draggable=true;
       card.dataset.unitName=u.n;
-      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLabel}${masteryBadge}${slotTag}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
+      card.innerHTML=`<canvas width="40" height="40" style="display:block;margin:2px auto;"></canvas><div class="title" style="color:${u.c}">${u.n}${lvlBadge}</div><div class="detail">${u.h} HP · ${u.d} DMG${abLbl}${masteryBadge}${slotTag}</div><button class="btn" style="position:absolute;top:2px;right:2px;font-size:.65rem;padding:1px 4px;opacity:0.6;">ℹ</button>`;
       SpriteRenderer.renderPreview(card.querySelector("canvas"),u);
       // F2: info button opens unit detail view.
       const infoBtn=card.querySelector("button");

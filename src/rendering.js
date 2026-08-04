@@ -596,18 +596,11 @@ const SpriteRenderer={
         // Apply hitReact offset to draw position.
         const dx=((u.x+reactX) - sw/2)|0;
         const dy=((u.y+reactY) - (sh*SPRITE_ORIGIN_FRAC) + bobY)|0;
-        // Team-colored outline glow — subtle aura behind the unit for team ID.
-        // Drawn before the sprite so it appears behind the body shapes.
+        // Team glow is now batched in Battle.render() Pass 0 (before shadows).
+        // PERF-R15: removed per-unit fillStyle+beginPath+ellipse+fill (was 100 state changes).
         const oldAlpha=c.globalAlpha;
-        c.globalAlpha=0.12*alpha;
-        c.fillStyle=TEAM_COLORS[u.team]||"#888";
-        c.beginPath();
-        c.ellipse((u.x+reactX)|0,(u.y+reactY-bobY)|0,(u.z||10)*1.4,(u.z||10)*1.6,0,0,Math.PI*2);
-        c.fill();
-        c.globalAlpha=oldAlpha;
-        // PERF-R12: avoid save/restore — just swap globalAlpha (cheaper than stack push/pop).
         c.globalAlpha=alpha;
-        if(cached&&cached.width>0&&cached.height>0)c.drawImage(cached, dx, dy);
+        c.drawImage(cached, dx, dy);
         c.globalAlpha=oldAlpha;
         // Draw face on top (dynamic — tracks target).
         // PERF-R12: skip face when >30 units (tiny visual detail, expensive transform).
