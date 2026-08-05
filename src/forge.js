@@ -52,6 +52,7 @@ function unit(x={}){
     c:sanitizeHex(x.c||"#0ff"),
     z:10, // All units same render scale. Recipe shapes are normalized to standard height.
     crit:clamp(Number(x.crit)||0.1,0,1),
+    armor:clamp(Number(x.armor)||0,0,20), // U1: flat damage reduction per hit
     ability:ABILITY_OPTS.includes(x.ability||x.ab)?(x.ability||x.ab):"none",
     rar:["common","rare","legendary"].includes(x.rar)?x.rar:"common",
     cost:clamp(Number(x.cost)||1,1,20),
@@ -121,12 +122,15 @@ let aiProgress={text:"",pct:0};
 // Generation progress callback — set by _doForge to update UI as each
 // LLM field question is answered. Signature: (current, total, fieldName).
 let forgeGenProgress=null;
+// F1: live preview callback — called with partial attrs after each field
+// is determined, so the UI can render a progressively-building sprite.
+let forgeLivePreview=null;
 // Human-readable labels for forge fields (shown in progress text).
 const FIELD_LABELS={
   name:"name",role:"role",bodyPlan:"body type",weaponType:"weapon",primaryColor:"primary color",
   accentColor:"accent color",sizeMod:"size",targeting:"targeting",movement:"movement style",
   ability:"ability",abilityTrigger:"ability trigger",attackCondition:"attack condition",
-  hp:"health",dmg:"damage",range:"range",speed:"speed",moveSpeedMod:"speed modifier",
+  hp:"health",dmg:"damage",range:"range",speed:"speed",moveSpeedMod:"speed modifier",armor:"armor",
   headFeature:"head feature",backFeature:"back feature",tailFeature:"tail feature",
   aura:"aura",eyeStyle:"eye style",pattern:"pattern",weaponStyle:"weapon style",
   trigger:"trigger",target:"target",effect:"effect",shape:"shape",fxType:"visual effect",
@@ -346,7 +350,8 @@ const UNIT_SCHEMA={
     dmg:{type:"integer",minimum:5,maximum:50},
     range:{type:"integer",minimum:30,maximum:250},
     speed:{type:"integer",minimum:30,maximum:120},
-    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"]},
+    armor:{type:"integer",minimum:0,maximum:20},
+    ability:{type:"string",enum:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning","buff_aura"]},
     bodyPlan:{type:"string",enum:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel","spider","wyvern","treant","kraken","gargoyle","wraith"]},
     weaponType:{type:"string",enum:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"]},
     primaryColor:{type:"string",enum:Object.keys(COLOR_MAP)},
@@ -1604,7 +1609,7 @@ function attrsToUnit(attrs,arenaIndex){
     attackCondition:attrs.attackCondition,abilityTrigger:attrs.abilityTrigger,
     moveSpeedMod:attrs.moveSpeedMod,
     h:attrs.hp,d:attrs.dmg,r:attrs.range,s:attrs.speed,
-    a:atkSpd,crit:crit,
+    a:atkSpd,crit:crit,armor:attrs.armor||0,
     ability:attrs.ability,
     c:primaryHex,
     z,
@@ -1690,7 +1695,7 @@ const ENUM_FIELDS={
   movement:["chase","flee","hold","hold_midpoint","kite","patrol"],
   attackCondition:["always","only_if_healthy","only_if_target_low","never"],
   abilityTrigger:["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","never"],
-  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"],
+  ability:["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning","buff_aura"],
   bodyPlan:["humanoid","quadruped","dragon","serpent","bird","insect","crab","golem","ghost","fish","blob","flying","mechanical","structure","plant","undead","demon","beast-man","aquatic","monopod","centaur","hydra","elemental","aberration","ooze","crystal","construct","angel","spider","wyvern","treant","kraken","gargoyle","wraith"],
   weaponType:["none","sword","bow","staff","dagger","shield","hammer","claws","breath","scythe","whip","spear","rifle","wand","axe","trident","crossbow","orb","dual_blades"],
   primaryColor:Object.keys(COLOR_MAP),
@@ -1705,7 +1710,7 @@ const ENUM_FIELDS={
   pattern:["none","stripes","spots","scales","runes","cracks","gradient_two_tone","circuit","tribal","stars","hexagons","marble"],
   weaponStyle:["standard","ornate","glowing","cracked","pristine","battered","rusted","crystal","bone","molten"]
 };
-const INT_FIELDS={hp:[10,200],dmg:[5,50],range:[30,250],speed:[30,120],moveSpeedMod:[50,150]};
+const INT_FIELDS={hp:[10,200],dmg:[5,50],range:[30,250],speed:[30,120],moveSpeedMod:[50,150],armor:[0,20]};
 // Phase 12: parse a stat value from the LLM's answer. The LLM is free to
 // pick any number in the field's range — we extract it and clamp. Also
 // handles "word (NN)" format in case the model adds a label.
@@ -1740,6 +1745,7 @@ const FIELD_PROMPTS={
   ability:()=>`Given this unit's identity, what special ability fits: ${opts(ENUM_FIELDS.ability)}? Answer with one word.`,
   abilityTrigger:()=>`Given this unit's identity and ability, when should the ability trigger: ${opts(ENUM_FIELDS.abilityTrigger)}? Answer with one word.`,
   moveSpeedMod:(n,a)=>`How aggressive is this unit's speed? ${a.movement==="chase"?"Chase units are bold: 100-150. ":""}${a.movement==="hold"?"Hold units are cautious: 50-90. ":""}${a.movement==="kite"?"Kite units are measured: 70-120. ":""}${a.movement==="flee"?"Fleeing units are skittish: 80-130. ":""}${a.movement==="patrol"?"Patrol units are steady: 60-110. ":""}${a.movement==="blink"?"Blink units are unpredictable: 80-130. ":""}${a.movement==="strafe"?"Strafe units are nimble: 90-140. ":""}Pick any number 50-150 that fits. Answer with a number only.`,
+  armor:(n,a)=>`How much armor (flat damage reduction per hit) fits? ${a.role==="frontline"?"Frontlines are tanky: 5-15 armor. ":""}${a.role==="carry"?"Carries are squishy: 0-3 armor. ":""}${a.role==="support"?"Supports are fragile: 0-5 armor. ":""}${a.role==="counter"?"Counters are moderate: 2-8 armor. ":""}${a.role==="utility"?"Utility varies: 0-6 armor. ":""}${a.role==="assassin"?"Assassins are fragile: 0-3 armor. ":""}${a.role==="bruiser"?"Bruisers are sturdy: 4-10 armor. ":""}Pick any number 0-20. Answer with a number only.`,
   hp:(n,a)=>`How tough is this unit? ${a.role==="frontline"?"Frontlines are tanks: 120-200 HP. ":""}${a.role==="carry"?"Carries are squishy: 15-60 HP. ":""}${a.role==="support"?"Supports are fragile: 30-90 HP. ":""}${a.role==="counter"?"Counters are moderate: 50-110 HP. ":""}${a.role==="utility"?"Utility units are varied: 40-100 HP. ":""}${a.role==="assassin"?"Assassins are fragile: 20-70 HP. ":""}${a.role==="bruiser"?"Bruisers are sturdy: 80-150 HP. ":""}Pick any number 10-200 that fits the concept. Answer with a number only.`,
   dmg:(n,a)=>`How much damage per hit? ${a.role==="carry"?"Carries hit hard: 25-50. ":""}${a.role==="frontline"?"Frontlines hit moderately: 10-30. ":""}${a.role==="support"?"Supports hit weakly: 5-15. ":""}${a.role==="counter"?"Counters hit sharply: 15-35. ":""}${a.role==="utility"?"Utility varies: 8-25. ":""}${a.role==="assassin"?"Assassins burst: 20-45. ":""}${a.role==="bruiser"?"Bruisers hit solidly: 12-30. ":""}Pick any number 5-50 that fits the concept. Answer with a number only.`,
   range:(n,a)=>`What attack range fits? ${a.weaponType==="bow"?"Bows are long-range: 150-250. ":""}${a.weaponType==="staff"||a.weaponType==="wand"?"Staves/wands are ranged: 100-200. ":""}${a.weaponType==="rifle"?"Rifles are very long: 180-250. ":""}${(a.weaponType==="sword"||a.weaponType==="dagger"||a.weaponType==="claws"||a.weaponType==="hammer"||a.weaponType==="scythe"||a.weaponType==="spear")?"Melee weapons are short: 30-60. ":""}${a.weaponType==="whip"?"Whips are medium: 60-100. ":""}${a.weaponType==="breath"?"Breath is medium: 60-120. ":""}${a.weaponType==="shield"?"Shields are close: 30-60. ":""}${a.weaponType==="none"?"Unarmed is touch: 30-50. ":""}Pick any number 30-250 that fits. Answer with a number only.`,
@@ -1805,7 +1811,7 @@ const FIELD_ORDER=[
   "name","role","bodyPlan","weaponType","primaryColor","accentColor","sizeMod",
   "targeting","movement",
   "ability","abilityTrigger",
-  "attackCondition","hp","dmg","range","speed","moveSpeedMod",
+  "attackCondition","hp","dmg","range","speed","moveSpeedMod","armor",
   // Phase 25: visual modifiers (asked last, after identity is established).
   "headFeature","backFeature","tailFeature","aura","eyeStyle","pattern","weaponStyle"
 ];
@@ -1825,7 +1831,7 @@ async function reaskFields(name,attrs,flagged){
 // Groups fields into batches to reduce 24 sequential calls to 3-4.
 const FIELD_BATCHES=[
   ["name","role","bodyPlan","weaponType","primaryColor","accentColor","sizeMod"],
-  ["targeting","movement","ability","abilityTrigger","attackCondition","hp","dmg","range","speed","moveSpeedMod"],
+  ["targeting","movement","ability","abilityTrigger","attackCondition","hp","dmg","range","speed","moveSpeedMod","armor"],
   ["headFeature","backFeature","tailFeature","aura","eyeStyle","pattern","weaponStyle"],
 ];
 async function askFieldsBatch(fields,name,attrs){
@@ -1895,6 +1901,8 @@ async function generateUnit(rawPrompt,arenaIndex){
     }
     attrs[field]=val!==null?val:FIELD_PARSERS[field](""); // parser default
     debugForge("generateUnit field",{field,val:attrs[field],attempts:attempt});
+    // F1: live preview — render sprite with partial attrs after each field.
+    if(forgeLivePreview)forgeLivePreview(attrs,field);
   }
   // 5. Semantic validation + per-field retry for inconsistent fields.
   const flagged=semanticValidate(attrs);

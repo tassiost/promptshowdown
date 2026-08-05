@@ -378,12 +378,14 @@ function avoidanceOffset(u,allies,radius){
   _avoidBuf.x=ax*scale; _avoidBuf.y=ay*scale;
   return _avoidBuf;
 }
+// C2: stealth — stealthed units are untargetable by single-target attacks.
+function isTargetable(e){return e.h>0&&(e.stealth||0)<=0;}
 function closestEnemy(u,enemies){
   let best=null,bd=Infinity;
   const ux=u.x,uy=u.y;
   for(let i=0;i<enemies.length;i++){
     const e=enemies[i];
-    if(e.h<=0)continue;
+    if(!isTargetable(e))continue;
     const dx=ux-e.x, dy=uy-e.y;
     const d=dx*dx+dy*dy;
     if(d<bd){bd=d;best=e;}
@@ -393,13 +395,13 @@ function closestEnemy(u,enemies){
 function lowestBy(arr,fn){
   let best=null,bv=Infinity;
   // PERF-R12: index loop (avoid for...of iterator allocation).
-  for(let i=0;i<arr.length;i++){const x=arr[i];if(x.h<=0)continue;const v=fn(x);if(v<bv){bv=v;best=x;}}
+  for(let i=0;i<arr.length;i++){const x=arr[i];if(!isTargetable(x))continue;const v=fn(x);if(v<bv){bv=v;best=x;}}
   return best;
 }
 function highestBy(arr,fn){
   let best=null,bv=-Infinity;
   // PERF-R12: index loop (avoid for...of iterator allocation).
-  for(let i=0;i<arr.length;i++){const x=arr[i];if(x.h<=0)continue;const v=fn(x);if(v>bv){bv=v;best=x;}}
+  for(let i=0;i<arr.length;i++){const x=arr[i];if(!isTargetable(x))continue;const v=fn(x);if(v>bv){bv=v;best=x;}}
   return best;
 }
 
@@ -408,7 +410,7 @@ const TARGETING_OPTS=["closest","lowest_hp","highest_hp","enemy_carry","enemy_su
 const MOVEMENT_OPTS=["chase","flee","hold","hold_midpoint","kite","patrol","blink","strafe"];
 const ATTACK_CONDITION_OPTS=["always","only_if_healthy","only_if_target_low","only_if_target_high_hp","never"];
 const ABILITY_TRIGGER_OPTS=["on_cooldown","when_ally_hurt","when_surrounded","on_low_hp","on_death","on_first_hit","on_spawn","on_kill","periodic_3s","never"];
-const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning"];
+const ABILITY_OPTS=["none","splash","heal","dodge","poison","spawn","lifesteal","explode","heal_burst","shield","rage","slow","ramp","thorns","blink_strike","frenzy","regen","cleanse","taunt","executioner","chain_lightning","buff_aura"];
 const ROLE_OPTS=["frontline","carry","support","counter","utility","assassin","bruiser"];
 // Reusable role color map for canvas rendering (avoids per-frame allocation).
 const ROLE_COLORS={frontline:"#888",carry:"#4f4",support:"#ff4",counter:"#f4f",utility:"#4ff",assassin:"#f4f",bruiser:"#888"};
@@ -418,7 +420,7 @@ const ZONE_FX_COLORS={fire_wall:"#f84",poison_cloud:"#6f4",frost:"#6cf",lightnin
 // Team colors — used consistently for HP bar borders, name text, damage numbers,
 // ground decals, and selection indicators so friend/foe is instantly readable.
 const TEAM_COLORS={player:"#4af",enemy:"#f44"};
-const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp","thorns","regen","taunt","executioner"]);
+const PASSIVE_ABILITIES=new Set(["none","splash","dodge","poison","lifesteal","rage","slow","ramp","thorns","regen","taunt","executioner","buff_aura"]);
 const TRIGGERED_ABILITIES=new Set(["heal","spawn","explode","heal_burst","shield","blink_strike","frenzy","cleanse","chain_lightning"]);
 // F1: Ability descriptions for tooltips.
 const ABILITY_DESCRIPTIONS={
@@ -443,6 +445,7 @@ const ABILITY_DESCRIPTIONS={
   taunt:"Forces all enemies to target this unit instead of others.",
   executioner:"Deals 3× damage to enemies below 25% HP.",
   chain_lightning:"Lightning arcs between 3 nearby enemies, dealing damage to each.",
+  buff_aura:"Nearby allies gain +20% damage and +10% speed (80px radius).",
 };
 
 // Explanations for movement, targeting, triggers, and weapons — shown in unit detail.
@@ -505,22 +508,22 @@ const TARGETING={
   closest:(u,enemies,allies)=>closestEnemy(u,enemies),
   lowest_hp:(u,enemies,allies)=>lowestBy(enemies,e=>e.h),
   highest_hp:(u,enemies,allies)=>highestBy(enemies,e=>e.h),
-  enemy_carry:(u,enemies,allies)=>enemies.find(e=>e.h>0&&e.role==="carry")||closestEnemy(u,enemies),
-  enemy_support:(u,enemies,allies)=>enemies.find(e=>e.h>0&&e.role==="support")||closestEnemy(u,enemies),
+  enemy_carry:(u,enemies,allies)=>enemies.find(e=>isTargetable(e)&&e.role==="carry")||closestEnemy(u,enemies),
+  enemy_support:(u,enemies,allies)=>enemies.find(e=>isTargetable(e)&&e.role==="support")||closestEnemy(u,enemies),
   enemy_backline:(u,enemies,allies)=>{
-    const alive=enemies.filter(e=>e.h>0);
+    const alive=enemies.filter(e=>isTargetable(e));
     if(!alive.length)return null;
     const backY=alive[0].team==="player"?Math.max(...alive.map(e=>e.y)):Math.min(...alive.map(e=>e.y));
     return alive.reduce((b,e)=>Math.abs(e.y-backY)<Math.abs(b.y-backY)?e:b,alive[0]);
   },
   enemy_frontline:(u,enemies,allies)=>{
-    const alive=enemies.filter(e=>e.h>0);
+    const alive=enemies.filter(e=>isTargetable(e));
     if(!alive.length)return null;
     const frontY=alive[0].team==="player"?Math.min(...alive.map(e=>e.y)):Math.max(...alive.map(e=>e.y));
     return alive.reduce((b,e)=>Math.abs(e.y-frontY)<Math.abs(b.y-frontY)?e:b,alive[0]);
   },
   enemy_cluster:(u,enemies,allies)=>{
-    const alive=enemies.filter(e=>e.h>0);
+    const alive=enemies.filter(e=>isTargetable(e));
     if(!alive.length)return null;
     // PERF-R11: O(n) grid-based cluster counting instead of O(n²).
     const cellSize=80,grid=new Map();

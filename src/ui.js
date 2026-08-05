@@ -614,8 +614,60 @@ const G={
         }
       },100);
     };
+    // N1/X1: emote wheel setup.
+    this._initEmoteWheel();
     // J4: hide splash now that init (including async IDB fallback) is complete.
     if(typeof hideSplash==="function")hideSplash();
+  },
+
+  // N1/X1: emote wheel — 8 quick emotes for P2P matches.
+  _emotes:["😀","😎","😡","😭","🤔","👏","🔥","💀","🤣","😱","🙏","💪"," GG ","GL!","😱","🤝"],
+  _initEmoteWheel(){
+    const btn=$("emoteBtn"),wheel=$("emoteWheel");
+    if(!btn||!wheel)return;
+    // Populate wheel with emote buttons.
+    wheel.innerHTML=this._emotes.map((e,i)=>
+      `<button class="emoteItem" data-i="${i}" style="width:36px;height:36px;border:none;background:transparent;font-size:1.2rem;cursor:pointer;border-radius:6px;">${e}</button>`
+    ).join("");
+    btn.addEventListener("click",(ev)=>{
+      ev.stopPropagation();
+      wheel.style.display=wheel.style.display==="grid"?"none":"grid";
+    });
+    wheel.addEventListener("click",(ev)=>{
+      const t=ev.target.closest(".emoteItem");
+      if(!t)return;
+      const i=parseInt(t.dataset.i);
+      const emoji=this._emotes[i];
+      wheel.style.display="none";
+      if(typeof sendEmote==="function")sendEmote(emoji);
+      this._showLocalEmote(emoji);
+    });
+    // Close wheel when clicking outside.
+    document.addEventListener("click",(ev)=>{
+      if(!btn.contains(ev.target)&&!wheel.contains(ev.target))wheel.style.display="none";
+    });
+    // Set up peer emote callback.
+    if(typeof onPeerEmote!=="undefined"){
+      onPeerEmote=(emoji)=>this._showPeerEmote(emoji);
+    }
+  },
+  _showLocalEmote(emoji){
+    const el=$("peerEmote");
+    if(!el)return;
+    el.textContent=emoji;
+    el.style.borderColor="#4af";
+    el.style.display="block";
+    clearTimeout(this._emoteTimer);
+    this._emoteTimer=setTimeout(()=>{el.style.display="none";},3000);
+  },
+  _showPeerEmote(emoji){
+    const el=$("peerEmote");
+    if(!el)return;
+    el.textContent=emoji;
+    el.style.borderColor="#f44";
+    el.style.display="block";
+    clearTimeout(this._emoteTimer);
+    this._emoteTimer=setTimeout(()=>{el.style.display="none";},3000);
   },
 
   // Phase 6: player level derived from XP (100 xp per level).
@@ -672,6 +724,10 @@ const G={
       const bar=$("spellBar");
       if(bar)bar.style.display="none";
     }
+    // N1/X1: show emote button only in P2P battle, hide wheel when leaving battle.
+    const emoteBtn=$("emoteBtn"),emoteWheel=$("emoteWheel");
+    if(emoteWheel)emoteWheel.style.display="none";
+    if(emoteBtn)emoteBtn.style.display=(id==="battle"&&connected)?"flex":"none";
     // Clean up any leftover fixed overlays (forge confirm, disconnect prompt).
     document.querySelectorAll("div").forEach(d=>{
       if(d.id==="errorPanel")return; // keep error panel
@@ -828,7 +884,7 @@ const G={
   // Phase 37: share forged unit via URL.
   shareUnit(u){
     try{
-      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,a:u.a,z:u.z,crit:u.crit,ability:u.ability,rar:u.rar,cost:u.cost,targeting:u.targeting,movement:u.movement,attackCondition:u.attackCondition,abilityTrigger:u.abilityTrigger,moveSpeedMod:u.moveSpeedMod,role:u.role,weaponType:u.weaponType,bodyPlan:u.bodyPlan,c:u.c,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
+      const data=JSON.stringify({n:u.n,h:u.h,d:u.d,r:u.r,s:u.s,a:u.a,z:u.z,crit:u.crit,armor:u.armor,ability:u.ability,rar:u.rar,cost:u.cost,targeting:u.targeting,movement:u.movement,attackCondition:u.attackCondition,abilityTrigger:u.abilityTrigger,moveSpeedMod:u.moveSpeedMod,role:u.role,weaponType:u.weaponType,bodyPlan:u.bodyPlan,c:u.c,primaryColor:u.c,headFeature:u.headFeature,backFeature:u.backFeature,tailFeature:u.tailFeature,aura:u.aura,eyeStyle:u.eyeStyle,pattern:u.pattern,weaponStyle:u.weaponStyle,recipe:u.recipe});
       const compressed=LZString?LZString.compressToEncodedURIComponent(data):encodeURIComponent(data);
       const url=location.origin+location.pathname+"?unit="+compressed;
       if(navigator.share){
@@ -951,13 +1007,35 @@ const G={
     const overlay=document.createElement("div");
     overlay.id="reconnectOverlay";
     overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
-    overlay.innerHTML=`<div style="font-size:1.3rem;margin-bottom:10px;">🔄 Reconnecting...</div><div id="reconnectTimer" style="font-size:2rem;">${secondsLeft}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Opponent disconnected. Waiting for reconnect.</div>`;
+    overlay.innerHTML=`<div style="font-size:1.3rem;margin-bottom:10px;">🔄 Reconnecting...</div><div id="reconnectTimer" style="font-size:2rem;">${secondsLeft}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Opponent disconnected. Waiting for reconnect.</div><div id="reconnectStatus" style="margin-top:6px;font-size:.7rem;color:#4af;">Attempting to rejoin room...</div>`;
     document.body.appendChild(overlay);
     let remaining=secondsLeft;
     const interval=setInterval(()=>{
       remaining--;
       const t=overlay.querySelector("#reconnectTimer");
       if(t)t.innerText=remaining+"s";
+      // N6: attempt reconnection every 5 seconds during grace period.
+      if(remaining%5===0&&remaining>0&&!connected){
+        const status=overlay.querySelector("#reconnectStatus");
+        if(status)status.innerText="Attempting to rejoin room...";
+        if(typeof attemptReconnect==="function")attemptReconnect();
+      }
+      if(connected){
+        // Peer reconnected — hide overlay and resume.
+        clearInterval(interval);
+        overlay.remove();
+        if(typeof _setNetworkPaused==="function")_setNetworkPaused(false);
+        if(typeof Match!=="undefined"&&Match._graceActive){
+          Match._graceActive=false;
+          // Resume battle if it was paused.
+          if(Battle._finalUnits&&!Battle.running){
+            // Re-sync via snapshot from host.
+            if(role==="guest"&&typeof transmit==="function"){
+              transmit("request_deck",{round:Match.round});
+            }
+          }
+        }
+      }
       if(remaining<=0){
         clearInterval(interval);
         overlay.remove();
@@ -1250,10 +1328,15 @@ const G={
     this.screen("matchmaking");
     setText("matchmakingStatus","Entering queue...");
     setText("matchmakingQueueInfo","");
+    // N5: MMR-based matchmaking — group players by rating tier so similar-skill
+    // players match. Tier buckets: <1000, 1000-1499, 1500-1999, 2000-2499, 2500+.
+    const rating=(this.save.ranked&&this.save.ranked.rating)||1000;
+    const mmrTier=rating<1000?0:rating<1500?1:rating<2000?2:rating<2500?3:4;
+    const tierNames=["Bronze","Silver","Gold","Platinum","Diamond+"];
     // Try to join the arena queue room via trystero.
-    // All players in the same arena share one queue room.
+    // Queue room includes MMR tier so only similar-rated players match.
     const arenaIdx=this.save.arena||0;
-    const queueRoom=`psd-arena-${arenaIdx}-queue`;
+    const queueRoom=`psd-arena-${arenaIdx}-mmr${mmrTier}-queue`;
     // Suppress P2P errors during matchmaking (silent queue join).
     suppressP2PErrors=true;
     let netOk=false;
@@ -1276,7 +1359,7 @@ const G={
     this.matchmakingCancelled=false;
     this.matchmakingWaitStart=Date.now();
     setText("matchmakingStatus","In queue — waiting for opponent...");
-    setText("matchmakingQueueInfo","Room: "+queueRoom);
+    setText("matchmakingQueueInfo",`${tierNames[mmrTier]} (${rating} rating) · Room: ${queueRoom}`);
     // Update wait timer every second.
     if(this.matchmakingWaitInterval)clearInterval(this.matchmakingWaitInterval);
     this.matchmakingWaitInterval=setInterval(()=>{
@@ -2416,7 +2499,8 @@ const G={
       const clean={...u};
       delete clean.cool;delete clean.abCool;delete clean.poison;delete clean.poisonTick;
       delete clean.regen;delete clean.regenTick;delete clean.slow;delete clean.stun;
-      delete clean.shieldActive;delete clean.deathT;delete clean.animState;delete clean.animT;
+      delete clean.shieldActive;delete clean.silence;delete clean.stealth;
+      delete clean.deathT;delete clean.animState;delete clean.animT;
       delete clean.attackT;delete clean.movedThisFrame;delete clean.attackedThisFrame;
       delete clean.prevX;delete clean.prevY;delete clean.prevH;delete clean.spawnT;
       delete clean.hitFlash;delete clean.lungeT;delete clean.lungeDir;delete clean.abFlash;
@@ -3496,6 +3580,56 @@ const G={
           const prog=$("forgeModelProgress");
           if(prog&&prog.style.display==="none")prog.style.display="block";
         };
+        // F1: live sprite preview — render sprite progressively as fields are determined.
+        forgeLivePreview=(attrs,lastField)=>{
+          const preview=$("forgePreview");
+          if(!preview)return;
+          // Only render once we have bodyPlan + primaryColor (minimum for a sprite).
+          if(!attrs.bodyPlan||!attrs.primaryColor)return;
+          try{
+            // Build a partial unit from current attrs for preview rendering.
+            const primaryHex=COLOR_MAP[attrs.primaryColor]||"#888";
+            const partial=unit({
+              n:attrs.name||"???",
+              h:attrs.hp||50,d:attrs.dmg||10,r:attrs.range||50,s:attrs.speed||60,
+              a:1,crit:0.1,armor:attrs.armor||0,
+              ability:attrs.ability||"none",
+              c:primaryHex,
+              weaponType:attrs.weaponType||"none",
+              bodyPlan:attrs.bodyPlan,
+              sizeMod:attrs.sizeMod||"medium",
+              primaryColor:attrs.primaryColor,
+              accentColor:attrs.accentColor||attrs.primaryColor,
+              headFeature:attrs.headFeature||"none",
+              backFeature:attrs.backFeature||"none",
+              tailFeature:attrs.tailFeature||"none",
+              aura:attrs.aura||"none",
+              eyeStyle:attrs.eyeStyle||"normal",
+              pattern:attrs.pattern||"none",
+              weaponStyle:attrs.weaponStyle||"standard",
+              role:attrs.role||"frontline",
+              targeting:attrs.targeting||"closest",
+              movement:attrs.movement||"chase",
+              attackCondition:attrs.attackCondition||"always",
+              abilityTrigger:attrs.abilityTrigger||"never",
+              moveSpeedMod:attrs.moveSpeedMod||100,
+            });
+            // Render the sprite preview.
+            const canvas=preview.querySelector("canvas");
+            if(canvas){
+              SpriteRenderer.renderPreview(canvas,partial);
+            }else{
+              // First preview — create the card structure with a canvas.
+              preview.innerHTML=`<div class="card" style="border-color:var(--accent);box-shadow:0 0 15px rgba(124,58,237,.15),var(--shadow-lg);max-width:240px;margin:0 auto;">
+                <div class="rarityTag common">FORGING...</div>
+                <canvas width="56" height="56" style="display:block;margin:4px auto;"></canvas>
+                <div class="title" style="color:${primaryHex};font-size:.9rem;">${partial.n}</div>
+                <div class="detail" style="margin-top:4px;font-size:.6rem;color:var(--muted);">${attrs.bodyPlan} · ${attrs.weaponType||"unarmed"}</div>
+              </div>`;
+              SpriteRenderer.renderPreview(preview.querySelector("canvas"),partial);
+            }
+          }catch(e){/* silent — preview is best-effort */}
+        };
         genPromise=generateUnit(prompt,arenaIdx);
       }else{
         // No LLM / skip ad — use template fallback directly.
@@ -3513,6 +3647,7 @@ const G={
         unit=attrsToUnit(templateFallback(prompt),arenaIdx);
       }
       forgeGenProgress=null;
+      forgeLivePreview=null;
       this._hideModelProgress();
       this.pendingForgeUnit=unit;
       this.showForgePreview(unit);
@@ -3521,6 +3656,7 @@ const G={
     }catch(e){
       console.error("Forge failed:",e);
       forgeGenProgress=null;
+      forgeLivePreview=null;
       this._hideModelProgress();
       toast("Forge failed. Please try again.");
     }finally{
@@ -3654,6 +3790,7 @@ const G={
       `<b>HP:</b> ${u.h} · <b>DMG:</b> ${u.d}<br>`+
       `<b>Range:</b> ${u.r} · <b>Speed:</b> ${u.s}<br>`+
       `<b>Atk Spd:</b> ${u.a} · <b>Crit:</b> ${Math.round((u.crit||0)*100)}%<br>`+
+      (u.armor>0?`<b>Armor:</b> ${u.armor}<br>`:"")+
       `<b>Role:</b> ${u.role||"—"}<br>`+
       `<b>Weapon:</b> ${u.weaponType||"none"}<br>`+
       `<span style="color:var(--muted);font-size:.74rem;">${weaponDesc}</span><br>`+

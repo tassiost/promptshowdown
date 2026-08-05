@@ -7,7 +7,7 @@ const RANGED_THRESHOLD=80;
 const SPELL_ENUM={
   trigger:["battle_start","on_first_contact","delayed_3s","when_ally_hurt","periodic_5s"],
   target:["enemy_cluster","enemy_frontline","enemy_backline","enemy_carry","lowest_hp_enemy","highest_hp_enemy","random_enemy","center","ally_cluster","lowest_ally"],
-  effect:["damage","damage_over_time","slow","stun","heal_allies","heal_over_time","shield_allies","summon","knockback","buff_dmg","buff_speed"],
+  effect:["damage","damage_over_time","slow","stun","silence","stealth","heal_allies","heal_over_time","shield_allies","summon","knockback","buff_dmg","buff_speed"],
   shape:["point","circle_aoe","line","cone","persistent_zone"],
   fxType:["explosion","frost","lightning","poison_cloud","heal_glow","shockwave","fire_wall"],
 };
@@ -243,6 +243,10 @@ const SPELL_EFFECT={
   },
   buff_dmg(units,spec){units.forEach(u=>{u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(spec.magnitude||20)/100);const buffed=Math.round((u.baseD||u.d)*u._buffDmgApplied);u.d=Math.max(u.d,buffed);});},
   buff_speed(units,spec){units.forEach(u=>{u._buffSpeedApplied=Math.max(u._buffSpeedApplied||0,spec.magnitude||20);u.moveSpeedMod=Math.max(u.moveSpeedMod||100,100+u._buffSpeedApplied);});},
+  // C1: silence — prevent target units from using abilities for a duration.
+  silence(units,spec){const dur=spec.duration||3;units.forEach(u=>{u.silence=Math.max(u.silence||0,dur);if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,"🔇",u.team,false);});},
+  // C2: stealth — make allied units untargetable by single-target attacks for a duration.
+  stealth(units,spec){const dur=spec.duration||3;units.forEach(u=>{u.stealth=Math.max(u.stealth||0,dur);if(Battle.running)Battle.spawnDmgNum(u.x,u.y-u.z-8,"👁️",u.team,false);});},
 };
 // Phase 23: Spell object — resolves a spell spec into an effect at battle time.
 const Spell={
@@ -377,6 +381,10 @@ const Spell={
           for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.shieldActive=Math.max(u.shieldActive,z.spec.duration||2);}
         }else if(z.spec.effect==="stun"){
           for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.stun=Math.max(u.stun,z.spec.duration||1);}
+        }else if(z.spec.effect==="silence"){
+          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.silence=Math.max(u.silence||0,z.spec.duration||3);}
+        }else if(z.spec.effect==="stealth"){
+          for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u.stealth=Math.max(u.stealth||0,z.spec.duration||3);}
         }else if(z.spec.effect==="buff_dmg"){
           // Use Math.max to prevent stacking: only apply if unit hasn't been buffed yet.
           for(let ai=0;ai<aff.length;ai++){const u=aff[ai];u._buffDmgApplied=Math.max(u._buffDmgApplied||1,1+(z.spec.magnitude||20)/100);const buffed=Math.round((u.baseD||u.d)*u._buffDmgApplied);u.d=Math.max(u.d,buffed);}
@@ -419,7 +427,7 @@ const Spell={
 
 // R17: hoisted spell bar constants (were allocated every 0.5s in _renderSpellBar).
 const SPELL_FX_ICONS={explosion:"💥",frost:"❄️",lightning:"⚡",poison_cloud:"☠️",heal_glow:"💚",shockwave:"🌊",fire_wall:"🔥"};
-const SPELL_EFFECT_LABELS={damage:"Damage",damage_over_time:"DoT",slow:"Slow",stun:"Stun",heal_allies:"Heal",heal_over_time:"HoT",shield_allies:"Shield",summon:"Summon",knockback:"Knockback",buff_dmg:"Buff DMG",buff_speed:"Buff Speed"};
+const SPELL_EFFECT_LABELS={damage:"Damage",damage_over_time:"DoT",slow:"Slow",stun:"Stun",silence:"Silence",stealth:"Stealth",heal_allies:"Heal",heal_over_time:"HoT",shield_allies:"Shield",summon:"Summon",knockback:"Knockback",buff_dmg:"Buff DMG",buff_speed:"Buff Speed"};
 
 const Battle={
   units:[],          // Phase 10: single array (was units + enemies)
@@ -523,6 +531,8 @@ const Battle={
     u.firstHitUsed=false; // Phase 10: on_first_hit flag
     u.hasBeenHit=false;   // Phase 10: has the unit been attacked?
     u.shieldActive=0;  // Phase 10: shield immunity timer
+    u.silence=0;       // C1: silence timer (can't use abilities)
+    u.stealth=0;       // C2: stealth timer (untargetable by single-target)
     u.deathT=undefined;// Phase 10: death animation timer
     u.ttl=u.ttl||0;    // Phase 10: minion time-to-live
     // Phase 11: animation runtime fields.
@@ -563,6 +573,29 @@ const Battle={
     }
     this.playerBonuses=bonuses;
     this.enemyBonuses=enemyBonuses;
+  },
+  // C6: buff_aura — apply +20% damage and +10% speed to allies within 80px.
+  // Called per-frame per-team. Uses squared distance (no sqrt). Refreshes each frame.
+  _applyBuffAuras(team,dt){
+    let hasAura=false;
+    for(let i=0;i<team.length;i++){if(team[i].ability==="buff_aura"){hasAura=true;break;}}
+    if(!hasAura)return;
+    const AURA_R2=80*80;
+    for(let i=0;i<team.length;i++){
+      const u=team[i];
+      if(u.ability!=="buff_aura")continue;
+      for(let j=0;j<team.length;j++){
+        const a=team[j];
+        if(a===u)continue;
+        const dx=a.x-u.x,dy=a.y-u.y;
+        if(dx*dx+dy*dy<=AURA_R2){
+          a._auraDmg=Math.round((a.baseD||a.d)*1.2);
+          a._auraSpeed=Math.round((a._baseSpeedMod||a.moveSpeedMod||100)*1.1);
+          if(a.d<a._auraDmg)a.d=a._auraDmg;
+          if((a.moveSpeedMod||100)<a._auraSpeed)a.moveSpeedMod=a._auraSpeed;
+        }
+      }
+    }
   },
   calcCompositionBonuses(army){
     const roles=new Set();
@@ -1132,6 +1165,26 @@ const Battle={
         if(ps.cooldown>0)ps.cooldown=Math.max(0,ps.cooldown-dt);
       }
     }
+    // B4: bot spell casting — bot casts enemy spells when off cooldown.
+    // Only in single-player (not P2P). Bot targets player cluster center.
+    if(!connected&&this._allPlayerSpells&&this._allPlayerSpells.enemy){
+      const botSpells=this._allPlayerSpells.enemy;
+      for(let bi=0;bi<botSpells.length;bi++){
+        const ps=botSpells[bi];
+        if(ps.cooldown>0)continue;
+        // B4: cast spell at a strategic moment — when battle has been running
+        // for at least 2s and there are player units to target.
+        if(this.time<2)continue;
+        const playerUnits=this.units.filter(u=>u.team==="player"&&u.h>0);
+        if(!playerUnits.length)continue;
+        // Target the center of the player's cluster.
+        let cx=0,cy=0;
+        for(let pi=0;pi<playerUnits.length;pi++){cx+=playerUnits[pi].x;cy+=playerUnits[pi].y;}
+        cx/=playerUnits.length;cy/=playerUnits.length;
+        this.fireSpell(ps.spec,"enemy");
+        ps.cooldown=ps.maxCD;
+      }
+    }
     // Update floating damage numbers.
     this.updateDmgNums(dt);
     // 1. status ticks + death animation + minion TTL
@@ -1168,6 +1221,8 @@ const Battle={
       if(u.cool>0)u.cool=Math.max(0,u.cool-dt);
       if(u.abCool>0)u.abCool=Math.max(0,u.abCool-dt);
       if(u.shieldActive>0)u.shieldActive=Math.max(0,u.shieldActive-dt);
+      if(u.silence>0)u.silence=Math.max(0,u.silence-dt);
+      if(u.stealth>0)u.stealth=Math.max(0,u.stealth-dt);
       if(u.frenzyT>0)u.frenzyT=Math.max(0,u.frenzyT-dt);
       if(u.ttl>0){u.ttl-=dt;if(u.ttl<=0){u.h=0;u.lastAttacker=null;}} // minion expires (no kill attribution)
       // regen: heal 2% of max HP per second
@@ -1212,6 +1267,10 @@ const Battle={
     // PERF-R12: cache taunters per frame (avoids O(n) find per unit).
     const playerTaunter=players.find(e=>e.ability==="taunt");
     const enemyTaunter=enemies.find(e=>e.ability==="taunt");
+    // C6: buff_aura — units with buff_aura give nearby allies +20% dmg +10% speed.
+    // Applied per-frame (refreshes). Uses squared distance (no sqrt).
+    this._applyBuffAuras(players,dt);
+    this._applyBuffAuras(enemies,dt);
     // PERF-R12: build spatial grid for avoidance (avoids O(n²) ally scan).
     // Grid is rebuilt per team — each team's units only avoid their own allies.
     // PERF-R12: iterate over alive arrays (players/enemies) instead of this.units.
@@ -1461,6 +1520,8 @@ const Battle={
     if(attacker.ability==="rage"&&attacker.mh>0)dmg*=1+Math.max(0,1-attacker.h/attacker.mh);
     // executioner: 3× damage to enemies below 25% HP
     if(attacker.ability==="executioner"&&target.mh>0&&target.h<target.mh*0.25)dmg*=3;
+    // U1: armor — flat damage reduction per hit (min 1 damage)
+    if(target.armor>0)dmg=Math.max(1,dmg-target.armor);
     // crit
     // DET: rand() for deterministic crit/dodge rolls.
     const crit=rand()<(attacker.crit||0);
@@ -1554,6 +1615,8 @@ const Battle={
     blink_strike:"#a78bfa",frenzy:"#fb923c",cleanse:"#34d399",chain_lightning:"#4af",counter:"#a78bfa",
     taunt:"#fb7185",regen:"#34d399",executioner:"#fb7185"},
   triggerAbility(u,allies,enemies){
+    // C1: silence — unit cannot use abilities while silenced.
+    if(u.silence>0)return;
     // Ability activation flash: colored ring around the unit.
     const abColors=this._abColors;
     u.abFlash=0.4;
@@ -2459,6 +2522,14 @@ const Battle={
       c.strokeStyle="#39f";c.globalAlpha=0.6;c.beginPath();
       for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.slow>0){c.moveTo(pass2[i].x+(pass2[i].z+9)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+9)*ringPulse,0,Math.PI*2);}}
       c.stroke();
+      // C1: Silence rings (strokeStyle="#c4f", alpha=0.6, dashed).
+      c.strokeStyle="#c4f";c.globalAlpha=0.6;c.beginPath();
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.silence>0){c.moveTo(pass2[i].x+(pass2[i].z+3)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+3)*ringPulse,0,Math.PI*2);}}
+      c.stroke();
+      // C2: Stealth rings (strokeStyle="#888", alpha=0.4, dashed).
+      c.strokeStyle="#888";c.globalAlpha=0.4;c.beginPath();
+      for(let i=0;i<pass2Len;i++){const u=pass2[i].u;if(u.stealth>0){c.moveTo(pass2[i].x+(pass2[i].z+6)*ringPulse,pass2[i].y);c.arc(pass2[i].x,pass2[i].y,(pass2[i].z+6)*ringPulse,0,Math.PI*2);}}
+      c.stroke();
       c.globalAlpha=1;c.lineWidth=1;
       // Ability flash (per-unit — alpha varies, can't batch).
       for(let i=0;i<pass2Len;i++){
@@ -2484,6 +2555,8 @@ const Battle={
         if(u.stun>0){c.strokeStyle="#ff0";c.lineWidth=2;c.globalAlpha=0.6+0.4*Math.sin(time*8);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
         if(u.poison>0){c.strokeStyle="#3f3";c.globalAlpha=0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
         if(u.slow>0){c.strokeStyle="#39f";c.globalAlpha=0.5+0.3*Math.sin(time*3);c.beginPath();c.arc(e.x,e.y,(e.z+9)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+        if(u.silence>0){c.strokeStyle="#c4f";c.globalAlpha=0.5+0.3*Math.sin(time*4);c.beginPath();c.arc(e.x,e.y,(e.z+3)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
+        if(u.stealth>0){c.strokeStyle="#888";c.globalAlpha=0.3+0.2*Math.sin(time*2);c.beginPath();c.arc(e.x,e.y,(e.z+6)*ringPulse,0,Math.PI*2);c.stroke();c.globalAlpha=1;c.lineWidth=1;}
         if(u.abFlash>0){
           const t=1-u.abFlash/0.4;
           c.globalAlpha=Math.max(0,1-t);
@@ -3192,7 +3265,9 @@ const Battle={
       (u.shieldActive>0?`<div style="color:#fff;font-size:.65rem;margin-top:2px;">🛡️ Shield active</div>`:"")+
       (u.stun>0?`<div style="color:#ff0;font-size:.65rem;margin-top:2px;">⚡ Stunned</div>`:"")+
       (u.poison>0?`<div style="color:#3f3;font-size:.65rem;margin-top:2px;">☠️ Poisoned</div>`:"")+
-      (u.slow>0?`<div style="color:#39f;font-size:.65rem;margin-top:2px;">🐌 Slowed</div>`:"");
+      (u.slow>0?`<div style="color:#39f;font-size:.65rem;margin-top:2px;">🐌 Slowed</div>`:"")+
+      (u.silence>0?`<div style="color:#c4f;font-size:.65rem;margin-top:2px;">🔇 Silenced</div>`:"")+
+      (u.stealth>0?`<div style="color:#888;font-size:.65rem;margin-top:2px;">👁️ Stealthed</div>`:"");
   },
   _hideUnitInspector(){
     const el=$("unitInspector");

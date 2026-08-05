@@ -49,6 +49,20 @@ let _lastRoomId=null;
 let _lastRoomPassword=null;
 let _reconnectTimeout=null;
 const RECONNECT_GRACE_MS=30000; // 30s grace period
+// N6: attempt to rejoin the last room for mid-match reconnect.
+function attemptReconnect(){
+  if(connected)return; // already reconnected
+  if(!_lastRoomId)return; // no room to reconnect to
+  if(typeof G==="undefined"||typeof G.host!=="function")return;
+  try{
+    suppressP2PErrors=true;
+    G.host(_lastRoomId,true,_lastRoomPassword||undefined);
+    suppressP2PErrors=false;
+  }catch(e){
+    suppressP2PErrors=false;
+    // Silent fail — will retry on next interval.
+  }
+}
 function _p2pRateCheck(){
   const now=Date.now();
   if(now>_p2pRateBucket.resetAt){_p2pRateBucket.count=0;_p2pRateBucket.resetAt=now+P2P_RATE_WINDOW;}
@@ -518,6 +532,14 @@ function _flushCommandBuffer(){
   for(const cmd of buffered){transmit(cmd.type,cmd.data);}
 }
 // NETFIX: transmit with sequence number. _internal=true skips seq (for heartbeat).
+// N1/X1: emote wheel — send an emote to peer.
+let onPeerEmote=null;
+function sendEmote(emoji){
+  if(!connected)return;
+  if(typeof emoji!=="string"||emoji.length>20)return;
+  transmit("emote",emoji);
+}
+
 function transmit(type,data,_internal){
   // VOIDSTRIKE: buffer lockstep commands during disconnect for flush on reconnect.
   if(!connected&&type==="cmd_lock"&&Match.active){_bufferCommand(type,data);return;}
@@ -813,5 +835,12 @@ function networkReceive(data){
         }else{
           _processLockstepCommand(c);
         }
+      }
+    }
+    // N1/X1: emote — display emote from peer.
+    if(data.t==="emote"){
+      const e=data.d;
+      if(e&&typeof e==="string"&&e.length<=20){
+        if(typeof onPeerEmote==="function")onPeerEmote(e);
       }
     }
