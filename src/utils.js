@@ -408,6 +408,52 @@ function t(key){
   return(STRINGS[lang]&&STRINGS[lang][key])||STRINGS.en[key]||key;
 }
 
+// X7: enhanced ad stub — realistic placeholder with skip button after 3s.
+// Moved here from forge.js so StubAdProvider can reference it (load order).
+function showAdStub(duration,onComplete){
+  console.log("[Ad] stub start",duration+"ms");
+  const overlay=document.createElement("div");
+  overlay.id="adStubOverlay";
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;user-select:none;";
+  let remaining=Math.ceil(duration/1000);
+  let completed=false;
+  const finish=()=>{
+    if(completed)return;
+    completed=true;
+    clearInterval(interval);
+    overlay.remove();
+    console.log("[Ad] stub complete");
+    onComplete();
+  };
+  overlay.innerHTML=`<div style="background:var(--card,#1a1a2e);border-radius:12px;padding:30px 40px;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    <div style="font-size:.6rem;color:var(--muted,#888);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Advertisement</div>
+    <div style="font-size:2rem;margin-bottom:8px;">📺</div>
+    <div style="font-size:1.1rem;font-weight:600;margin-bottom:6px;">Your Ad Here</div>
+    <div style="font-size:.75rem;color:var(--muted,#888);margin-bottom:16px;">Rewarded video · ${remaining}s</div>
+    <div id="adCountdown" style="font-size:2.5rem;font-weight:700;color:var(--accent,#7c5cf6);margin-bottom:12px;">${remaining}s</div>
+    <div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;"><div id="adProgress" style="height:4px;background:var(--accent,#7c5cf6);width:0%;transition:width 1s linear;"></div></div>
+    <div id="adSkipBtn" style="display:none;margin-top:16px;padding:8px 24px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;cursor:pointer;font-size:.8rem;color:#fff;">Skip Ad ›</div>
+    <div style="margin-top:12px;font-size:.6rem;color:var(--muted,#888);">Reward is granted regardless of skip</div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const skipBtn=overlay.querySelector("#adSkipBtn");
+  if(skipBtn)skipBtn.onclick=(e)=>{e.stopPropagation();finish();};
+  const progress=overlay.querySelector("#adProgress");
+  const interval=setInterval(()=>{
+    remaining--;
+    const cd=overlay.querySelector("#adCountdown");
+    if(cd)cd.innerText=remaining+"s";
+    if(progress)progress.style.width=((duration/1000-remaining)/(duration/1000)*100)+"%";
+    if(remaining<=Math.max(0,Math.ceil(duration/1000)-3)){
+      if(skipBtn)skipBtn.style.display="block";
+    }
+    if(remaining<=0)finish();
+  },1000);
+  overlay.addEventListener("click",()=>{
+    if(skipBtn&&skipBtn.style.display==="block")finish();
+  });
+}
+
 // Phase 38 / X7: Ad SDK abstraction — provider-based with graceful fallback.
 // Providers: H5AdProvider (Google H5 Games Ads API) and StubAdProvider (fallback).
 // Design principle: ALWAYS give the reward. Ads gate wait time, not success.
@@ -429,6 +475,9 @@ const StubAdProvider={
     });
   },
 };
+// X7: expose to prevent minifier tree-shaking (referenced by AdSDK at runtime).
+window.StubAdProvider=StubAdProvider;
+window.showAdStub=showAdStub;
 
 // X7: H5 Games Ads provider — uses Google's adBreak() API.
 // Loaded lazily only when an ad is first requested (privacy + performance).
@@ -446,6 +495,12 @@ const H5AdProvider={
       if(typeof window!=="undefined"&&(window.adBreak||window.adsbygoogle)){
         this.available=true;
         resolve(true);
+        return;
+      }
+      // X7: skip SDK load if no publisher ID configured — use stub directly.
+      if(!this._publisherId){
+        console.log("[X7] No publisher ID — using stub provider.");
+        resolve(false);
         return;
       }
       // Inject the AdSense for Games script tag.
@@ -607,26 +662,36 @@ const AdSDK={
       return;
     }
     Analytics.track("ad_loaded",{type:"rewarded"});
-    this._ensureProvider().then(async()=>{
-      const provider=this.provider||StubAdProvider;
+    // X7: if provider not loaded yet, use stub immediately + load provider in background.
+    if(!this._providerLoaded){
+      this._ensureProvider(); // fire-and-forget: loads H5 SDK for next time
       this._beforeAd();
-      try{
-        const result=await provider.showRewarded({
-          duration:duration||FORGE_AD_MS,
-          name:"forge",
-          beforeAd:()=>{},
-          afterAd:()=>{},
-        });
-        Analytics.track("ad_complete",{type:"rewarded",viewed:result.viewed});
-      }catch(e){
-        Analytics.track("ad_skip",{type:"rewarded",error:true});
-        // Fallback to stub if provider throws.
-        await StubAdProvider.showRewarded({duration:duration||FORGE_AD_MS});
-      }finally{
+      StubAdProvider.showRewarded({duration:duration||FORGE_AD_MS}).then(()=>{
+        Analytics.track("ad_complete",{type:"rewarded",viewed:true});
         this._afterAd();
-      }
-      // X7: ALWAYS call onComplete — reward is always given.
+        onComplete();
+      });
+      return;
+    }
+    // Provider already loaded — use it.
+    const provider=this.provider||StubAdProvider;
+    this._beforeAd();
+    provider.showRewarded({
+      duration:duration||FORGE_AD_MS,
+      name:"forge",
+      beforeAd:()=>{},
+      afterAd:()=>{},
+    }).then(result=>{
+      Analytics.track("ad_complete",{type:"rewarded",viewed:result.viewed});
+      this._afterAd();
       onComplete();
+    }).catch(e=>{
+      Analytics.track("ad_skip",{type:"rewarded",error:true});
+      // Fallback to stub if provider throws.
+      StubAdProvider.showRewarded({duration:duration||FORGE_AD_MS}).then(()=>{
+        this._afterAd();
+        onComplete();
+      });
     });
   },
 

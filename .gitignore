@@ -34,3 +34,4 @@ perf_results.json
 __pycache__/
 *.pyc
 reference/
+.playwright-mcp/

@@ -1269,12 +1269,10 @@ const G={
         dailyEl.innerHTML="✅ Daily Challenge complete — come back tomorrow!";
       }
     }
-    // Phase 12: forge button — gated behind Training Yard completion
-    // (arena >= 1 or 3+ wins) so new players see core gameplay first.
+    // Phase 12: forge button — always visible (was gated behind arena>=1 or 3 wins).
     const forgeBtn=$("forgeMenuBtn");
     if(forgeBtn){
-      const showForge=(this.save.arena||0)>=1||(this.save.matchWins||0)>=3;
-      forgeBtn.style.display=showForge?"inline-block":"none";
+      forgeBtn.style.display="inline-block";
     }
     // Phase 12: update AI status badge.
     const aiStatus=$("aiStatus");
