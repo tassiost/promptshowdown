@@ -862,6 +862,7 @@ const Battle={
     const arena=G.arenas?.[G.save?.arena||0];
     this.bgTheme=arena?.bgTheme||"forest";
     this._bgParticles=[]; // clear ambient particles from previous battle
+    this._weatherParticles=[]; // R2: clear weather particles from previous battle
     this._appliedSpeedBoost=false; // reset arena speed boost for new battle
     this._mechanicT=0; // reset arena mechanic timer for new battle
     // Apply speed_boost arena mechanic immediately at battle start (not delayed by 1s throttle).
@@ -2049,10 +2050,10 @@ const Battle={
   // Background theme palettes — each arena gets a distinct atmosphere.
   // Colors: [topGradient, midGradient, bottomGradient, groundColor, groundAccent, ambientParticleColor]
   _bgThemes:{
-    forest: {top:"#0a1a0a",mid:"#0d2410",bot:"#040a05",ground:"#1a2a14",accent:"#2a4a20",ambient:"#5a8a3a",ambientType:"leaf"},
-    plague: {top:"#1a1208",mid:"#241808",bot:"#0a0804",ground:"#2a1e10",accent:"#3a2818",ambient:"#8a6a3a",ambientType:"spore"},
-    desert: {top:"#1a0e04",mid:"#2a1808",bot:"#0a0602",ground:"#3a2410",accent:"#4a3218",ambient:"#fa8a3a",ambientType:"sand"},
-    void:   {top:"#0a0418",mid:"#120828",bot:"#04020a",ground:"#1a0e2a",accent:"#2a1840",ambient:"#a48aff",ambientType:"ember"},
+    forest: {top:"#0a1a0a",mid:"#0d2410",bot:"#040a05",ground:"#1a2a14",accent:"#2a4a20",ambient:"#5a8a3a",ambientType:"leaf",weather:"rain"},
+    plague: {top:"#1a1208",mid:"#241808",bot:"#0a0804",ground:"#2a1e10",accent:"#3a2818",ambient:"#8a6a3a",ambientType:"spore",weather:"fog"},
+    desert: {top:"#1a0e04",mid:"#2a1808",bot:"#0a0602",ground:"#3a2410",accent:"#4a3218",ambient:"#fa8a3a",ambientType:"sand",weather:"sandstorm"},
+    void:   {top:"#0a0418",mid:"#120828",bot:"#04020a",ground:"#1a0e2a",accent:"#2a1840",ambient:"#a48aff",ambientType:"ember",weather:"voidstorm"},
   },
 
   // Lazily generate a reusable noise texture on an offscreen canvas.
@@ -2328,6 +2329,100 @@ const Battle={
     img.onload=()=>{this.bgImage=img;};
     img.onerror=()=>{this.bgImage=null;};
     img.src=url;
+  },
+
+  // R2: Weather/environment FX — overlay particles for rain, snow, fog, sandstorm, voidstorm.
+  // Drawn AFTER units (foreground overlay) for rain/snow; fog is a gradient overlay.
+  _weatherConfig:{
+    rain:      {count:60,vy:300,vx:-30,color:"rgba(150,180,220,0.4)",len:8,w:1,type:"streak"},
+    fog:       {count:0,vy:0,vx:0,color:"rgba(180,180,200,0.08)",type:"gradient"},
+    sandstorm: {count:50,vy:20,vx:120,color:"rgba(200,160,80,0.3)",len:4,w:1.5,type:"streak"},
+    voidstorm: {count:40,vy:-50,vx:0,color:"rgba(164,138,255,0.5)",len:3,w:2,type:"spark"},
+  },
+  _updateWeather(c){
+    const theme=this._bgThemes[this.bgTheme]||this._bgThemes.forest;
+    const weather=theme.weather;
+    if(!weather)return;
+    const cfg=this._weatherConfig[weather];
+    if(!cfg)return;
+    const w=this.canvasW||400,h=this.canvasH||550;
+    const dt=0.016;
+    const _qTier=G.qualityTier?.()||"high";
+    const _reducedMotion=G.save?.settings?.reducedMotion;
+    if(_qTier==="low"||_qTier==="minimal"||_reducedMotion)return; // R2: skip on low quality
+
+    // Fog: gradient overlay (no particles).
+    if(weather==="fog"){
+      const fogGrad=c.createLinearGradient(0,h*0.3,0,h);
+      fogGrad.addColorStop(0,"rgba(180,180,200,0)");
+      fogGrad.addColorStop(0.5,cfg.color);
+      fogGrad.addColorStop(1,"rgba(180,180,200,0)");
+      c.fillStyle=fogGrad;
+      c.fillRect(0,0,w,h);
+      // R2: drifting fog patches.
+      if(this._weatherParticles.length<5){
+        this._weatherParticles.push({x:Math.random()*w,y:h*0.4+Math.random()*h*0.4,r:80+Math.random()*60,vx:5+Math.random()*10,life:10});
+      }
+      c.globalCompositeOperation="screen";
+      for(let i=0;i<this._weatherParticles.length;i++){
+        const p=this._weatherParticles[i];
+        p.x+=p.vx*dt;p.life-=dt;
+        c.globalAlpha=Math.min(0.15,p.life/10*0.15);
+        c.fillStyle=cfg.color;
+        c.beginPath();c.arc(p.x,p.y,p.r,0,Math.PI*2);c.fill();
+      }
+      c.globalAlpha=1;c.globalCompositeOperation="source-over";
+      // compact
+      let wW=0;
+      for(let i=0;i<this._weatherParticles.length;i++){
+        const p=this._weatherParticles[i];
+        if(p.life>0&&p.x<w+100){if(wW!==i)this._weatherParticles[wW]=p;wW++;}
+      }
+      this._weatherParticles.length=wW;
+      return;
+    }
+
+    // Particle-based weather: rain, sandstorm, voidstorm.
+    if(cfg.count>0){
+      // Spawn particles up to budget.
+      while(this._weatherParticles.length<cfg.count){
+        const p={x:Math.random()*w,y:Math.random()*h,vx:cfg.vx+(Math.random()-0.5)*20,vy:cfg.vy+(Math.random()-0.5)*30,life:Infinity};
+        if(weather==="voidstorm"){p.r=1+Math.random()*2;p.flicker=Math.random()*Math.PI*2;}
+        this._weatherParticles.push(p);
+      }
+      // Update + draw.
+      c.globalCompositeOperation="lighter";
+      c.strokeStyle=cfg.color;
+      c.fillStyle=cfg.color;
+      for(let i=0;i<this._weatherParticles.length;i++){
+        const p=this._weatherParticles[i];
+        p.x+=p.vx*dt;
+        p.y+=p.vy*dt;
+        // Wrap around screen.
+        if(p.y>h+20){p.y=-20;p.x=Math.random()*w;}
+        if(p.y<-20){p.y=h+20;p.x=Math.random()*w;}
+        if(p.x>w+20)p.x=-20;
+        if(p.x<-20)p.x=w+20;
+        if(cfg.type==="streak"){
+          // Rain/sandstorm: streak line in direction of motion.
+          const dx=p.vx*0.02,dy=p.vy*0.02;
+          c.lineWidth=cfg.w;
+          c.globalAlpha=0.6;
+          c.beginPath();
+          c.moveTo(p.x,p.y);
+          c.lineTo(p.x-dx*(cfg.len||5),p.y-dy*(cfg.len||5));
+          c.stroke();
+        }else if(cfg.type==="spark"){
+          // Voidstorm: flickering sparks.
+          p.flicker+=dt*10;
+          c.globalAlpha=0.4+0.3*Math.sin(p.flicker);
+          c.beginPath();
+          c.arc(p.x,p.y,p.r,0,Math.PI*2);
+          c.fill();
+        }
+      }
+      c.globalAlpha=1;c.globalCompositeOperation="source-over";
+    }
   },
 
   render(){
@@ -2683,21 +2778,82 @@ const Battle={
       const angle=Math.atan2(dy,dx);
       // PERF-R12: Math.sqrt is faster than Math.hypot for 2 args.
       const dist=Math.sqrt(dx*dx+dy*dy)||1;
-      // Trail — fading line segments behind the projectile (additive).
+      // Trail — R5: weapon-specific trail styles (variety per weapon type).
       c.globalCompositeOperation="lighter";
-      // PERF-R12: set strokeStyle once per projectile (all trail segments share accent color).
       c.strokeStyle=accent;
-      // PERF-R12: trail is flat array [x0,y0,x1,y1,...] — avoid object property access.
       if(p.trail&&p._trailLen>1){
         const tl=p._trailLen;
-        for(let i=0;i<tl-1;i++){
-          const a=(i+1)/tl*0.5;
-          c.globalAlpha=a;
-          c.lineWidth=2+a*2;
-          c.beginPath();
-          c.moveTo(p.trail[i*2],p.trail[i*2+1]);
-          c.lineTo(p.trail[(i+1)*2],p.trail[(i+1)*2+1]);
-          c.stroke();
+        // R5: trail style depends on weapon type.
+        if(wt==="staff"||wt==="wand"||wt==="orb"){
+          // R5: Magic trail — dotted glowing orbs with pulsing alpha.
+          for(let i=0;i<tl;i++){
+            const a=(i+1)/tl*0.6;
+            const r=2+a*3;
+            c.globalAlpha=a*(0.7+0.3*Math.sin(time*10+i));
+            c.fillStyle=accent;
+            c.beginPath();
+            c.arc(p.trail[i*2],p.trail[i*2+1],r,0,Math.PI*2);
+            c.fill();
+          }
+        }else if(wt==="bow"||wt==="crossbow"){
+          // R5: Arrow trail — thin double-line (motion blur effect).
+          for(let i=0;i<tl-1;i++){
+            const a=(i+1)/tl*0.35;
+            c.globalAlpha=a;
+            c.lineWidth=1;
+            c.beginPath();
+            c.moveTo(p.trail[i*2],p.trail[i*2+1]-1);
+            c.lineTo(p.trail[(i+1)*2],p.trail[(i+1)*2+1]-1);
+            c.stroke();
+            c.beginPath();
+            c.moveTo(p.trail[i*2],p.trail[i*2+1]+1);
+            c.lineTo(p.trail[(i+1)*2],p.trail[(i+1)*2+1]+1);
+            c.stroke();
+          }
+        }else if(wt==="rifle"){
+          // R5: Bullet trail — smoke puffs (expanding fading circles).
+          for(let i=0;i<tl;i++){
+            const a=(i+1)/tl*0.3;
+            const r=3+(tl-i)*1.5;
+            c.globalAlpha=a;
+            c.fillStyle=accent;
+            c.beginPath();
+            c.arc(p.trail[i*2],p.trail[i*2+1],r,0,Math.PI*2);
+            c.fill();
+          }
+        }else if(wt==="breath"){
+          // R5: Breath trail — flickering flame particles (orange/yellow gradient).
+          for(let i=0;i<tl;i++){
+            const a=(i+1)/tl*0.5;
+            const flick=0.7+0.3*Math.sin(time*20+i*2);
+            c.globalAlpha=a*flick;
+            c.fillStyle=i%2?"#fc4":"#f80";
+            c.beginPath();
+            c.arc(p.trail[i*2],p.trail[i*2+1],3+a*2,0,Math.PI*2);
+            c.fill();
+          }
+        }else if(wt==="trident"||wt==="spear"){
+          // R5: Spear trail — sharp wedge (tapered line, wider at base).
+          for(let i=0;i<tl-1;i++){
+            const a=(i+1)/tl*0.4;
+            c.globalAlpha=a;
+            c.lineWidth=0.5+a*3;
+            c.beginPath();
+            c.moveTo(p.trail[i*2],p.trail[i*2+1]);
+            c.lineTo(p.trail[(i+1)*2],p.trail[(i+1)*2+1]);
+            c.stroke();
+          }
+        }else{
+          // R5: Default trail — fading line segments (original style).
+          for(let i=0;i<tl-1;i++){
+            const a=(i+1)/tl*0.5;
+            c.globalAlpha=a;
+            c.lineWidth=2+a*2;
+            c.beginPath();
+            c.moveTo(p.trail[i*2],p.trail[i*2+1]);
+            c.lineTo(p.trail[(i+1)*2],p.trail[(i+1)*2+1]);
+            c.stroke();
+          }
         }
       }
       // PERF-R12: reset globalAlpha after trail (trail loop leaves it at last segment value).
@@ -2819,6 +2975,8 @@ const Battle={
     BattleFX.drawParticles(c);
     // Draw floating damage numbers on top of everything.
     this.drawDmgNums(c);
+    // R2: weather/environment FX overlay (rain, fog, sandstorm, voidstorm).
+    this._updateWeather(c);
     // Phase 17: restore shake transform.
     }finally{if(shake>0)c.restore();}
     // Restore game-space transform.

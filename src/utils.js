@@ -408,35 +408,254 @@ function t(key){
   return(STRINGS[lang]&&STRINGS[lang][key])||STRINGS.en[key]||key;
 }
 
-// Phase 38: Ad SDK abstraction — falls back to stub when no real SDK is loaded.
-const FORGE_AD_MS=1000;
+// Phase 38 / X7: Ad SDK abstraction — provider-based with graceful fallback.
+// Providers: H5AdProvider (Google H5 Games Ads API) and StubAdProvider (fallback).
+// Design principle: ALWAYS give the reward. Ads gate wait time, not success.
+const FORGE_AD_MS=5000; // X7: realistic 5s stub duration (was 1s)
+const INTERSTITIAL_FREQ_CAP_MS=60000; // X7: min 60s between interstitials
+
+// X7: Stub provider — fake ad with realistic UI + skip button.
+const StubAdProvider={
+  available:true,
+  showRewarded(opts){
+    return new Promise(resolve=>{
+      showAdStub(opts.duration||FORGE_AD_MS,()=>resolve({viewed:true,dismissed:false}));
+    });
+  },
+  showInterstitial(opts){
+    return new Promise(resolve=>{
+      // Interstitial stub: shorter, no skip (forced).
+      showAdStub(3000,()=>resolve({shown:true}));
+    });
+  },
+};
+
+// X7: H5 Games Ads provider — uses Google's adBreak() API.
+// Loaded lazily only when an ad is first requested (privacy + performance).
+const H5AdProvider={
+  available:false,
+  _loading:null,
+  _testMode:true, // X7: test mode during development. Set false in production.
+  _publisherId:null, // X7: set to your AdSense publisher ID (ca-pub-XXXX) for live ads.
+
+  // Lazy-load the H5 Games Ads SDK script.
+  load(){
+    if(this._loading)return this._loading;
+    this._loading=new Promise(resolve=>{
+      // Check if already loaded (adsbygoogle or adBreak present).
+      if(typeof window!=="undefined"&&(window.adBreak||window.adsbygoogle)){
+        this.available=true;
+        resolve(true);
+        return;
+      }
+      // Inject the AdSense for Games script tag.
+      try{
+        const s=document.createElement("script");
+        s.async=true;
+        // X7: H5 Games Ads SDK URL. data-ad-test="on" for development.
+        s.setAttribute("data-ad-test",this._testMode?"on":"off");
+        if(this._publisherId)s.setAttribute("data-ad-client",this._publisherId);
+        s.src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client="+
+              (this._publisherId||"ca-pub-0000000000000000");
+        s.onload=()=>{
+          // adBreak is created by the SDK after load.
+          if(typeof window.adBreak==="function"){
+            this.available=true;
+            // Configure: sound on (game handles muting), test mode.
+            if(typeof window.adConfig==="function"){
+              window.adConfig({sound:"on",preloadAdBreaks:"on"});
+            }
+            resolve(true);
+          }else{
+            console.warn("[X7] H5 Ad SDK loaded but adBreak not found — using stub.");
+            resolve(false);
+          }
+        };
+        s.onerror=()=>{
+          console.warn("[X7] H5 Ad SDK failed to load — using stub.");
+          resolve(false);
+        };
+        document.head.appendChild(s);
+      }catch(e){
+        console.warn("[X7] H5 Ad SDK injection failed:",e);
+        resolve(false);
+      }
+    });
+    return this._loading;
+  },
+
+  showRewarded(opts){
+    return new Promise(resolve=>{
+      if(!this.available||typeof window.adBreak!=="function"){
+        resolve({viewed:false,dismissed:true});
+        return;
+      }
+      let settled=false;
+      const done=(result)=>{
+        if(settled)return;
+        settled=true;
+        resolve(result);
+      };
+      try{
+        window.adBreak({
+          type:"reward",
+          name:opts.name||"rewarded",
+          beforeAd:()=>{opts.beforeAd?.();},
+          afterAd:()=>{opts.afterAd?.();},
+          beforeReward:(showAdFn)=>{showAdFn();},
+          adDismissed:()=>{done({viewed:false,dismissed:true});},
+          adViewed:()=>{done({viewed:true,dismissed:false});},
+          adBreakDone:()=>{done({viewed:false,dismissed:true});},
+        });
+      }catch(e){
+        console.warn("[X7] adBreak rewarded failed:",e);
+        done({viewed:false,dismissed:true});
+      }
+    });
+  },
+
+  showInterstitial(opts){
+    return new Promise(resolve=>{
+      if(!this.available||typeof window.adBreak!=="function"){
+        resolve({shown:false});
+        return;
+      }
+      try{
+        window.adBreak({
+          type:opts.type||"next",
+          name:opts.name||"interstitial",
+          beforeAd:()=>{opts.beforeAd?.();},
+          afterAd:()=>{opts.afterAd?.();},
+          adBreakDone:()=>{resolve({shown:true});},
+        });
+      }catch(e){
+        console.warn("[X7] adBreak interstitial failed:",e);
+        resolve({shown:false});
+      }
+    });
+  },
+};
 
 const AdSDK={
   loaded:false,
-  sdk:null,
-  async load(){
-    // Real SDK would be loaded here (AdMob, ironSource, etc).
-    // For now, stub is always used.
+  provider:null,        // X7: active provider (H5AdProvider or StubAdProvider)
+  _providerLoaded:false,
+  _lastInterstitial:0,  // X7: frequency cap tracking
+  _audioWasEnabled:true,// X7: save audio state before ad
+  _battleWasPaused:false,
+
+  // X7: detect environment.
+  get isStandalone(){
+    return navigator.standalone===true||window.matchMedia?.("(display-mode: standalone)")?.matches||false;
+  },
+
+  // X7: lazy-load provider on first ad request.
+  async _ensureProvider(){
+    if(this._providerLoaded)return;
+    this._providerLoaded=true;
+    // Try to load H5 provider; fall back to stub if unavailable.
+    try{
+      const ok=await H5AdProvider.load();
+      this.provider=ok?H5AdProvider:StubAdProvider;
+    }catch(e){
+      console.warn("[X7] Provider load failed, using stub:",e);
+      this.provider=StubAdProvider;
+    }
     this.loaded=true;
   },
-  showRewarded(duration,onComplete){
-    Analytics.track("ad_loaded",{type:"rewarded"});
-    // Try real SDK if available (future: window.googleAdMob?.showRewarded).
-    if(this.sdk&&this.sdk.showRewarded){
-      this.sdk.showRewarded().then(()=>{
-        Analytics.track("ad_complete",{type:"rewarded"});
-        onComplete();
-      }).catch(()=>{Analytics.track("ad_skip",{type:"rewarded"});showAdStub(duration,onComplete);});
-    }else{
-      showAdStub(duration,onComplete);
+
+  // X7: pause audio + battle before ad.
+  _beforeAd(){
+    if(typeof GameAudio!=="undefined"){
+      this._audioWasEnabled=GameAudio.enabled;
+      GameAudio.enabled=false;
+      GameAudio.applyVolumes?.();
+    }
+    if(typeof Battle!=="undefined"&&Battle.running&&!Battle.paused){
+      this._battleWasPaused=true;
+      Battle.paused=true;
     }
   },
-  showInterstitial(){
-    Analytics.track("ad_loaded",{type:"interstitial"});
-    if(this.sdk&&this.sdk.showInterstitial){
-      this.sdk.showInterstitial().catch(()=>{});
+
+  // X7: resume audio + battle after ad.
+  _afterAd(){
+    if(typeof GameAudio!=="undefined"){
+      GameAudio.enabled=this._audioWasEnabled;
+      GameAudio.applyVolumes?.();
     }
-    // No stub for interstitial — just skip silently.
+    if(this._battleWasPaused&&typeof Battle!=="undefined"){
+      Battle.paused=false;
+      this._battleWasPaused=false;
+    }
+  },
+
+  // X7: check if user has ad-free mode enabled.
+  get adFree(){
+    return G.save?.settings?.adFree===true;
+  },
+
+  async load(){
+    await this._ensureProvider();
+  },
+
+  // X7: rewarded ad — always calls onComplete (reward is always given).
+  showRewarded(duration,onComplete){
+    // Ad-free mode: skip ad entirely, give reward immediately.
+    if(this.adFree){
+      Analytics.track("ad_skipped",{type:"rewarded",reason:"ad_free"});
+      onComplete();
+      return;
+    }
+    Analytics.track("ad_loaded",{type:"rewarded"});
+    this._ensureProvider().then(async()=>{
+      const provider=this.provider||StubAdProvider;
+      this._beforeAd();
+      try{
+        const result=await provider.showRewarded({
+          duration:duration||FORGE_AD_MS,
+          name:"forge",
+          beforeAd:()=>{},
+          afterAd:()=>{},
+        });
+        Analytics.track("ad_complete",{type:"rewarded",viewed:result.viewed});
+      }catch(e){
+        Analytics.track("ad_skip",{type:"rewarded",error:true});
+        // Fallback to stub if provider throws.
+        await StubAdProvider.showRewarded({duration:duration||FORGE_AD_MS});
+      }finally{
+        this._afterAd();
+      }
+      // X7: ALWAYS call onComplete — reward is always given.
+      onComplete();
+    });
+  },
+
+  // X7: interstitial ad — frequency capped at 60s.
+  showInterstitial(){
+    if(this.adFree){
+      Analytics.track("ad_skipped",{type:"interstitial",reason:"ad_free"});
+      return;
+    }
+    // X7: frequency cap — max 1 interstitial per 60s.
+    const now=Date.now();
+    if(now-this._lastInterstitial<INTERSTITIAL_FREQ_CAP_MS){
+      Analytics.track("ad_skipped",{type:"interstitial",reason:"freq_cap"});
+      return;
+    }
+    this._lastInterstitial=now;
+    Analytics.track("ad_loaded",{type:"interstitial"});
+    this._ensureProvider().then(async()=>{
+      const provider=this.provider||StubAdProvider;
+      this._beforeAd();
+      try{
+        await provider.showInterstitial({name:"match_end",type:"next"});
+        Analytics.track("ad_complete",{type:"interstitial"});
+      }catch(e){
+        Analytics.track("ad_skip",{type:"interstitial",error:true});
+      }finally{
+        this._afterAd();
+      }
+    });
   },
 };
 

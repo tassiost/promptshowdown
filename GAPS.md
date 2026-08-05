@@ -327,7 +327,7 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 | X4 | **Tier list (community)** | TFT community tools | P2 | M | We have a tier list screen; could add community data. |
 | X5 | **Color themes beyond arena** | (UX convention) | P2 | S | Player-selectable UI themes. |
 | X6 | **Replay viewer with controls** | TFT, MTG | P2 | M | Scrub, pause, slow-mo replays. We save replays but viewer is basic. |
-| X7 | **Ad system (real)** | SAP, Marvel Snap | P2 | M | Current AdSDK is a stub (`utils.js:417-444`). |
+| X7 | **Ad system (real)** | SAP, Marvel Snap | P2 | M | ✅ **IMPLEMENTED** — provider-based AdSDK with H5 Games Ads API (Google AFG) + stub fallback. Frequency caps, audio/battle pause, ad-free mode toggle, realistic stub with skip button (`utils.js:411`, `forge.js:2037`). |
 
 ---
 
@@ -346,10 +346,10 @@ Arena Limited guides, Gamedeveloper autobattler analysis, Wikipedia.
 | # | Feature | In | Priority | Effort | Notes |
 |---|---------|----|---------|--------|-------|
 | R1 | **Per-unit bespoke drawing** | Machine Guard (drawInfantry, drawDog...) | P2 | L | Hand-crafted draw per unit type. Currently all procedural. |
-| R2 | **Weather / environment FX** | (genre convention) | P2 | M | Rain, snow, fog per arena theme. |
+| R2 | **Weather / environment FX** | (genre convention) | P2 | M | ✅ **IMPLEMENTED** — per-arena weather overlays: rain (forest), fog (plague), sandstorm (desert), voidstorm (void). Particle-based with quality gating (`battle.js:2325`). |
 | R3 | **Boss visual escalation** | Machine Guard (6 boss tiers) | P2 | M | Pairs with M5. |
 | R4 | **Status ring overlays** | Machine Guard | P1 | S | ✅ **IMPLEMENTED** — colored rings for shield (white), stun (yellow), poison (green), slow (blue) (`battle.js:2448-2460`). |
-| R5 | **Projectile trail variety** | Machine Guard (7-point history) | P2 | S | More trail types per weapon. |
+| R5 | **Projectile trail variety** | Machine Guard (7-point history) | P2 | S | ✅ **IMPLEMENTED** — weapon-specific trail styles: magic (dotted orbs), arrows (double-line), bullets (smoke puffs), breath (flame particles), spear (tapered wedge), default (fading lines) (`battle.js:2781`). |
 
 ---
 

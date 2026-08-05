@@ -2034,23 +2034,51 @@ async function generateSpell(rawPrompt,arenaIndex){
   return spell;
 }
 
+// X7: enhanced ad stub — realistic placeholder with skip button after 3s.
 function showAdStub(duration,onComplete){
   console.log("[Ad] stub start",duration+"ms");
   const overlay=document.createElement("div");
-  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;";
+  overlay.id="adStubOverlay";
+  overlay.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.95);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;font-family:sans-serif;user-select:none;";
   let remaining=Math.ceil(duration/1000);
-  overlay.innerHTML=`<div style="font-size:1.5rem;margin-bottom:10px;">📺 Ad: ${remaining}s...</div><div id="adCountdown" style="font-size:2rem;">${remaining}s</div><div style="margin-top:10px;font-size:.8rem;color:#888;">Ad ends in ${remaining}s</div>`;
+  let completed=false;
+  const finish=()=>{
+    if(completed)return;
+    completed=true;
+    clearInterval(interval);
+    overlay.remove();
+    console.log("[Ad] stub complete");
+    onComplete();
+  };
+  // X7: realistic ad card — "Your ad here" placeholder.
+  overlay.innerHTML=`<div style="background:var(--card,#1a1a2e);border-radius:12px;padding:30px 40px;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+    <div style="font-size:.6rem;color:var(--muted,#888);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">Advertisement</div>
+    <div style="font-size:2rem;margin-bottom:8px;">📺</div>
+    <div style="font-size:1.1rem;font-weight:600;margin-bottom:6px;">Your Ad Here</div>
+    <div style="font-size:.75rem;color:var(--muted,#888);margin-bottom:16px;">Rewarded video · ${remaining}s</div>
+    <div id="adCountdown" style="font-size:2.5rem;font-weight:700;color:var(--accent,#7c5cf6);margin-bottom:12px;">${remaining}s</div>
+    <div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;"><div id="adProgress" style="height:4px;background:var(--accent,#7c5cf6);width:0%;transition:width 1s linear;"></div></div>
+    <div id="adSkipBtn" style="display:none;margin-top:16px;padding:8px 24px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);border-radius:6px;cursor:pointer;font-size:.8rem;color:#fff;">Skip Ad ›</div>
+    <div style="margin-top:12px;font-size:.6rem;color:var(--muted,#888);">Reward is granted regardless of skip</div>
+  </div>`;
   document.body.appendChild(overlay);
+  const skipBtn=overlay.querySelector("#adSkipBtn");
+  if(skipBtn)skipBtn.onclick=(e)=>{e.stopPropagation();finish();};
+  const progress=overlay.querySelector("#adProgress");
   const interval=setInterval(()=>{
     remaining--;
     const cd=overlay.querySelector("#adCountdown");
     if(cd)cd.innerText=remaining+"s";
-    if(remaining<=0){
-      clearInterval(interval);
-      overlay.remove();
-      console.log("[Ad] stub complete");
-      onComplete();
+    if(progress)progress.style.width=((duration/1000-remaining)/(duration/1000)*100)+"%";
+    // X7: show skip button after 3s (simulates skippable ads).
+    if(remaining<=Math.max(0,Math.ceil(duration/1000)-3)){
+      if(skipBtn)skipBtn.style.display="block";
     }
+    if(remaining<=0)finish();
   },1000);
+  // X7: tap anywhere after skip appears also closes.
+  overlay.addEventListener("click",()=>{
+    if(skipBtn&&skipBtn.style.display==="block")finish();
+  });
 }
 

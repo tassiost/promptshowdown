@@ -1140,6 +1140,7 @@ const G={
     set("setColorblind",s.colorblind||"off");
     set("setHighContrast",s.highContrast||false);
     set("setAnalyticsOptOut",this.save.analyticsOptOut||false);
+    set("setAdFree",s.adFree||false); // X7: ad-free mode toggle
     set("setLang",this.save.settings?.lang||"en");
   },
   saveSetting(key,val){
